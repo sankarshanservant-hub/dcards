@@ -11,6 +11,16 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dcards-test-'));
 process.env.DATA_DIR = dataDir;
 process.env.ADMIN_PASSWORD = 'test-password';
 process.env.DEMO_MODE = '1';
+// Поддельный API сайта (harekrishna.info /api/seva?api=me) для проверки входа общим аккаунтом.
+const http = require('http');
+const siteApi = http.createServer((req, res) => {
+  const u = new URL(req.url, 'http://x');
+  const s = u.searchParams.get('session');
+  res.setHeader('Content-Type', 'application/json');
+  if (u.searchParams.get('api') === 'me' && s === 'good-session-token-1') res.end(JSON.stringify({ ok: true, user: { uid: 'g:123', name: 'Майя', displayName: 'Майя', email: 'maya@example.org' } }));
+  else res.end(JSON.stringify({ ok: false }));
+}).listen(0);
+process.env.SITE_AUTH_URL = `http://127.0.0.1:${siteApi.address().port}/api/seva`;
 const app = require('../server/index.js');
 
 let server; let base;
@@ -61,7 +71,7 @@ before(async () => {
     assert.equal(r.status, 200);
   }
 });
-after(() => { server.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+after(() => { server.close(); siteApi.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 
 // ---------- 03 вход и роли, серверные права ----------
 test('03: вход по email без пароля, неверный код отклоняется, права проверяются на сервере', async () => {
@@ -321,4 +331,18 @@ test('Демо-роли: изменения только над демо-объ�
   const sub = await call('POST', '/api/artist/works', null, { cookie: artist.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['images', await png('#999'), 'r.png']]) });
   assert.equal((await call('POST', `/api/curation/works/${sub.json.ids[0]}/decide`, { action: 'approve' }, { cookie: cur.cookie })).json.error, 'demo_readonly');
   assert.equal((await call('GET', '/api/cards/DC-0001')).status, 200);
+});
+
+// ---------- вход общим аккаунтом сайта ----------
+test('03: вход аккаунтом сайта — сессия проверяется у сайта, аккаунт создаётся и связывается', async () => {
+  assert.equal((await call('POST', '/api/auth/site', { session: 'bad-session-token-xx' })).status, 401);
+  const r1 = await call('POST', '/api/auth/site', { session: 'good-session-token-1' });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.json.user.name, 'Майя');
+  assert.equal(r1.json.user.email, 'maya@example.org');
+  const r2 = await call('POST', '/api/auth/site', { session: 'good-session-token-1' });
+  assert.equal(r2.json.user.id, r1.json.user.id, 'повторный вход — тот же пользователь');
+  const me = await call('GET', '/api/me', null, { cookie: r1.cookie });
+  assert.equal(me.json.user.id, r1.json.user.id);
+  assert.equal((await call('GET', '/api/config')).json.siteLogin, true);
 });

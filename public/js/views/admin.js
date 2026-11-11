@@ -187,7 +187,12 @@ const SECTIONS = {
   },
 
   async letters(ctx) {
-    const { letters } = await api('/api/admin/outbox');
+    let letters;
+    try { ({ letters } = await api('/api/admin/outbox')); } catch (e) {
+      if (e.code !== 'demo_readonly') throw e;
+      shell(ctx, 'letters', tt('Журнал писем', 'Letters log'), `<p class="notice">${esc(tt('Журнал писем содержит адреса настоящих людей, поэтому демо-роли он не показывается. Войдите как владелец.', 'The letters log holds real people’s addresses, so it is hidden from demo roles. Sign in as the owner.'))}</p>`);
+      return;
+    }
     if (!ctx.alive()) return;
     const ST = { sent: [tt('отправлено', 'sent'), 'mint'], demo: [tt('демо — не отправлено', 'demo — not sent'), ''], failed: [tt('ошибка', 'failed'), 'red'] };
     shell(ctx, 'letters', tt('Журнал писем', 'Letters log'), `<p class="small muted">${esc(tt('Коды входа и подтверждения записи. Пока почта не подключена, письма не уходят, а их текст показывается на экране.', 'Sign-in codes and registration confirmations. While email is not connected, letters are not sent and their text is shown on screen.'))}</p>

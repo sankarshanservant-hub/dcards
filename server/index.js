@@ -84,7 +84,7 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 // На сервере (NODE_ENV=production) без SMTP он выключен: иначе войти можно было бы под чужим адресом.
 const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
-  demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), translationConnected: false,
+  demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl, translationConnected: false,
   termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
 }));
 r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
@@ -114,6 +114,13 @@ r.post('/api/auth/verify', (req, res) => {
   auth.issue(res, req, u.id);
   res.json({ user: auth.publicUser(u) });
 });
+// Вход общим аккаунтом сайта: браузер передаёт сессию сайта, сервер проверяет её у сайта.
+r.post('/api/auth/site', wrap(async (req, res) => {
+  const x = await auth.siteLogin(req.body && req.body.session);
+  if (x.error) return bad(res, x.error, x.error === 'site_unreachable' ? 502 : 401);
+  auth.issue(res, req, x.user.id);
+  res.json({ user: auth.publicUser(x.user) });
+}));
 r.post('/api/auth/owner', (req, res) => {
   const c = auth.checkOwnerPassword(req, req.body && req.body.password);
   if (!c.ok) return bad(res, c.error, c.error === 'too_many_attempts' ? 429 : 401);
@@ -472,7 +479,12 @@ r.use('/api', (req, res) => bad(res, 'not_found', 404));
 
 // ---------- фронтенд ----------
 const publicDir = path.join(config.root, 'public');
-r.use(express.static(publicDir, { index: false, maxAge: config.isProduction ? '1h' : 0 }));
+// Стили и скрипты — всегда сверяются с сервером (ETag), чтобы после обновления не показывалась старая версия;
+// шрифты и картинки интерфейса кэшируются на сутки.
+r.use(express.static(publicDir, {
+  index: false,
+  setHeaders: (res, file) => res.set('Cache-Control', /\.(js|css|html|json)$/.test(file) ? 'no-cache' : 'public, max-age=86400'),
+}));
 const indexHtml = () => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').replaceAll('{{BASE}}', B);
 let cachedIndex = null;
 r.get('*', (req, res) => {

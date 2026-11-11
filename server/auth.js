@@ -122,6 +122,33 @@ function findOrCreateUser(email, name, publicName) {
   return u;
 }
 
+// ---------- вход общим аккаунтом сайта ----------
+/** Проверяет сессию сайта (API «me») и возвращает пользователя Dialogue Cards, связанного с этим аккаунтом. */
+async function siteLogin(siteSession) {
+  if (!config.siteAuthUrl) return { error: 'site_login_disabled' };
+  if (typeof siteSession !== 'string' || siteSession.length < 10 || siteSession.length > 400) return { error: 'bad_session' };
+  let r;
+  try {
+    const url = `${config.siteAuthUrl}?${new URLSearchParams({ api: 'me', session: siteSession, siteOrigin: config.publicUrl || '' })}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    r = await res.json();
+  } catch { return { error: 'site_unreachable' }; }
+  if (!r || !r.ok || !r.user || !r.user.uid) return { error: 'site_session_invalid' };
+  const su = r.user;
+  const name = String(su.displayName || su.name || '').trim().slice(0, 100) || 'Участник';
+  const email = su.email && EMAIL_RE.test(su.email) ? String(su.email).trim().toLowerCase() : null;
+  let u = db.prepare('SELECT * FROM users WHERE site_uid = ?').get(String(su.uid));
+  if (!u && email) {
+    u = stmt.byEmail.get(email);
+    if (u) db.prepare('UPDATE users SET site_uid = ? WHERE id = ?').run(String(su.uid), u.id);
+  }
+  if (!u) {
+    const info = db.prepare('INSERT INTO users (email, name, public_name, is_demo, site_uid) VALUES (?, ?, ?, 0, ?)').run(email, name, '', String(su.uid));
+    u = stmt.user.get(info.lastInsertRowid);
+  }
+  return { user: u };
+}
+
 // ---------- владелец проекта ----------
 function ownerPassword() {
   if (config.adminPassword) return config.adminPassword;
@@ -177,5 +204,5 @@ function revoke(userId, role) { stmt.revoke.run(userId, role); }
 module.exports = {
   CPATH, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
   loadUser, requireUser, requireRole, issue, clear, publicUser, displayName, rolesOf,
-  requestCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, demoUser, grant, revoke,
+  siteLogin, requestCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, demoUser, grant, revoke,
 };

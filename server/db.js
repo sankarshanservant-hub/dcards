@@ -286,6 +286,8 @@ addColumn('cards', 'artist_id', 'INTEGER REFERENCES users(id)');
 addColumn('cards', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('cards', 'removed_by', "TEXT NOT NULL DEFAULT ''");          // owner | artist | admin
 addColumn('cards', 'print_permission', "TEXT NOT NULL DEFAULT 'not_set'"); // not_set | allowed | denied
+addColumn('users', 'site_uid', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_site_uid ON users(site_uid) WHERE site_uid IS NOT NULL');
 addColumn('collections', 'owner_id', 'INTEGER REFERENCES users(id)');
 addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 

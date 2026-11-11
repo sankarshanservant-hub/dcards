@@ -80,10 +80,28 @@ export function failed(main, e, retry) {
   main.querySelector('#retry').addEventListener('click', retry);
 }
 
+// Общий аккаунт сайта (harekrishna.info): его сессия лежит в localStorage этого же домена (ключи amSession/amProfile).
+const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* приватный режим */ } };
+export const siteSession = () => lsGet('amSession');
+export const siteProfileName = () => { try { const p = JSON.parse(lsGet('amProfile') || 'null'); return p ? (p.displayName || p.name || '') : ''; } catch { return ''; } };
+/** Войти по сессии сайта. После выхода из Dialogue Cards та же сессия сайта сама больше не входит. */
+export async function loginWithSite({ force = false } = {}) {
+  const s = siteSession();
+  if (!s || !session.config.siteLogin) return false;
+  if (!force && lsGet('dc_site_skip') === s) return false;
+  try { await api('/api/auth/site', { method: 'POST', body: { session: s } }); lsSet('dc_site_skip', ''); return true; } catch { return false; }
+}
+export const skipSiteAutoLogin = () => lsSet('dc_site_skip', siteSession());
+
 export async function refreshSession() {
   try {
     const [me, cfg] = await Promise.all([api('/api/me'), api('/api/config')]);
     session.user = me.user; session.showDemo = me.showDemo; session.config = cfg;
+    if (!session.user && await loginWithSite()) {
+      const again = await api('/api/me');
+      session.user = again.user; session.showDemo = again.showDemo;
+    }
   } catch { /* сайт работает и без этого */ }
 }
 

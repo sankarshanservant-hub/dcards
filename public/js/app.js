@@ -1,7 +1,7 @@
 import { lang, setLang } from './i18n.js';
 import { esc, tt, u, api, BASE, toast, errorText } from './util.js';
 import { isViewerOpen, handleViewerPopState } from './viewer.js';
-import { session, hasRole, ic, rolesText, refreshSession } from './ui.js';
+import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } from './ui.js';
 import * as pub from './views/public.js';
 import * as tool from './views/meeting-tool.js';
 import * as meet from './views/meetings.js';
@@ -168,7 +168,7 @@ function openMenu() {
       try { await api('/api/demo/login', { method: 'POST', body: { as: d.dataset.demo } }); await refreshSession(); closeMenu(); toast(tt('Вы вошли как: ', 'Signed in as: ') + session.user.publicName); navigate(homeFor()); }
       catch (err) { toast(errorText(err)); }
     }
-    if (e.target.closest('[data-logout]')) { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); await refreshSession(); closeMenu(); navigate('/'); }
+    if (e.target.closest('[data-logout]')) { skipSiteAutoLogin(); await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); await refreshSession(); closeMenu(); navigate('/'); }
   });
   const onKey = (e) => { if (e.key === 'Escape') closeMenu(); };
   document.addEventListener('keydown', onKey);
