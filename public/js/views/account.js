@@ -16,6 +16,7 @@ export function login(ctx) {
         ${stepsBar(step, 2)}
         <h1 style="color:var(--on-navy)">${esc(step === 1 ? tt('Вход и регистрация', 'Sign in or sign up') : tt('Введите код', 'Enter the code'))}</h1>
         <p class="muted">${esc(step === 1 ? tt('Без пароля: пришлём код на email. Если вы здесь впервые, аккаунт создастся автоматически.', 'No password: we will email you a code. If you are new, an account is created automatically.') : tt(`Код отправлен на ${email}. Он действует 15 минут.`, `The code was sent to ${email}. It is valid for 15 minutes.`))}</p>
+        ${step === 1 && session.config.emailLogin === false ? `<div class="notice demo" style="color:var(--on-navy)">${esc(tt('Вход по email заработает после подключения почты. Сейчас роли можно посмотреть через демо-режим ниже.', 'Email sign-in will work once email is connected. For now, try the roles in demo mode below.'))}</div>` : ''}
         ${step === 1 ? `<form class="form" id="f1">
             <label class="field">Email<input type="email" name="email" required autocomplete="email" value="${esc(email)}"></label>
             <p class="form-error" id="err" role="alert"></p>

@@ -306,3 +306,19 @@ test('Демо-данные видны только в демо-режиме и 
   await call('POST', '/api/admin/demo/clear', null, { cookie: adm.cookie });
   assert.equal((await call('GET', '/api/cards', null, { cookie: adm.cookie })).json.cards.filter((c) => c.isDemo).length, 0);
 });
+
+// ---------- демо-роли на публичном сервере не трогают настоящие данные ----------
+test('Демо-роли: изменения только над демо-объектами', async () => {
+  const adm = await call('POST', '/api/demo/login', { as: 'admin' });
+  const cur = await call('POST', '/api/demo/login', { as: 'curator' });
+  assert.equal((await call('POST', '/api/admin/cards/DC-0001/remove', null, { cookie: adm.cookie })).json.error, 'demo_readonly');
+  assert.equal((await call('POST', `/api/admin/users/${artist.user.id}/roles`, { role: 'admin', grant: true }, { cookie: adm.cookie })).json.error, 'demo_readonly');
+  assert.equal((await call('GET', '/api/admin/outbox', null, { cookie: adm.cookie })).status, 403, 'демо-админ не видит журнал писем');
+  const users = await call('GET', '/api/admin/users', null, { cookie: adm.cookie });
+  assert.ok(users.json.users.every((u) => u.isDemo), 'демо-админ видит только демо-пользователей');
+  assert.equal((await call('POST', '/api/admin/cards', null, { cookie: adm.cookie, form: await form({}, [['images', await png(), 'x.png']]) })).json.error, 'demo_readonly');
+  // настоящая работа в очереди
+  const sub = await call('POST', '/api/artist/works', null, { cookie: artist.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['images', await png('#999'), 'r.png']]) });
+  assert.equal((await call('POST', `/api/curation/works/${sub.json.ids[0]}/decide`, { action: 'approve' }, { cookie: cur.cookie })).json.error, 'demo_readonly');
+  assert.equal((await call('GET', '/api/cards/DC-0001')).status, 200);
+});

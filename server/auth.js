@@ -15,6 +15,7 @@ const DEMO_COOKIE = 'dc_demo';
 const TTL_MS = 30 * 24 * 3600 * 1000;
 const ROLES = ['artist', 'curator', 'facilitator', 'admin'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const CPATH = config.basePath || '/';
 
 function loadSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
@@ -49,10 +50,10 @@ const displayName = (u) => (u ? (u.public_name || u.name) : '');
 
 function issue(res, req, userId) {
   const payload = `${userId}.${Date.now() + TTL_MS}`;
-  res.cookie(COOKIE, `${payload}.${sign(payload)}`, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: TTL_MS, path: '/' });
+  res.cookie(COOKIE, `${payload}.${sign(payload)}`, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: TTL_MS, path: CPATH });
   stmt.touch.run(userId);
 }
-function clear(res) { res.clearCookie(COOKIE, { path: '/' }); res.clearCookie(DEMO_COOKIE, { path: '/' }); }
+function clear(res) { res.clearCookie(COOKIE, { path: CPATH }); res.clearCookie(DEMO_COOKIE, { path: CPATH }); }
 
 /** Загружает пользователя сессии в req.user (с ролями) — промежуточный обработчик для всех запросов. */
 function loadUser(req, res, next) {
@@ -174,7 +175,7 @@ function grant(userId, role, by) { if (ROLES.includes(role)) stmt.grant.run(user
 function revoke(userId, role) { stmt.revoke.run(userId, role); }
 
 module.exports = {
-  COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
+  CPATH, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
   loadUser, requireUser, requireRole, issue, clear, publicUser, displayName, rolesOf,
   requestCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, demoUser, grant, revoke,
 };

@@ -65,6 +65,8 @@ const ERRORS = {
   too_many_cards: ['В подборке не больше 40 карт.', 'A selection holds at most 40 cards.'],
   empty: ['Напишите текст.', 'Please write something.'],
   cannot_revoke_own_admin: ['Нельзя снять роль администратора у самого себя.', 'You cannot remove your own admin role.'],
+  demo_readonly: ['Демо-роль меняет только демо-данные. Настоящие карты, работы и встречи ей доступны для просмотра.', 'A demo role can only change demo data. Real cards, works and meetings are view-only for it.'],
+  mail_not_configured: ['Вход по email заработает после подключения почты. Пока можно посмотреть роли через демо-режим.', 'Email sign-in will work once email is connected. For now, try the roles in demo mode.'],
   email_taken: ['Этот email уже у другого пользователя.', 'This email belongs to another user.'],
 };
 export function errorText(e) {

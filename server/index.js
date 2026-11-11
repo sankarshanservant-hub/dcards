@@ -45,6 +45,13 @@ const out = (res, result, okStatus = 200) => (result && result.error
   : res.status(okStatus).json(result));
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const isStaff = (req) => req.has('curator', 'admin');
+// Демо-пользователи (тестовый переключатель ролей) работают только с демо-объектами: настоящие карты, работы,
+// встречи, люди и сообщения им доступны лишь для просмотра.
+const demoOnly = (req, res, isDemoTarget) => {
+  if (!req.user || !req.user.is_demo || isDemoTarget) return true;
+  bad(res, 'demo_readonly', 403); return false;
+};
+const isDemoRow = (table, where, val) => { const r = db.prepare(`SELECT is_demo FROM ${table} WHERE ${where} = ?`).get(val); return !r || !!r.is_demo; };
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -73,8 +80,11 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 });
 
 // ---------- общее ----------
+// Вход по email без подключённой почты возможен только при локальной разработке (код показывается на экране).
+// На сервере (NODE_ENV=production) без SMTP он выключен: иначе войти можно было бы под чужим адресом.
+const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
-  demoMode: config.demoMode, mailConnected: mail.connected(), translationConnected: false,
+  demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), translationConnected: false,
   termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
 }));
 r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
@@ -90,6 +100,7 @@ r.patch('/api/me', auth.requireUser, (req, res) => {
 r.post('/api/auth/request', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!auth.EMAIL_RE.test(email)) return bad(res, 'bad_email');
+  if (!emailLoginEnabled()) return bad(res, 'mail_not_configured', 503);
   const result = await auth.requestCode(email, req.body.lang === 'en' ? 'en' : 'ru');
   res.json({ sent: result.sent, demo: result.demo, failed: !!result.failed, demoCode: result.code, isNew: !db.prepare('SELECT 1 FROM users WHERE email = ?').get(email) });
 }));
@@ -117,13 +128,13 @@ r.post('/api/demo/login', (req, res) => {
   const u = auth.demoUser(String(req.body.as || ''));
   if (!u) return bad(res, 'unknown_role');
   auth.issue(res, req, u.id);
-  res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: '/', maxAge: 30 * 24 * 3600 * 1000 });
+  res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
   res.json({ user: auth.publicUser(u) });
 });
 r.post('/api/demo/view', (req, res) => {
   if (!config.demoMode) return bad(res, 'demo_disabled', 403);
-  if (req.body.on) res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: '/', maxAge: 30 * 24 * 3600 * 1000 });
-  else res.clearCookie(auth.DEMO_COOKIE, { path: '/' });
+  if (req.body.on) res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
+  else res.clearCookie(auth.DEMO_COOKIE, { path: auth.CPATH });
   res.json({ ok: true });
 });
 
@@ -148,7 +159,7 @@ r.post('/api/cards/:code/comments', auth.requireUser, (req, res) => {
   if (!id) return bad(res, 'not_found', 404);
   out(res, community.addComment(id, req.user, req.body.text), 201);
 });
-r.delete('/api/comments/:id', auth.requireUser, (req, res) => out(res, community.deleteComment(Number(req.params.id), req.user, req.has('admin'))));
+r.delete('/api/comments/:id', auth.requireUser, (req, res, next) => (demoOnly(req, res, isDemoRow('comments', 'id', Number(req.params.id)) || !req.has('admin')) ? next() : undefined), (req, res) => out(res, community.deleteComment(Number(req.params.id), req.user, req.has('admin'))));
 r.get('/api/criteria', (req, res) => res.json({ criteria: works.criteriaList() }));
 r.get('/api/terms', (req, res) => res.json({ version: config.termsVersion, draft: true }));
 
@@ -245,6 +256,7 @@ r.get('/api/works/:id', auth.requireUser, (req, res) => {
 // ---------- кураторы ----------
 const curator = auth.requireRole('curator');
 r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queue(req.showDemo), recent: works.recentDecided(req.showDemo), curators: works.curators(), criteria: works.criteriaList(), me: req.user.id }));
+r.use('/api/curation/works/:id', (req, res, next) => (demoOnly(req, res, isDemoRow('works', 'id', Number(req.params.id))) ? next() : undefined));
 r.post('/api/curation/works/:id/decide', curator, (req, res) => out(res, works.decide(req.user, Number(req.params.id), req.body || {})));
 r.post('/api/curation/works/:id/assign', curator, (req, res) => out(res, works.assign(req.user, Number(req.params.id), Number(req.body.to))));
 r.post('/api/curation/works/:id/discuss', curator, (req, res) => out(res, works.discuss(req.user, Number(req.params.id), req.body.comment)));
@@ -266,7 +278,7 @@ r.post('/api/chats/:room', auth.requireUser, (req, res) => {
 
 // ---------- фасилитатор: подборки ----------
 const fac = auth.requireRole('facilitator');
-const ownsCollection = (req, id) => req.has('admin') || collections.ownerOf(id) === req.user.id;
+const ownsCollection = (req, id) => collections.ownerOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('collections', 'id', id)));
 r.get('/api/collections', fac, (req, res) => res.json({
   collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => !c.isDemo || req.showDemo), baseUrl: baseUrl(req) + B,
 }));
@@ -294,7 +306,7 @@ r.delete('/api/collections/:id', fac, (req, res) => {
 });
 
 // ---------- фасилитатор: встречи ----------
-const ownsMeeting = (req, id) => req.has('admin') || meetings.facilitatorOf(id) === req.user.id;
+const ownsMeeting = (req, id) => meetings.facilitatorOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('meetings', 'id', id)));
 r.get('/api/fac/meetings', fac, (req, res) => res.json({ meetings: meetings.mine(req.user.id), timezones: Intl.supportedValuesOf('timeZone') }));
 r.post('/api/fac/meetings', fac, (req, res) => out(res, meetings.create(req.user, req.body || {}), 201));
 r.get('/api/fac/meetings/:id', fac, (req, res) => {
@@ -345,6 +357,19 @@ r.get('/api/print', auth.requireUser, (req, res) => {
 // ---------- администратор ----------
 const admin = express.Router();
 admin.use(auth.requireRole('admin'));
+// Демо-администратор: изменения — только над демо-объектами; журнал писем и чужие email ему не показываются.
+admin.use((req, res, next) => {
+  if (!req.user.is_demo) return next();
+  const p = req.path; const m = req.method;
+  if (m === 'GET') return p === '/outbox' ? bad(res, 'demo_readonly', 403) : next();
+  let ok = false; let mm;
+  if (p === '/demo/seed' || p === '/demo/clear') ok = true;
+  else if ((mm = p.match(/^\/users\/(\d+)/))) ok = isDemoRow('users', 'id', Number(mm[1]));
+  else if ((mm = p.match(/^\/applications\/(\d+)/))) ok = isDemoRow('fac_applications', 'user_id', Number(mm[1]));
+  else if ((mm = p.match(/^\/meetings\/(\d+)/))) ok = isDemoRow('meetings', 'id', Number(mm[1]));
+  else if ((mm = p.match(/^\/cards\/(DC-\d+)/)) && p !== '/cards/bulk-author') ok = isDemoRow('cards', 'code', mm[1]);
+  return ok ? next() : bad(res, 'demo_readonly', 403);
+});
 admin.get('/overview', (req, res) => {
   const count = (sql, ...a) => db.prepare(sql).get(...a).n;
   const byStatus = (table, col = 'status') => Object.fromEntries(db.prepare(`SELECT ${col} AS s, COUNT(*) AS n FROM ${table} GROUP BY ${col}`).all().map((x) => [x.s, x.n]));
@@ -358,7 +383,7 @@ admin.get('/overview', (req, res) => {
   });
 });
 admin.get('/users', (req, res) => {
-  const rows = db.prepare(`SELECT * FROM users WHERE ${req.showDemo ? '1=1' : 'is_demo = 0'} ORDER BY is_demo, id`).all();
+  const rows = db.prepare(`SELECT * FROM users WHERE ${req.user.is_demo ? 'is_demo = 1' : req.showDemo ? '1=1' : 'is_demo = 0'} ORDER BY is_demo, id`).all();
   res.json({ users: rows.map((u) => ({ ...auth.publicUser(u), createdAt: u.created_at, lastLoginAt: u.last_login_at })) });
 });
 admin.post('/users/:id/roles', (req, res) => {
