@@ -1,0 +1,35 @@
+{
+  "name": "dialogue-cards",
+  "version": "1.0.0",
+  "description": "Dialogue Cards — библиотека иллюстраций и подборки для встреч Dialogue Flow",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js",
+    "import-cards": "node scripts/import-cards.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sankarshanservant-hub/dcards.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/sankarshanservant-hub/dcards/issues"
+  },
+  "homepage": "https://github.com/sankarshanservant-hub/dcards#readme",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "multer": "^2.5.0",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.5"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}
