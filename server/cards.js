@@ -80,30 +80,39 @@ async function createFromImage(buffer, { author = '', originalName = '' } = {}) 
   return insert();
 }
 
-/** При пустой базе загружает первую колоду из seed/cards (подготовлена scripts/import-cards.js). */
-function seedIfEmpty() {
-  const count = db.prepare('SELECT COUNT(*) AS n FROM cards').get().n;
-  if (count > 0) return false;
+/**
+ * Первая колода из seed/cards (подготовлена scripts/import-cards.js).
+ * При пустой базе — добавляет карты; при существующей — обновляет изображения карт из набора
+ * (например, после обрезки полей) и проставляет автора там, где он не указан. Коды и статистика не меняются.
+ */
+function syncSeed() {
   const seedDir = path.join(config.root, 'seed', 'cards');
   const manifestFile = path.join(seedDir, 'manifest.json');
-  if (!fs.existsSync(manifestFile)) return false;
+  if (!fs.existsSync(manifestFile)) return;
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const author = manifest.author || '';
   const publishedAt = new Date().toISOString();
+  const findSeed = db.prepare(`SELECT * FROM cards WHERE number = ? AND source = 'seed'`);
+  const update = db.prepare(`UPDATE cards SET width = ?, height = ?, author = CASE WHEN author = '' THEN ? ELSE author END WHERE id = ?`);
+  let added = 0;
   const run = db.transaction(() => {
     for (const c of manifest.cards) {
       const name = `seed-${c.file}`;
       fs.copyFileSync(path.join(seedDir, 'full', c.file), path.join(config.mediaDir, 'full', name));
       fs.copyFileSync(path.join(seedDir, 'thumb', c.file), path.join(config.mediaDir, 'thumb', name));
+      const existing = findSeed.get(c.number);
+      if (existing) { update.run(c.width, c.height, author, existing.id); continue; }
+      if (db.prepare('SELECT 1 FROM cards WHERE number = ?').get(c.number)) continue; // номер занят загруженной картой
       stmt.insert.run({
-        code: codeFor(c.number), number: c.number, author: '',
+        code: codeFor(c.number), number: c.number, author,
         image_full: name, image_thumb: name, image_original: null,
         width: c.width, height: c.height, source: 'seed', published_at: publishedAt,
       });
+      added += 1;
     }
   });
   run();
-  console.log(`Seeded ${manifest.cards.length} cards from seed/cards`);
-  return true;
+  if (added) console.log(`Seeded ${added} cards from seed/cards`);
 }
 
-module.exports = { codeFor, publicCard, listPublished, getPublished, mediaStatus, createFromImage, seedIfEmpty };
+module.exports = { codeFor, publicCard, listPublished, getPublished, mediaStatus, createFromImage, syncSeed };

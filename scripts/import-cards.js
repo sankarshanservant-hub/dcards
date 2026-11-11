@@ -2,12 +2,14 @@
 /*
  * Converts print files of cards (PDF or images) into web images for the seed set.
  *
- *   node scripts/import-cards.js <folder> [--out seed/cards]
+ *   node scripts/import-cards.js <folder> [--out seed/cards] [--bleed-mm 3] [--dpi 330] [--author "Имя"]
  *
  * - Files named 1.pdf … 40.pdf (or 1.png, 1.jpg …) become cards in numeric order.
  * - A file whose name contains "back" is treated as the card back (рубашка).
  * - PDFs are rendered with poppler's `pdftoppm` (must be installed) at print resolution.
- * - The illustration is NOT cropped or retouched: only converted to RGB WebP and resized.
+ * - --bleed-mm: срезать поля под обрез с каждой стороны (как при резке в типографии). Для PNG/JPG укажите --dpi
+ *   их разрешение; PDF рендерятся в 330 dpi. Больше иллюстрация никак не меняется: только RGB WebP и размер.
+ * - --author: автор всех карт этого набора (записывается в manifest.json).
  */
 const fs = require('fs');
 const os = require('os');
@@ -23,6 +25,11 @@ async function main() {
   const inDir = args[0];
   const outIdx = args.indexOf('--out');
   const outDir = path.resolve(outIdx > -1 ? args[outIdx + 1] : 'seed/cards');
+  const opt = (name, def) => { const i = args.indexOf(name); return i > -1 ? args[i + 1] : def; };
+  const bleedMm = Number(opt('--bleed-mm', 0));
+  const dpi = Number(opt('--dpi', 330));
+  const author = opt('--author', '');
+  const bleedPx = Math.round((bleedMm / 25.4) * dpi);
   if (!inDir) {
     console.error('Usage: node scripts/import-cards.js <folder> [--out seed/cards]');
     process.exit(1);
@@ -50,21 +57,29 @@ async function main() {
     return target + '.png';
   };
 
-  const manifest = { generatedAt: new Date().toISOString(), cards: [], back: null };
+  // Срезаем поля под обрез одинаково со всех сторон.
+  const trimmed = async (raster) => {
+    if (!bleedPx) return sharp(raster).toColorspace('srgb');
+    const m = await sharp(raster).metadata();
+    const buf = await sharp(raster).extract({ left: bleedPx, top: bleedPx, width: m.width - 2 * bleedPx, height: m.height - 2 * bleedPx }).toBuffer();
+    return sharp(buf).toColorspace('srgb');
+  };
+
+  const manifest = { generatedAt: new Date().toISOString(), bleedMm, author, cards: [], back: null };
   for (const c of cards) {
     const raster = toRaster(c.file);
     const name = String(c.n).padStart(3, '0') + '.webp';
-    const full = await sharp(raster).toColorspace('srgb')
+    const full = await (await trimmed(raster))
       .resize({ height: FULL_HEIGHT, withoutEnlargement: true })
       .webp({ quality: 84 }).toFile(path.join(outDir, 'full', name));
-    await sharp(raster).toColorspace('srgb').resize({ width: THUMB_WIDTH })
+    await (await trimmed(raster)).resize({ width: THUMB_WIDTH })
       .webp({ quality: 80 }).toFile(path.join(outDir, 'thumb', name));
     manifest.cards.push({ number: c.n, file: name, width: full.width, height: full.height, source: c.file });
     process.stdout.write('.');
   }
   if (back) {
     const raster = toRaster(back);
-    const full = await sharp(raster).toColorspace('srgb').resize({ height: FULL_HEIGHT, withoutEnlargement: true })
+    const full = await (await trimmed(raster)).resize({ height: FULL_HEIGHT, withoutEnlargement: true })
       .webp({ quality: 84 }).toFile(path.join(outDir, 'back.webp'));
     manifest.back = { file: 'back.webp', width: full.width, height: full.height, source: back };
   }

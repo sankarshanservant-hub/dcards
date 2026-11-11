@@ -11,7 +11,7 @@ const auth = require('./auth');
 const cards = require('./cards');
 const collections = require('./collections');
 
-cards.seedIfEmpty();
+cards.syncSeed();
 
 const app = express();
 app.set('trust proxy', true);

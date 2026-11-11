@@ -40,6 +40,7 @@ test('первая колода загружена: 40 карт с постоя�
   const r = await call('GET', '/api/cards');
   assert.equal(r.json.cards.length, 40);
   assert.ok(r.json.cards.every((c) => /^DC-\d{4}$/.test(c.code)));
+  assert.equal((await call('GET', '/api/cards/DC-0001')).json.author, 'Ананда Майя');
 });
 
 test('служебные действия без входа запрещены', async () => {
