@@ -1,7 +1,7 @@
 // Полноэкранный просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием,
 // листание свайпом и стрелками. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
 import { t, dateLabel } from './i18n.js';
-import { esc, api } from './util.js';
+import { esc, api, u, tt } from './util.js';
 
 let current = null; // открытый просмотр
 
@@ -196,10 +196,10 @@ export function openViewer(opts) {
         <div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>
         <p class="viewer-count">${opts.collection.isTest ? esc(t('viewer.testNoCount'))
           : esc(typeof count === 'number' ? t('viewer.selectedCount', { n: count }) : '')}</p>
-        <button class="link-btn link-btn--light" type="button" data-cancel>${esc(t('viewer.cancel'))}</button>`;
+        <button class="link-btn" type="button" data-cancel>${esc(t('viewer.cancel'))}</button>`;
     } else {
       bottom.innerHTML = `
-        <button class="btn btn--gold btn--wide" type="button" data-choose>${esc(t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
+        <button class="btn yellow wide" type="button" data-choose>${esc(t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
         ${choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}`;
     }
   }
@@ -233,6 +233,7 @@ export function openViewer(opts) {
           ${info && info.publishedAt ? `<div><dt>${esc(t('viewer.published'))}</dt><dd>${esc(dateLabel(info.publishedAt))}</dd></div>` : ''}
         </dl>
         ${countLine}
+        ${opts.mode === 'library' && info && typeof info.comments === 'number' ? `<a class="sheet-link" href="${u('/cards/' + code)}">${esc(tt('Обсуждение карты', 'Card discussion'))} (${info.comments}) →</a>` : ''}
         <p class="sheet-hint">${esc(t('viewer.zoomHint'))}</p>`;
     };
     draw(d || c);
@@ -253,7 +254,11 @@ export function openViewer(opts) {
   $('[data-info]').addEventListener('click', () => toggleSheet());
   $('[data-prev]').addEventListener('click', () => go(-1));
   $('[data-next]').addEventListener('click', () => go(1));
-  sheet.addEventListener('click', () => toggleSheet(false));
+  sheet.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (a) { e.preventDefault(); const href = a.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
+    toggleSheet(false);
+  });
   const onKey = (e) => {
     if (e.key === 'Escape') { if (!sheet.hidden) toggleSheet(false); else history.back(); }
     else if (e.key === 'ArrowRight') go(1);

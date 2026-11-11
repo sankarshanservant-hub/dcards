@@ -1,4 +1,11 @@
-import { t } from './i18n.js';
+import { t, lang } from './i18n.js';
+
+// Адрес приложения (если оно стоит в подпапке, сервер подставляет её в <meta name="dc-base">).
+export const BASE = (document.querySelector('meta[name="dc-base"]')?.content || '').replace(/\/$/, '');
+export const u = (p) => BASE + p;
+
+/** Текст на текущем языке: tt('по-русски', 'in English'). */
+export const tt = (ru, en) => (lang === 'en' ? en : ru);
 
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -11,7 +18,7 @@ export class ApiError extends Error {
 export async function api(path, { method = 'GET', body, form } = {}) {
   let res;
   try {
-    res = await fetch(path, {
+    res = await fetch(BASE + path, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: form || (body ? JSON.stringify(body) : undefined),
@@ -26,8 +33,43 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   return data;
 }
 
+const ERRORS = {
+  network: ['Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.', 'Could not reach the server. Check your connection and try again.'],
+  auth_required: ['Нужно войти.', 'Please sign in.'],
+  forbidden: ['У этой роли нет доступа к действию.', 'This role has no access to this action.'],
+  criteria_required: ['Выберите хотя бы один критерий — это причина решения.', 'Choose at least one criterion as the reason.'],
+  replacement_type_required: ['Укажите тип изменения: исправление той же карты или новая карта.', 'Choose the change type: fix of the same card or a new card.'],
+  terms_required: ['Нужно принять условия публикации.', 'Please accept the publication terms.'],
+  no_images: ['Добавьте хотя бы одно изображение.', 'Add at least one image.'],
+  bad_images: ['Файлы не похожи на изображения.', 'These files do not look like images.'],
+  full: ['Места на эту дату закончились.', 'No seats left for this date.'],
+  already_registered: ['Этот email уже записан на эту дату.', 'This email is already registered for this date.'],
+  closed: ['Запись на эту встречу закрыта.', 'Registration for this meeting is closed.'],
+  past: ['Эта дата уже прошла.', 'This date has passed.'],
+  name_required: ['Укажите имя.', 'Please enter your name.'],
+  email_required: ['Укажите email.', 'Please enter your email.'],
+  bad_email: ['Проверьте email.', 'Check the email address.'],
+  wrong_code: ['Код не подходит.', 'Wrong code.'],
+  code_expired: ['Код устарел — запросите новый.', 'The code has expired — request a new one.'],
+  too_many_attempts: ['Слишком много попыток. Подождите несколько минут.', 'Too many attempts. Wait a few minutes.'],
+  wrong_password: ['Неверный пароль.', 'Wrong password.'],
+  bad_timezone: ['Выберите часовой пояс из списка.', 'Pick a time zone from the list.'],
+  required_fields: ['Заполните название, страну и город.', 'Fill in the title, country and city.'],
+  date_required: ['Добавьте дату встречи.', 'Add a meeting date.'],
+  bad_date: ['Проверьте дату и время.', 'Check the date and time.'],
+  capacity_required: ['Укажите число мест.', 'Enter the number of seats.'],
+  capacity_below_registrations: ['Записей уже больше, чем новое число мест.', 'There are already more registrations than the new capacity.'],
+  course_not_finished: ['Отметьте все главы курса.', 'Mark all course chapters as read.'],
+  quiz_not_passed: ['Ответы на вопросы проверки пока не верны.', 'Some quiz answers are not correct yet.'],
+  not_editable: ['Эту работу сейчас нельзя изменить.', 'This work cannot be changed now.'],
+  too_many_cards: ['В подборке не больше 40 карт.', 'A selection holds at most 40 cards.'],
+  empty: ['Напишите текст.', 'Please write something.'],
+  cannot_revoke_own_admin: ['Нельзя снять роль администратора у самого себя.', 'You cannot remove your own admin role.'],
+  email_taken: ['Этот email уже у другого пользователя.', 'This email belongs to another user.'],
+};
 export function errorText(e) {
-  if (e && e.code === 'network') return t('err.network');
+  const m = e && ERRORS[e.code];
+  if (m) return lang === 'en' ? m[1] : m[0];
   return t('err.generic');
 }
 
@@ -54,5 +96,10 @@ export function toast(msg) {
   el.textContent = msg;
   el.classList.add('is-visible');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2600);
+  toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2800);
 }
+
+const loc = () => (lang === 'en' ? 'en-GB' : 'ru-RU');
+export const fmtDate = (iso, opts = { day: 'numeric', month: 'long', year: 'numeric' }) => new Intl.DateTimeFormat(loc(), opts).format(new Date(iso));
+export const fmtDateTime = (iso, tz) => new Intl.DateTimeFormat(loc(), { dateStyle: 'medium', timeStyle: 'short', ...(tz ? { timeZone: tz } : {}) }).format(new Date(iso));
+export const fmtTz = (iso, tz, opts) => new Intl.DateTimeFormat(loc(), { ...opts, timeZone: tz }).format(new Date(iso));

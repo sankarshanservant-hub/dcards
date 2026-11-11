@@ -47,11 +47,13 @@ const stmt = {
     FROM collection_cards cc JOIN cards k ON k.id = cc.card_id WHERE cc.collection_id = @cid`),
 };
 
-function getPublic(slug) {
+function getPublic(slug, showDemo) {
   const col = stmt.bySlug.get(slug);
   if (!col) return null;
-  const cards = stmt.cards.all(col.id).filter((r) => r.status === 'published').map((r) => publicCard(r, { withDetails: true }));
-  return { col, data: { slug: col.slug, title: col.title, isTest: !!col.is_test, cards } };
+  // Демо-карты видны в подборке, если сама подборка демонстрационная или включён демо-просмотр.
+  const cards = stmt.cards.all(col.id).filter((r) => r.status === 'published' && (!r.is_demo || col.is_demo || showDemo))
+    .map((r) => publicCard(r, { withDetails: true }));
+  return { col, data: { slug: col.slug, title: col.title, isTest: !!(col.is_test || col.is_demo), isDemo: !!col.is_demo, cards } };
 }
 
 function visitorState(col, visitorId) {
@@ -67,7 +69,7 @@ function visitorState(col, visitorId) {
 /** Участник открыл подборку: отмечаем, что карты были ему предложены (один раз на браузер). */
 const recordVisit = db.transaction((col, visitorId) => {
   for (const r of stmt.cards.all(col.id)) {
-    if (r.status === 'published') stmt.insertOffer.run(col.id, r.id, visitorId, col.is_test);
+    if (r.status === 'published') stmt.insertOffer.run(col.id, r.id, visitorId, col.is_test || col.is_demo ? 1 : 0);
   }
 });
 
@@ -82,7 +84,7 @@ const select = db.transaction((col, visitorId, code, round) => {
   const current = stmt.activeInRound.get(col.id, visitorId, round);
   if (current && current.card_id === card.id) return { ok: true };
   if (current) stmt.cancel.run(current.id);
-  stmt.insertSelection.run(col.id, card.id, visitorId, round, col.is_test);
+  stmt.insertSelection.run(col.id, card.id, visitorId, round, col.is_test || col.is_demo ? 1 : 0);
   return { ok: true };
 });
 
@@ -94,20 +96,24 @@ const unselect = db.transaction((col, visitorId, round) => {
 
 // ---------- управление (владелец проекта) ----------
 
-function listAll() {
-  return stmt.all.all().map((c) => ({
-    id: c.id, slug: c.slug, title: c.title, isTest: !!c.is_test,
+function listAll(ownerId = null) {
+  return stmt.all.all().filter((c) => ownerId === null || c.owner_id === ownerId).map((c) => ({
+    id: c.id, slug: c.slug, title: c.title, isTest: !!c.is_test, ownerId: c.owner_id, isDemo: !!c.is_demo,
+    ownerName: c.owner_id ? (db.prepare('SELECT COALESCE(NULLIF(public_name, \'\'), name) AS n FROM users WHERE id = ?').get(c.owner_id) || {}).n : '',
     cardCount: c.card_count, unavailableCount: c.unavailable_count,
     visitors: c.visitors, selections: c.selections, updatedAt: c.updated_at,
   }));
 }
 
-function create(title, isTest = false) {
+function create(title, isTest = false, ownerId = null, isDemo = false) {
   let slug;
   do slug = newSlug(); while (stmt.bySlug.get(slug));
   const info = stmt.insert.run(slug, String(title || '').trim().slice(0, 120) || 'Новая подборка', isTest ? 1 : 0);
+  db.prepare('UPDATE collections SET owner_id = ?, is_demo = ? WHERE id = ?').run(ownerId, isDemo ? 1 : 0, info.lastInsertRowid);
   return info.lastInsertRowid;
 }
+const ownerOf = (id) => (stmt.byId.get(id) || {}).owner_id ?? null;
+const exists = (id) => !!stmt.byId.get(id);
 
 function adminDetail(id) {
   const col = stmt.byId.get(id);
@@ -120,7 +126,7 @@ function adminDetail(id) {
     offers: stats.get(r.id)?.offers || 0,
   }));
   const visitors = db.prepare('SELECT COUNT(DISTINCT visitor_id) AS n FROM card_offers WHERE collection_id = ?').get(id).n;
-  return { id: col.id, slug: col.slug, title: col.title, isTest: !!col.is_test, updatedAt: col.updated_at, visitors, cards };
+  return { id: col.id, slug: col.slug, title: col.title, isTest: !!col.is_test, isDemo: !!col.is_demo, ownerId: col.owner_id, updatedAt: col.updated_at, visitors, cards };
 }
 
 function update(id, { title, isTest }) {
@@ -159,4 +165,4 @@ function remove(id) {
   return db.prepare('DELETE FROM collections WHERE id = ?').run(id).changes > 0;
 }
 
-module.exports = { getPublic, visitorState, recordVisit, select, unselect, listAll, create, adminDetail, update, setCards, remove, stmt };
+module.exports = { ownerOf, exists, getPublic, visitorState, recordVisit, select, unselect, listAll, create, adminDetail, update, setCards, remove, stmt };
