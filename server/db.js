@@ -1,12 +1,35 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+// Встроенная в Node.js 22 база SQLite (node:sqlite): не нужна сборка нативных модулей на сервере.
+// Предупреждение «SQLite is an experimental feature» не выводим — остальные предупреждения Node остаются.
+const emitWarning = process.emitWarning;
+process.emitWarning = (w, ...rest) => (String(w && w.message || w).includes('SQLite') ? undefined : emitWarning.call(process, w, ...rest));
+const { DatabaseSync } = require('node:sqlite');
 const config = require('./config');
 
 fs.mkdirSync(config.dataDir, { recursive: true });
-const db = new Database(path.join(config.dataDir, 'dcards.sqlite'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const db = new DatabaseSync(path.join(config.dataDir, 'dcards.sqlite'));
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON');
+db.exec('PRAGMA busy_timeout = 5000');
+
+// db.transaction(fn) — как в better-sqlite3: всё внутри fn выполняется атомарно; вложенные вызовы — через SAVEPOINT.
+let depth = 0;
+db.transaction = (fn) => (...args) => {
+  const sp = `sp${depth}`;
+  db.exec(depth === 0 ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${sp}`);
+  depth += 1;
+  try {
+    const result = fn(...args);
+    depth -= 1;
+    db.exec(depth === 0 ? 'COMMIT' : `RELEASE ${sp}`);
+    return result;
+  } catch (e) {
+    depth -= 1;
+    db.exec(depth === 0 ? 'ROLLBACK' : `ROLLBACK TO ${sp}; RELEASE ${sp}`);
+    throw e;
+  }
+};
 
 const NOW = "(strftime('%Y-%m-%dT%H:%M:%fZ','now'))";
 

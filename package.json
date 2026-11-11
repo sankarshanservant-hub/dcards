@@ -22,7 +22,6 @@
   },
   "homepage": "https://github.com/sankarshanservant-hub/dcards#readme",
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "cookie-parser": "^1.4.7",
     "express": "^4.22.3",
     "multer": "^2.5.0",
@@ -32,7 +31,7 @@
   },
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "devDependencies": {
     "qrcode-generator": "^1.4.4"
