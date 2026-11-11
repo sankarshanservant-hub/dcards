@@ -1,0 +1,733 @@
+<title>Dialogue Cards</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Dialogue Cards — иллюстрации для живого разговора и подборки карт для встреч Dialogue Flow.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: светлая «комната» с золотом из логотипа, карты — главное; просмотр карты — на тёмной сцене.
+   Сознательно одна (светлая) тема для страницы и тёмная для просмотра — как у печатной колоды с тёмной рубашкой. */
+:root {
+  --bg: #faf7f1;
+  --surface: #ffffff;
+  --ink: #1e1b16;
+  --muted: #6d6556;
+  --line: #e7dfcf;
+  --gold: #c09a48;
+  --gold-deep: #8a6a2a;
+  --gold-soft: #f3ead6;
+  --stage: #0f0e0c;
+  --stage-ink: #f1e9d8;
+  --stage-muted: #b8ad97;
+  --danger: #a3392b;
+  --font-head: 'Cormorant Garamond', 'Times New Roman', Georgia, serif;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --radius: 14px;
+  color-scheme: light;
+}
+@media (min-width: 720px) { :root { --gutter-l: max(32px, env(safe-area-inset-left, 0px)); --gutter-r: max(32px, env(safe-area-inset-right, 0px)); } }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--font-ui); -webkit-text-size-adjust: 100%; }
+body.no-scroll { overflow: hidden; }
+img { max-width: 100%; display: block; }
+a { color: var(--gold-deep); }
+button { font: inherit; color: inherit; }
+h1, h2 { font-family: var(--font-head); font-weight: 600; line-height: 1.12; margin: 0 0 .4em; text-wrap: balance; letter-spacing: .01em; }
+h1 { font-size: clamp(2rem, 6.2vw, 3.1rem); }
+h2 { font-size: clamp(1.45rem, 4vw, 1.9rem); }
+p { margin: 0 0 1em; }
+.muted { color: var(--muted); }
+.small { font-size: .875rem; }
+.lead { font-size: 1.125rem; color: #3b362d; max-width: 36em; }
+.eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .75rem; color: var(--gold-deep); margin: 0 0 .6em; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); }
+
+/* шапка */
+.top { border-bottom: 1px solid var(--line); background: var(--bg); }
+.top .wrap { display: flex; align-items: center; gap: 10px; padding-block: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; text-decoration: none; color: var(--ink); min-width: 0; }
+.brand img { width: 70px; height: auto; mix-blend-mode: multiply; }
+.brand span { font: 600 1.25rem var(--font-head); white-space: nowrap; }
+.nav { display: flex; gap: 2px; }
+.nav a { padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: .95rem; white-space: nowrap; }
+.nav a:hover { background: var(--gold-soft); }
+.nav a.on { color: var(--gold-deep); background: var(--gold-soft); }
+.lang { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 9px; font: 600 .8rem var(--font-ui); color: var(--muted); cursor: pointer; }
+@media (max-width: 480px) { .brand span { display: none; } .nav a { padding: 8px 7px; font-size: .9rem; } }
+
+main { min-height: 60vh; }
+.page { padding-block: 26px 40px; }
+.foot { border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+.foot .wrap { padding-block: 22px calc(22px + var(--safe-b)); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+/* кнопки и поля */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: 500 .95rem var(--font-ui); text-decoration: none; cursor: pointer; transition: border-color .15s, background .15s; }
+.btn:hover { border-color: var(--gold); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.dark { background: var(--ink); border-color: var(--ink); color: #f7ecd2; }
+.btn.dark:hover { background: #2d2820; border-color: var(--gold); }
+.btn.sm { min-height: 38px; padding: 7px 14px; font-size: .875rem; }
+.linkbtn { background: none; border: 0; padding: 6px 0; color: var(--gold-deep); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: .9rem; }
+.linkbtn.danger { color: var(--danger); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+input[type=text] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; min-height: 44px; width: 100%; }
+input[type=text]:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(192, 154, 72, .18); }
+label.field { display: grid; gap: 6px; font-size: .9rem; color: var(--muted); max-width: 520px; }
+
+/* главная */
+.hero { display: grid; gap: 26px; align-items: center; padding-block: 26px 8px; }
+@media (min-width: 880px) { .hero { grid-template-columns: 1.1fr .9fr; padding-top: 52px; } }
+.hero-logo { width: min(300px, 76%); height: auto; mix-blend-mode: multiply; margin: 0 0 20px -6px; }
+.fan { position: relative; height: clamp(250px, 60vw, 440px); }
+.fan img { position: absolute; top: 50%; left: 50%; width: clamp(124px, 29vw, 220px); height: auto; border-radius: 10px; box-shadow: 0 12px 34px rgba(30, 27, 22, .22); }
+.fan img:nth-child(1) { transform: translate(-50%, -50%) translateX(-36%) rotate(-11deg); }
+.fan img:nth-child(2) { transform: translate(-50%, -54%); z-index: 2; }
+.fan img:nth-child(3) { transform: translate(-50%, -50%) translateX(36%) rotate(11deg); }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+@media (min-width: 760px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+.steps li { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.steps b { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold-deep); font: 600 1.2rem var(--font-head); }
+.steps p { margin: 4px 0 0; }
+.flow { background: var(--ink); color: #efe6d3; border-radius: 20px; padding: clamp(22px, 5vw, 44px); margin-top: 26px; }
+.flow h2 { color: #e9cf8f; }
+.flow p { max-width: 44em; }
+.flow .muted { color: #b9ae98; margin: 0; }
+.edition { margin-top: 22px; padding: 14px 16px; border: 1px dashed var(--gold); border-radius: 12px; font-size: .9rem; color: #4d463a; max-width: 52em; }
+
+/* сетка карт */
+.grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+@media (min-width: 600px) { .grid { gap: 14px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } }
+@media (min-width: 1100px) { .grid { grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); } }
+.tile { position: relative; display: block; width: 100%; padding: 0; border: 0; background: #e9e3d7; border-radius: 9px; overflow: hidden; cursor: zoom-in; box-shadow: 0 1px 2px rgba(30, 27, 22, .08); transition: transform .15s, box-shadow .15s; }
+.tile img { width: 100%; height: auto; }
+@media (hover: hover) { .tile:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(30, 27, 22, .16); } }
+.tile.chosen, .cell.in .tile { box-shadow: 0 0 0 3px var(--gold), 0 6px 18px rgba(30, 27, 22, .16); }
+.check { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--gold); display: grid; place-items: center; box-shadow: 0 1px 4px rgba(0, 0, 0, .3); }
+.check svg { width: 18px; height: 18px; fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.rnd { position: absolute; top: 6px; right: 6px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: rgba(30, 27, 22, .72); color: #f3e3bd; font-size: .75rem; display: grid; place-items: center; }
+
+/* подборка участника */
+.collection { padding-bottom: 120px; }
+.note { margin-top: 22px; font-size: .85rem; color: var(--muted); max-width: 36em; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: rgba(250, 247, 241, .95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+.bar .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px calc(10px + var(--safe-b)); min-height: 60px; }
+.bar-thumb { flex: none; width: 40px; padding: 0; border: 0; border-radius: 6px; overflow: hidden; cursor: pointer; box-shadow: 0 0 0 2px var(--gold); background: none; }
+.bar-text { flex: 1; display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.bar-text span { font-size: .8rem; color: var(--muted); }
+
+/* сборка подборки */
+.maker { display: grid; gap: 22px; }
+@media (min-width: 980px) { .maker { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; } .share { position: sticky; top: 16px; } }
+.share { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.share h2 { font-size: 1.35rem; margin: 0; }
+.share code { display: block; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; font: .82rem ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; user-select: all; }
+.share .qr-mini { width: 168px; height: 168px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.share .qr-mini svg { width: 100%; height: 100%; display: block; }
+.cells { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+@media (min-width: 600px) { .cells { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); } }
+.cell { position: relative; display: grid; gap: 4px; }
+.cell .tile { cursor: pointer; }
+.cell.off .tile { opacity: .45; cursor: not-allowed; }
+.cell small { font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.zoom-btn { position: absolute; top: 5px; left: 5px; width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer; background: rgba(30, 27, 22, .72); color: #fff; display: grid; place-items: center; }
+.zoom-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.saved { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.saved li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.saved strong { flex: 1 1 140px; min-width: 0; }
+.ask { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; background: var(--gold-soft); border-radius: 10px; font-size: .9rem; }
+.error-box { padding: 14px 16px; background: #fbeee9; border: 1px solid #efcfc6; border-radius: 10px; color: #6d2a20; }
+
+/* просмотр карты */
+.viewer { position: fixed; inset: 0; z-index: 100; background: var(--stage); color: var(--stage-ink); opacity: 0; transition: opacity .18s; touch-action: none; --top: calc(56px + env(safe-area-inset-top, 0px)); --bottom: calc(12px + var(--safe-b)); }
+.viewer.col { --bottom: calc(118px + var(--safe-b)); }
+.viewer.open { opacity: 1; }
+.stage { position: absolute; left: env(safe-area-inset-left, 0px); right: env(safe-area-inset-right, 0px); top: var(--top); bottom: var(--bottom); overflow: hidden; touch-action: none; cursor: zoom-in; }
+.viewer.zoomed .stage { cursor: grab; }
+.vimg { position: absolute; max-width: none; transform-origin: 50% 50%; border-radius: 8px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; will-change: transform; }
+.viewer.zoomed .vimg { border-radius: 0; }
+.chrome { transition: opacity .2s; }
+.viewer.bare .chrome { opacity: 0; pointer-events: none; }
+.vtop { position: absolute; top: 0; left: 0; right: 0; height: var(--top); padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px)); display: flex; align-items: center; justify-content: space-between; }
+.counter { font-size: .85rem; color: var(--stage-muted); font-variant-numeric: tabular-nums; }
+.ibtn { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .08); color: var(--stage-ink); display: grid; place-items: center; cursor: pointer; }
+.ibtn:hover { background: rgba(255, 255, 255, .16); }
+.ibtn svg, .vnav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.vnav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; border: 0; border-radius: 12px; background: rgba(255, 255, 255, .06); color: var(--stage-ink); cursor: pointer; display: none; place-items: center; }
+.vnav.prev { left: max(12px, env(safe-area-inset-left, 0px)); } .vnav.next { right: max(12px, env(safe-area-inset-right, 0px)); }
+@media (hover: hover) and (pointer: fine) { .vnav { display: grid; } }
+.vbottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px var(--gutter-r) calc(14px + var(--safe-b)) var(--gutter-l); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; max-width: 520px; margin: 0 auto; min-height: calc(118px + var(--safe-b)); }
+.vbottom .btn.gold { width: 100%; background: var(--gold); border-color: var(--gold); color: #1b1710; font-weight: 600; min-height: 52px; font-size: 1rem; }
+.vbottom .btn.gold:hover { background: #cfac5d; }
+.pill { display: flex; align-items: center; gap: 8px; color: #e9cf8f; font-weight: 600; font-size: 1.05rem; }
+.pill svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.vhint { margin: 0; font-size: .85rem; color: var(--stage-muted); }
+.linkbtn.light { color: #e9dcbf; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; background: #1b1915; border-top: 1px solid #2f2b23; border-radius: 18px 18px 0 0; padding: 10px var(--gutter-r) calc(22px + var(--safe-b)) var(--gutter-l); max-width: 560px; margin: 0 auto; box-shadow: 0 -10px 30px rgba(0, 0, 0, .4); }
+.handle { width: 40px; height: 4px; border-radius: 2px; background: #4a4438; margin: 0 auto 14px; }
+.sheet dl { margin: 0 0 10px; display: grid; gap: 8px; }
+.sheet dl div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid #2c2820; padding-bottom: 8px; }
+.sheet dt { color: #a99e88; } .sheet dd { margin: 0; text-align: right; }
+.sheet p { color: #8d836f; font-size: .8rem; margin: 6px 0 0; }
+
+/* QR во весь экран */
+.qr-full { position: fixed; inset: 0; z-index: 150; background: #fff; color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px var(--gutter-r) calc(24px + var(--safe-b)) var(--gutter-l); text-align: center; overflow: auto; }
+.qr-full .emb { width: 120px; mix-blend-mode: multiply; }
+.qr-full .code { width: min(70vmin, 520px); }
+.qr-full .code svg { width: 100%; height: auto; display: block; }
+.qr-full .url { font: 600 clamp(.85rem, 2.4vw, 1.1rem) ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; max-width: 640px; margin: 0; }
+.qr-full .ibtn { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: max(14px, env(safe-area-inset-right, 0px)); background: #f0ebe1; color: var(--ink); }
+
+.toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -12px); z-index: 200; background: var(--ink); color: #f7ecd2; padding: 10px 16px; border-radius: 999px; font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100% - 32px); text-align: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+</style>
+
+<header class="top"><div class="wrap">
+  <a class="brand" href="#"><img src="img/emblem.webp" alt="" width="70" height="19"><span>Dialogue Cards</span></a>
+  <nav class="nav" id="nav"></nav>
+  <button class="lang" type="button" id="lang"></button>
+</div></header>
+<main id="main"></main>
+<footer class="foot"><div class="wrap" id="foot"></div></footer>
+<div id="overlay"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>/*QRCODE_LIB*/</script>
+<script>
+(() => {
+'use strict';
+// ---------- данные ----------
+const DATA = /*CARDS_JSON*/;
+const AUTHOR = DATA.author;
+const CARDS = DATA.cards.map((c) => ({
+  n: c.n, code: 'DC-' + String(c.n).padStart(4, '0'), width: c.w, height: c.h, author: AUTHOR,
+  thumb: 'cards/thumb/' + String(c.n).padStart(3, '0') + '.webp',
+  full: 'cards/full/' + String(c.n).padStart(3, '0') + '.webp',
+}));
+const BY_N = new Map(CARDS.map((c) => [c.n, c]));
+const MAX = 40;
+// Публичный адрес этой версии — для ссылок и QR, когда страница открыта не на нём (например, в Claude).
+const CANONICAL = 'https://harekrishna.info/apps/dialogue-cards/app/';
+const OWN = /(^|\.)harekrishna\.info$/.test(location.hostname) || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+const BASE = OWN ? location.origin + location.pathname : CANONICAL;
+
+// ---------- тексты ----------
+const DICT = {
+  ru: {
+    navLib: 'Карты', navMake: 'Подборка', langBtn: 'EN', langLabel: 'Switch to English',
+    homeTitle: 'Иллюстрации для живого разговора',
+    homeLead: 'Карты помогают замечать собственные ассоциации и говорить о жизненном опыте. Разные люди могут увидеть в одной иллюстрации похожие или совсем разные смыслы.',
+    ctaLib: 'Смотреть карты', ctaMake: 'Собрать подборку для встречи',
+    howTitle: 'Как проходит встреча с картами',
+    how1: 'Фасилитатор заранее собирает подборку карт.', how2: 'Участники открывают её по QR-коду на своём телефоне — без регистрации.', how3: 'Каждый рассматривает карты и выбирает одну для обсуждения.',
+    flowTitle: 'Встречи Dialogue Flow',
+    flowText: 'Встреча — возможность для содержательного человеческого общения. Фасилитатор знакомит с форматом, создаёт условия для разговора и проводит завершающий круг. Основное общение происходит между участниками, часто в парах.',
+    flowMore: 'Dialogue Cards объединяет художников, кураторов, фасилитаторов и участников встреч.',
+    edition: 'Открытая версия Dialogue Cards. Подборка хранится прямо в ссылке и QR-коде, выбор участника — на его телефоне. Общий счётчик выборов и кабинеты фасилитаторов появятся в версии с сервером.',
+    libTitle: 'Библиотека карт', libCount: ['{n} карта', '{n} карты', '{n} карт'], libLead: 'Нажмите на карту, чтобы рассмотреть её крупно.',
+    close: 'Закрыть', info: 'О карте', prev: 'Предыдущая карта', next: 'Следующая карта', code: 'Код', author: 'Автор', zoomHint: 'Двойное касание или щипок — увеличить',
+    choose: 'Выбрать для обсуждения', chooseInstead: 'Выбрать эту карту', chooseInsteadHint: 'Она заменит ваш прежний выбор в этом раунде', chosen: 'Выбрано для обсуждения', cancel: 'Отменить выбор',
+    makeTitle: 'Подборка для встречи',
+    makeLead: 'Отметьте до 40 карт. Состав подборки хранится в ссылке и QR-коде — участники откроют её на своих телефонах без регистрации.',
+    titleLabel: 'Название встречи', titlePh: 'Например, «Встреча 20 ноября»',
+    picked: 'Отмечено {n} из 40', full: 'Уже 40 карт — снимите отметку с одной, чтобы добавить другую.', clear: 'Снять все отметки', view: 'Рассмотреть',
+    shareTitle: 'Ссылка и QR для участников', needCards: 'Отметьте хотя бы одну карту — появятся ссылка и QR-код.',
+    copy: 'Копировать', copied: 'Ссылка скопирована', showQr: 'Показать QR', downloadQr: 'Скачать QR', openAs: 'Открыть как участник',
+    changed: 'Состав зашит в ссылку: если поменять карты, покажите участникам новый QR-код.',
+    siteNote: 'Ссылка ведёт на открытую версию на harekrishna.info.',
+    savedTitle: 'Мои подборки', savedHint: 'Хранятся в этом браузере.', save: 'Сохранить в «Мои подборки»', savedToast: 'Подборка сохранена', edit: 'Открыть', del: 'Удалить', delAsk: 'Удалить «{t}»?', yes: 'Да', no: 'Отмена', untitled: 'Без названия', nSaved: ['{n} карта', '{n} карты', '{n} карт'],
+    colBadge: 'Подборка для встречи', colHint: 'Рассмотрите карты и выберите одну для обсуждения.',
+    colNote: 'Выбор сохраняется на этом телефоне. Если страница закроется, откройте ту же ссылку или QR-код снова.',
+    yourChoice: 'Ваш выбор', round: 'Раунд {n}', nextRound: 'Следующий раунд', roundAsk: 'Начать раунд {n}? Выбор этого раунда сохранится.', noChoice: 'Карта пока не выбрана',
+    badLink: 'Ссылка на подборку повреждена. Попросите фасилитатора показать QR-код ещё раз.',
+    selSaved: 'Выбор сохранён', selCancelled: 'Выбор отменён', roundStarted: 'Раунд {n}: выберите карту',
+    qrHint: 'Наведите камеру телефона на QR-код', foot: 'Иллюстрации — Ананда Майя',
+  },
+  en: {
+    navLib: 'Cards', navMake: 'Selection', langBtn: 'RU', langLabel: 'Переключить на русский',
+    homeTitle: 'Illustrations for real conversation',
+    homeLead: 'The cards help people notice their own associations and talk about life experience. Different people may see similar or entirely different meanings in the same illustration.',
+    ctaLib: 'Browse the cards', ctaMake: 'Make a selection for a meeting',
+    howTitle: 'How a card meeting works',
+    how1: 'The facilitator prepares a selection of cards in advance.', how2: 'Participants open it on their phones via a QR code — no sign-up needed.', how3: 'Everyone looks through the cards and picks one to talk about.',
+    flowTitle: 'Dialogue Flow meetings',
+    flowText: 'A meeting is a chance for meaningful human conversation. The facilitator introduces the format, creates the conditions for talking and leads the closing circle. Most of the conversation happens between participants, often in pairs.',
+    flowMore: 'Dialogue Cards brings together artists, curators, facilitators and meeting participants.',
+    edition: 'The open edition of Dialogue Cards. A selection is stored in its link and QR code; each participant’s choice stays on their phone. Shared choice counts and facilitator accounts come with the server edition.',
+    libTitle: 'Card library', libCount: ['{n} card', '{n} cards'], libLead: 'Tap a card to see it up close.',
+    close: 'Close', info: 'About this card', prev: 'Previous card', next: 'Next card', code: 'Code', author: 'Artist', zoomHint: 'Double-tap or pinch to zoom',
+    choose: 'Choose for discussion', chooseInstead: 'Choose this card', chooseInsteadHint: 'It will replace your previous choice in this round', chosen: 'Chosen for discussion', cancel: 'Cancel choice',
+    makeTitle: 'Selection for a meeting',
+    makeLead: 'Mark up to 40 cards. The selection is stored in its link and QR code — participants open it on their phones without signing up.',
+    titleLabel: 'Meeting title', titlePh: 'e.g. “Meeting on 20 November”',
+    picked: '{n} of 40 marked', full: 'Already 40 cards — unmark one to add another.', clear: 'Clear all marks', view: 'View',
+    shareTitle: 'Link and QR for participants', needCards: 'Mark at least one card to get a link and QR code.',
+    copy: 'Copy', copied: 'Link copied', showQr: 'Show QR', downloadQr: 'Download QR', openAs: 'Open as participant',
+    changed: 'The cards are encoded in the link: if you change them, show participants the new QR code.',
+    siteNote: 'The link opens the public edition on harekrishna.info.',
+    savedTitle: 'My selections', savedHint: 'Stored in this browser.', save: 'Save to “My selections”', savedToast: 'Selection saved', edit: 'Open', del: 'Delete', delAsk: 'Delete “{t}”?', yes: 'Yes', no: 'Cancel', untitled: 'Untitled', nSaved: ['{n} card', '{n} cards'],
+    colBadge: 'Cards for the meeting', colHint: 'Look through the cards and choose one to talk about.',
+    colNote: 'Your choice is saved on this phone. If the page closes, open the same link or QR code again.',
+    yourChoice: 'Your choice', round: 'Round {n}', nextRound: 'Next round', roundAsk: 'Start round {n}? This round’s choice will be kept.', noChoice: 'No card chosen yet',
+    badLink: 'This selection link is damaged. Ask the facilitator to show the QR code again.',
+    selSaved: 'Choice saved', selCancelled: 'Choice cancelled', roundStarted: 'Round {n}: choose a card',
+    qrHint: 'Point your phone camera at the QR code', foot: 'Illustrations by Ananda Maya',
+  },
+};
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* приватный режим */ } },
+  json(k, d) { try { return JSON.parse(store.get(k)) ?? d; } catch (e) { return d; } },
+};
+let lang = store.get('dc_lang') || ((navigator.languages || [navigator.language || 'ru']).some((l) => /^(ru|uk|be|kk)/i.test(l)) ? 'ru' : 'en');
+function t(key, vars = {}) {
+  let s = DICT[lang][key] ?? DICT.ru[key] ?? key;
+  if (Array.isArray(s)) {
+    const n = Number(vars.n) || 0;
+    if (lang === 'ru') { const a = n % 10, b = n % 100; s = s[a === 1 && b !== 11 ? 0 : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 1 : 2]; }
+    else s = s[n === 1 ? 0 : 1];
+  }
+  return s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = (id) => document.getElementById(id);
+const ICON = {
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
+  next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
+};
+let toastTimer;
+function toast(msg) { const el = $('toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2400); }
+
+// ---------- подборка в ссылке: #s-<номера карт битовой маской в hex>-<название в base32> ----------
+function encodeMask(nums) {
+  const max = Math.max(0, ...nums);
+  const digits = new Array(Math.ceil(max / 4)).fill(0);
+  for (const n of nums) digits[Math.floor((n - 1) / 4)] |= 8 >> ((n - 1) % 4);
+  return digits.map((d) => d.toString(16)).join('');
+}
+function decodeMask(hex) {
+  const out = [];
+  [...hex].forEach((ch, i) => { const d = parseInt(ch, 16); for (let b = 0; b < 4; b++) if (d & (8 >> b)) out.push(i * 4 + b + 1); });
+  return out;
+}
+const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
+function b32enc(str) {
+  const bytes = new TextEncoder().encode(str); let bits = 0, val = 0, out = '';
+  for (const by of bytes) { val = (val << 8) | by; bits += 8; while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; } }
+  if (bits > 0) out += B32[(val << (5 - bits)) & 31];
+  return out;
+}
+function b32dec(s) {
+  let bits = 0, val = 0; const out = [];
+  for (const ch of s) { const i = B32.indexOf(ch); if (i < 0) throw new Error('bad'); val = (val << 5) | i; bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } }
+  return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(out));
+}
+function selHash(nums, title) {
+  const tt = (title || '').trim().slice(0, 60);
+  return 's-' + encodeMask(nums) + (tt ? '-' + b32enc(tt) : '');
+}
+function parseSel(hash) {
+  const m = /^s-([0-9a-f]{1,64})(?:-([a-z2-7]{1,200}))?$/.exec(hash);
+  if (!m) return null;
+  let title = '';
+  if (m[2]) { try { title = b32dec(m[2]); } catch (e) { return null; } }
+  const nums = decodeMask(m[1]).filter((n) => BY_N.has(n)).slice(0, MAX);
+  return { nums, title };
+}
+
+// ---------- QR ----------
+function qrSvg(text) {
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  const n = q.getModuleCount(), m = 2; let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="QR"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#1e1b16"/></svg>`;
+}
+function qrPng(text, size = 1200) {
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  const n = q.getModuleCount(), m = 2, cell = Math.floor(size / (n + 2 * m));
+  const cv = document.createElement('canvas'); cv.width = cv.height = cell * (n + 2 * m);
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#1e1b16';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) g.fillRect((c + m) * cell, (r + m) * cell, cell, cell);
+  return cv.toDataURL('image/png');
+}
+function showQr(title, url) {
+  const el = document.createElement('div');
+  el.className = 'qr-full'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `<button class="ibtn" type="button" aria-label="${esc(t('close'))}">${ICON.close}</button>
+    <img class="emb" src="img/emblem.webp" alt="">
+    <h2>${esc(title || t('colBadge'))}</h2>
+    <div class="code">${qrSvg(url)}</div>
+    <p class="url">${esc(url.replace(/^https?:\/\//, ''))}</p>
+    <p class="muted">${esc(t('qrHint'))}</p>`;
+  $('overlay').appendChild(el); document.body.classList.add('no-scroll');
+  const close = () => { el.remove(); document.body.classList.remove('no-scroll'); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  el.querySelector('.ibtn').addEventListener('click', close);
+  el.querySelector('.ibtn').focus();
+}
+
+// ---------- просмотр карты ----------
+let viewer = null;
+function openViewer(cards, index, opts = {}) {
+  closeViewer(true);
+  const opener = document.activeElement;
+  const el = document.createElement('div');
+  el.className = 'viewer' + (opts.collection ? ' col' : '');
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `<div class="stage"><img class="vimg" alt="" draggable="false"></div>
+    <div class="vtop chrome"><button class="ibtn" type="button" data-close aria-label="${esc(t('close'))}">${ICON.close}</button>
+      <span class="counter"></span>
+      <button class="ibtn" type="button" data-info aria-label="${esc(t('info'))}" aria-expanded="false">${ICON.info}</button></div>
+    <button class="vnav prev chrome" type="button" data-prev aria-label="${esc(t('prev'))}">${ICON.prev}</button>
+    <button class="vnav next chrome" type="button" data-next aria-label="${esc(t('next'))}">${ICON.next}</button>
+    ${opts.collection ? '<div class="vbottom chrome"></div>' : ''}
+    <div class="sheet" hidden></div>`;
+  $('overlay').appendChild(el);
+  document.body.classList.add('no-scroll');
+  const q = (s) => el.querySelector(s);
+  const stage = q('.stage'), img = q('.vimg'), sheet = q('.sheet'), bottom = q('.vbottom');
+  const z = { s: 1, x: 0, y: 0, w: 0, h: 0 };
+  let i = index;
+  let pushed = false;
+  try { history.pushState({ dcViewer: 1 }, ''); pushed = true; } catch (e) { /* рамка не даёт — закрываем кнопкой */ }
+
+  function layout() {
+    const c = cards[i], W = stage.clientWidth, H = stage.clientHeight, k = Math.min(W / c.width, H / c.height);
+    z.w = Math.round(c.width * k); z.h = Math.round(c.height * k);
+    Object.assign(img.style, { width: z.w + 'px', height: z.h + 'px', left: Math.round((W - z.w) / 2) + 'px', top: Math.round((H - z.h) / 2) + 'px' });
+    z.s = 1; z.x = 0; z.y = 0; apply(false);
+  }
+  function clamp() {
+    const mx = Math.max(0, (z.w * z.s - stage.clientWidth) / 2), my = Math.max(0, (z.h * z.s - stage.clientHeight) / 2);
+    z.x = Math.min(mx, Math.max(-mx, z.x)); z.y = Math.min(my, Math.max(-my, z.y));
+  }
+  function apply(anim) { img.style.transition = anim ? 'transform .22s ease' : 'none'; img.style.transform = `translate(${z.x}px,${z.y}px) scale(${z.s})`; el.classList.toggle('zoomed', z.s > 1.01); }
+  function zoomTo(s, px, py, anim) {
+    const ns = Math.min(5, Math.max(1, s));
+    z.x = px - (px - z.x) * (ns / z.s); z.y = py - (py - z.y) * (ns / z.s); z.s = ns;
+    if (ns === 1) { z.x = 0; z.y = 0; }
+    clamp(); apply(anim);
+  }
+  const rel = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2]; };
+  const ptrs = new Map(); let g = null, lastTap = 0, tapTimer = null;
+  stage.addEventListener('pointerdown', (e) => {
+    stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; g = { pinch: 1, d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: z.s }; }
+    else if (ptrs.size === 1) g = { sx: e.clientX, sy: e.clientY, x: z.x, y: z.y, moved: false };
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!ptrs.has(e.pointerId) || !g) return;
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (g.pinch && ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()], r = stage.getBoundingClientRect();
+      zoomTo(g.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / g.d, (a[0] + b[0]) / 2 - r.left - r.width / 2, (a[1] + b[1]) / 2 - r.top - r.height / 2, false);
+    } else if (!g.pinch) {
+      const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
+      if (Math.abs(dx) + Math.abs(dy) > 6) g.moved = true;
+      if (z.s > 1.01) { z.x = g.x + dx; z.y = g.y + dy; clamp(); apply(false); }
+      else if (cards.length > 1) { z.x = dx * 0.6; apply(false); }
+    }
+  });
+  const end = (e) => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (g && g.pinch) {
+      if (!ptrs.size) g = null; else { const [p] = [...ptrs.values()]; g = { sx: p[0], sy: p[1], x: z.x, y: z.y, moved: true }; }
+      if (z.s < 1.05) zoomTo(1, 0, 0, true);
+      return;
+    }
+    if (!g || ptrs.size) return;
+    const gg = g; g = null;
+    const dx = e.clientX - gg.sx, dy = e.clientY - gg.sy;
+    if (z.s <= 1.01 && gg.moved) {
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2 && cards.length > 1) { go(dx < 0 ? 1 : -1); return; }
+      z.x = 0; apply(true); return;
+    }
+    if (gg.moved || e.type === 'pointercancel') return;
+    const now = Date.now();
+    if (now - lastTap < 300) { clearTimeout(tapTimer); lastTap = 0; const [px, py] = rel(e); zoomTo(z.s > 1.01 ? 1 : 2.5, px, py, true); }
+    else { lastTap = now; tapTimer = setTimeout(() => el.classList.toggle('bare'), 280); }
+  };
+  stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); const [px, py] = rel(e); zoomTo(z.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), px, py, false); }, { passive: false });
+
+  function show() {
+    const c = cards[i];
+    q('.counter').textContent = cards.length > 1 ? `${i + 1} / ${cards.length}` : '';
+    q('[data-prev]').hidden = q('[data-next]').hidden = cards.length < 2;
+    img.src = c.thumb; img.alt = c.code;
+    const full = new Image(); full.onload = () => { if (cards[i] === c) img.src = c.full; }; full.src = c.full;
+    for (const d of [1, -1]) { const nb = cards[(i + d + cards.length) % cards.length]; if (nb) new Image().src = nb.full; }
+    layout(); renderBottom(); if (!sheet.hidden) renderSheet();
+  }
+  function go(d) { i = (i + d + cards.length) % cards.length; show(); }
+  function renderBottom() {
+    if (!bottom) return;
+    const c = cards[i], choice = opts.collection.choice();
+    if (choice === c.n) {
+      bottom.innerHTML = `<div class="pill">${ICON.check}<span>${esc(t('chosen'))}</span></div>
+        <button class="linkbtn light" type="button" data-cancel>${esc(t('cancel'))}</button>`;
+    } else {
+      bottom.innerHTML = `<button class="btn gold" type="button" data-choose>${esc(t(choice ? 'chooseInstead' : 'choose'))}</button>
+        ${choice ? `<p class="vhint">${esc(t('chooseInsteadHint'))}</p>` : ''}`;
+    }
+  }
+  if (bottom) bottom.addEventListener('click', (e) => {
+    if (e.target.closest('[data-choose]')) opts.collection.choose(cards[i].n);
+    if (e.target.closest('[data-cancel]')) opts.collection.cancel();
+    renderBottom();
+  });
+  function renderSheet() {
+    const c = cards[i];
+    sheet.innerHTML = `<div class="handle"></div><dl>
+      <div><dt>${esc(t('code'))}</dt><dd>${esc(c.code)}</dd></div>
+      <div><dt>${esc(t('author'))}</dt><dd>${esc(c.author)}</dd></div></dl>
+      <p>${esc(t('zoomHint'))}</p>`;
+  }
+  function toggleSheet(force) {
+    const open = force ?? sheet.hidden; sheet.hidden = !open;
+    q('[data-info]').setAttribute('aria-expanded', String(open)); if (open) renderSheet();
+  }
+  q('[data-close]').addEventListener('click', () => closeViewer());
+  q('[data-info]').addEventListener('click', () => toggleSheet());
+  q('[data-prev]').addEventListener('click', () => go(-1));
+  q('[data-next]').addEventListener('click', () => go(1));
+  sheet.addEventListener('click', () => toggleSheet(false));
+  const onKey = (e) => {
+    if (e.key === 'Escape') { if (!sheet.hidden) toggleSheet(false); else closeViewer(); }
+    else if (e.key === 'ArrowRight') go(1); else if (e.key === 'ArrowLeft') go(-1);
+  };
+  const onResize = () => layout();
+  document.addEventListener('keydown', onKey); window.addEventListener('resize', onResize);
+  viewer = { el, opener, pushed, refresh: renderBottom, cleanup() { document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); clearTimeout(tapTimer); } };
+  requestAnimationFrame(() => { el.classList.add('open'); show(); q('[data-close]').focus({ preventScroll: true }); });
+}
+// fromPop: закрыто кнопкой «Назад» браузера; иначе — своей кнопкой (тогда убираем запись из истории).
+function closeViewer(fromPop) {
+  if (!viewer) return;
+  const v = viewer; viewer = null;
+  v.cleanup(); v.el.remove(); document.body.classList.remove('no-scroll');
+  if (v.opener && v.opener.focus && document.contains(v.opener)) v.opener.focus({ preventScroll: true });
+  if (!fromPop && v.pushed && history.state && history.state.dcViewer) { try { history.back(); } catch (e) { /* ничего */ } }
+}
+window.addEventListener('popstate', () => { if (viewer) closeViewer(true); });
+
+// ---------- страницы ----------
+const main = $('main');
+function tile(c, i, extra = '', badge = '') {
+  return `<button class="tile ${extra}" type="button" data-i="${i}" aria-label="${esc(c.code)}">
+    <img src="${c.thumb}" alt="" loading="lazy" decoding="async" width="${c.width}" height="${c.height}">${badge}</button>`;
+}
+function chrome(active) {
+  $('nav').innerHTML = `<a href="#library" class="${active === 'library' ? 'on' : ''}">${esc(t('navLib'))}</a>
+    <a href="#make" class="${active === 'make' ? 'on' : ''}">${esc(t('navMake'))}</a>`;
+  $('lang').textContent = t('langBtn'); $('lang').setAttribute('aria-label', t('langLabel'));
+  $('foot').innerHTML = `<span>© Dialogue Cards</span><span>${esc(t('foot'))}</span>`;
+  document.documentElement.lang = lang;
+}
+
+function viewHome() {
+  chrome('');
+  const pool = [...CARDS], picks = [];
+  while (picks.length < 3 && pool.length) picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  main.innerHTML = `<div class="wrap">
+    <section class="hero">
+      <div>
+        <img class="hero-logo" src="img/logo.webp" alt="Dialogue Cards" width="900" height="393">
+        <h1>${esc(t('homeTitle'))}</h1>
+        <p class="lead">${esc(t('homeLead'))}</p>
+        <div class="row"><a class="btn dark" href="#library">${esc(t('ctaLib'))}</a><a class="btn" href="#make">${esc(t('ctaMake'))}</a></div>
+      </div>
+      <div class="fan" aria-hidden="true">${picks.map((c) => `<img src="${c.thumb}" alt="" width="${c.width}" height="${c.height}">`).join('')}</div>
+    </section>
+    <section class="page">
+      <h2>${esc(t('howTitle'))}</h2>
+      <ol class="steps"><li><b>1</b><p>${esc(t('how1'))}</p></li><li><b>2</b><p>${esc(t('how2'))}</p></li><li><b>3</b><p>${esc(t('how3'))}</p></li></ol>
+      <div class="flow"><h2>${esc(t('flowTitle'))}</h2><p>${esc(t('flowText'))}</p><p class="muted">${esc(t('flowMore'))}</p></div>
+      <p class="edition">${esc(t('edition'))}</p>
+    </section></div>`;
+}
+
+function viewLibrary() {
+  chrome('library');
+  main.innerHTML = `<div class="wrap page">
+    <h1>${esc(t('libTitle'))}</h1>
+    <p class="muted">${esc(t('libCount', { n: CARDS.length }))} · ${esc(t('libLead'))}</p>
+    <div class="grid" id="grid">${CARDS.map((c, i) => tile(c, i)).join('')}</div></div>`;
+  $('grid').addEventListener('click', (e) => { const b = e.target.closest('.tile'); if (b) openViewer(CARDS, Number(b.dataset.i)); });
+}
+
+// Фасилитатор: собирает подборку, получает ссылку и QR. Черновик и «Мои подборки» — в этом браузере.
+function viewMake() {
+  chrome('make');
+  const draft = store.json('dc_draft', { title: '', nums: [] });
+  let nums = draft.nums.filter((n) => BY_N.has(n));
+  let title = draft.title || '';
+  let askDelete = null;
+  main.innerHTML = `<div class="wrap page">
+    <h1>${esc(t('makeTitle'))}</h1>
+    <p class="lead">${esc(t('makeLead'))}</p>
+    <div class="maker">
+      <section>
+        <label class="field">${esc(t('titleLabel'))}<input type="text" id="m-title" maxlength="60" placeholder="${esc(t('titlePh'))}" value="${esc(title)}"></label>
+        <div class="row" style="margin:16px 0 10px"><strong id="m-count"></strong><button class="linkbtn" type="button" id="m-clear">${esc(t('clear'))}</button></div>
+        <p class="muted small" id="m-full" hidden>${esc(t('full'))}</p>
+        <div class="cells" id="m-cells"></div>
+      </section>
+      <aside class="share" id="m-share"></aside>
+    </div></div>`;
+  const persist = () => store.set('dc_draft', JSON.stringify({ title, nums }));
+  function drawCells() {
+    const full = nums.length >= MAX;
+    $('m-count').textContent = t('picked', { n: nums.length });
+    $('m-full').hidden = !full;
+    $('m-cells').innerHTML = CARDS.map((c, i) => {
+      const on = nums.includes(c.n);
+      return `<div class="cell ${on ? 'in' : ''} ${!on && full ? 'off' : ''}">
+        <button class="tile" type="button" data-n="${c.n}" aria-pressed="${on}" ${!on && full ? 'disabled' : ''} aria-label="${esc(c.code)}">
+          <img src="${c.thumb}" alt="" loading="lazy" width="${c.width}" height="${c.height}">${on ? `<span class="check">${ICON.check}</span>` : ''}</button>
+        <button class="zoom-btn" type="button" data-view="${i}" aria-label="${esc(t('view'))} ${esc(c.code)}">${ICON.expand}</button>
+        <small>${esc(c.code)}</small></div>`;
+    }).join('');
+  }
+  function drawShare() {
+    const saved = store.json('dc_saved', []);
+    const sorted = [...nums].sort((a, b) => a - b);
+    const url = sorted.length ? BASE + '#' + selHash(sorted, title) : '';
+    $('m-share').innerHTML = `<h2>${esc(t('shareTitle'))}</h2>
+      ${url ? `<div class="qr-mini">${qrSvg(url)}</div>
+        <code id="m-url">${esc(url)}</code>
+        <div class="row">
+          <button class="btn sm" type="button" id="m-copy">${esc(t('copy'))}</button>
+          <button class="btn sm dark" type="button" id="m-qr">${esc(t('showQr'))}</button>
+          ${OWN ? `<a class="btn sm" id="m-dl" href="#" download="dialogue-cards-qr.png">${esc(t('downloadQr'))}</a>` : ''}
+          <a class="btn sm" href="#${selHash(sorted, title)}">${esc(t('openAs'))}</a>
+        </div>
+        <p class="small muted">${esc(t('changed'))}${OWN ? '' : ' ' + esc(t('siteNote'))}</p>
+        <button class="btn sm" type="button" id="m-save">${esc(t('save'))}</button>`
+      : `<p class="muted">${esc(t('needCards'))}</p>`}
+      ${saved.length ? `<h2 style="margin-top:8px">${esc(t('savedTitle'))}</h2><p class="small muted" style="margin:0">${esc(t('savedHint'))}</p>
+        <ul class="saved">${saved.map((s, k) => askDelete === k
+          ? `<li class="ask">${esc(t('delAsk', { t: s.title || t('untitled') }))} <button class="btn sm" type="button" data-del-yes="${k}">${esc(t('yes'))}</button><button class="linkbtn" type="button" data-del-no>${esc(t('no'))}</button></li>`
+          : `<li><strong>${esc(s.title || t('untitled'))}</strong><span class="small muted">${esc(t('nSaved', { n: s.nums.length }))}</span>
+             <button class="linkbtn" type="button" data-load="${k}">${esc(t('edit'))}</button>
+             <button class="linkbtn danger" type="button" data-del="${k}">${esc(t('del'))}</button></li>`).join('')}</ul>` : ''}`;
+    if (url) {
+      $('m-copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(url); toast(t('copied')); }
+        catch (e) { const r = document.createRange(); r.selectNodeContents($('m-url')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+      });
+      $('m-qr').addEventListener('click', () => showQr(title, url));
+      const dl = $('m-dl'); if (dl) dl.href = qrPng(url);
+      $('m-save').addEventListener('click', () => {
+        const list = store.json('dc_saved', []);
+        const key = selHash(sorted, title);
+        const rest = list.filter((s) => selHash(s.nums, s.title) !== key);
+        rest.unshift({ title, nums: sorted });
+        store.set('dc_saved', JSON.stringify(rest.slice(0, 50)));
+        toast(t('savedToast')); drawShare();
+      });
+    }
+  }
+  $('m-cells').addEventListener('click', (e) => {
+    const v = e.target.closest('[data-view]');
+    if (v) { openViewer(CARDS, Number(v.dataset.view)); return; }
+    const b = e.target.closest('[data-n]'); if (!b) return;
+    const n = Number(b.dataset.n);
+    if (nums.includes(n)) nums = nums.filter((x) => x !== n); else if (nums.length < MAX) nums.push(n);
+    persist(); drawCells(); drawShare();
+  });
+  $('m-share').addEventListener('click', (e) => {
+    const load = e.target.closest('[data-load]'), del = e.target.closest('[data-del]'), yes = e.target.closest('[data-del-yes]');
+    const list = store.json('dc_saved', []);
+    if (load) { const s = list[Number(load.dataset.load)]; title = s.title; nums = [...s.nums]; $('m-title').value = title; persist(); drawCells(); drawShare(); window.scrollTo(0, 0); }
+    else if (del) { askDelete = Number(del.dataset.del); drawShare(); }
+    else if (yes) { list.splice(Number(yes.dataset.delYes), 1); store.set('dc_saved', JSON.stringify(list)); askDelete = null; drawShare(); }
+    else if (e.target.closest('[data-del-no]')) { askDelete = null; drawShare(); }
+  });
+  $('m-title').addEventListener('input', (e) => { title = e.target.value; persist(); drawShare(); });
+  $('m-clear').addEventListener('click', () => { nums = []; persist(); drawCells(); drawShare(); });
+  drawCells(); drawShare();
+}
+
+// Участник: подборка из ссылки, выбор карты сохраняется на этом устройстве.
+function viewCollection(hash) {
+  chrome('');
+  const sel = parseSel(hash);
+  if (!sel || !sel.nums.length) { main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(t('badLink'))}</p></div>`; return; }
+  const cards = sel.nums.map((n) => BY_N.get(n));
+  const key = 'dc_sel_' + hash;
+  const st = store.json(key, { round: 1, picks: {} });
+  const save = () => store.set(key, JSON.stringify(st));
+  const choiceIn = (r) => st.picks[r] || null;
+  let asking = false;
+  main.innerHTML = `<div class="wrap page collection">
+      <p class="eyebrow">${esc(t('colBadge'))}</p>
+      <h1>${esc(sel.title || t('colBadge'))}</h1>
+      <p class="muted">${esc(t('colHint'))}</p>
+      <div class="grid" id="c-grid"></div>
+      <p class="note">${esc(t('colNote'))}</p>
+    </div>
+    <div class="bar"><div class="wrap" id="c-bar"></div></div>`;
+  function drawGrid() {
+    const cur = choiceIn(st.round);
+    $('c-grid').innerHTML = cards.map((c, i) => {
+      const earlier = Object.entries(st.picks).filter(([r, n]) => n === c.n && Number(r) !== st.round).map(([r]) => r);
+      const badge = c.n === cur ? `<span class="check">${ICON.check}</span>` : earlier.length ? `<span class="rnd">${earlier.join(', ')}</span>` : '';
+      return tile(c, i, c.n === cur ? 'chosen' : '', badge);
+    }).join('');
+  }
+  function drawBar() {
+    const cur = choiceIn(st.round), c = cur && BY_N.get(cur);
+    const roundLbl = st.round > 1 || Object.keys(st.picks).length ? `<span>${esc(t('round', { n: st.round }))}</span>` : '';
+    if (asking) {
+      $('c-bar').innerHTML = `<div class="bar-text"><strong>${esc(t('roundAsk', { n: st.round + 1 }))}</strong></div>
+        <button class="btn sm dark" type="button" data-round-yes>${esc(t('yes'))}</button><button class="linkbtn" type="button" data-round-no>${esc(t('no'))}</button>`;
+    } else if (c) {
+      $('c-bar').innerHTML = `<button class="bar-thumb" type="button" data-open="${c.n}" aria-label="${esc(c.code)}"><img src="${c.thumb}" alt=""></button>
+        <div class="bar-text"><strong>${esc(t('yourChoice'))}</strong>${roundLbl}</div>
+        <button class="btn sm" type="button" data-round>${esc(t('nextRound'))}</button>`;
+    } else {
+      $('c-bar').innerHTML = `<div class="bar-text"><span style="font-size:.95rem">${esc(t('noChoice'))}</span>${roundLbl}</div>`;
+    }
+  }
+  const redraw = () => { drawGrid(); drawBar(); if (viewer) viewer.refresh(); };
+  const api = {
+    choice: () => choiceIn(st.round),
+    choose(n) { st.picks[st.round] = n; save(); toast(t('selSaved')); redraw(); },
+    cancel() { delete st.picks[st.round]; save(); toast(t('selCancelled')); redraw(); },
+  };
+  $('c-grid').addEventListener('click', (e) => { const b = e.target.closest('.tile'); if (b) openViewer(cards, Number(b.dataset.i), { collection: api }); });
+  $('c-bar').addEventListener('click', (e) => {
+    const o = e.target.closest('[data-open]');
+    if (o) openViewer(cards, cards.findIndex((c) => c.n === Number(o.dataset.open)), { collection: api });
+    if (e.target.closest('[data-round]')) { asking = true; drawBar(); }
+    if (e.target.closest('[data-round-no]')) { asking = false; drawBar(); }
+    if (e.target.closest('[data-round-yes]')) { asking = false; st.round = Math.min(st.round + 1, 20); save(); redraw(); toast(t('roundStarted', { n: st.round })); }
+  });
+  redraw();
+}
+
+function route() {
+  closeViewer(true);
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h === 'library') viewLibrary();
+  else if (h === 'make') viewMake();
+  else if (h.startsWith('s-')) viewCollection(h);
+  else viewHome();
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+$('lang').addEventListener('click', () => { lang = lang === 'ru' ? 'en' : 'ru'; store.set('dc_lang', lang); route(); });
+route();
+})();
+</script>

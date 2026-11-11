@@ -69,3 +69,13 @@ node scripts/import-cards.js "папка/с/PDF" --out seed/cards
 
 Нужен `pdftoppm` (пакет poppler-utils). Иллюстрация не обрезается и не ретушируется, только переводится в RGB WebP.
 Через сайт карты добавляются в разделе «Управление → Карты и статистика» (JPG, PNG, WebP, TIFF).
+
+## Открытая версия без сервера
+
+`static/app.html` → `npm run build-static` → `dist/static/`:
+- `artifact/` — страница на claude.ai (https://claude.ai/artifact/XtiPR52pXhL1sAGhmHnofK);
+- `site/` — копия для раздела «Приложения» harekrishna.info (`public/apps/dialogue-cards/app/` в репозитории HareKrishna).
+
+В ней библиотека, просмотр карт, сборка подборки и выбор карты участником. Состав подборки зашит в ссылку
+(`#s-<номера карт>-<название>`) и QR-код, выбор участника и «Мои подборки» хранятся в браузере. Общей статистики и
+управления картами нет — это задачи серверной версии.
