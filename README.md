@@ -64,10 +64,10 @@ docker run -d --name dcards -p 3000:3000 -v dcards-data:/data -e ADMIN_PASSWORD=
 ## Новые карты из PDF
 
 ```bash
-node scripts/import-cards.js "папка/с/PDF" --out seed/cards
+node scripts/import-cards.js "папка/с/PDF" --out seed/cards --bleed-mm 3 --author "Ананда Майя"
 ```
 
-Нужен `pdftoppm` (пакет poppler-utils). Иллюстрация не обрезается и не ретушируется, только переводится в RGB WebP.
+Нужен `pdftoppm` (пакет poppler-utils). `--bleed-mm 3` срезает поля под обрез, больше иллюстрация не меняется: только RGB WebP.
 Через сайт карты добавляются в разделе «Управление → Карты и статистика» (JPG, PNG, WebP, TIFF).
 
 ## Открытая версия без сервера
