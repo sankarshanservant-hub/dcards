@@ -50,7 +50,7 @@ p { margin: 0 0 1em; }
 .top { border-bottom: 1px solid var(--line); background: var(--bg); }
 .top .wrap { display: flex; align-items: center; gap: 10px; padding-block: 10px; }
 .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; text-decoration: none; color: var(--ink); min-width: 0; }
-.brand img { width: 70px; height: auto; mix-blend-mode: multiply; }
+.brand img { width: 64px; height: auto; }
 .brand span { font: 600 1.25rem var(--font-head); white-space: nowrap; }
 .nav { display: flex; gap: 2px; }
 .nav a { padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: .95rem; white-space: nowrap; }
@@ -94,6 +94,7 @@ label.field { display: grid; gap: 6px; font-size: .9rem; color: var(--muted); ma
 .steps p { margin: 4px 0 0; }
 .flow { background: var(--ink); color: #efe6d3; border-radius: 20px; padding: clamp(22px, 5vw, 44px); margin-top: 26px; }
 .flow h2 { color: #e9cf8f; }
+.flow-logo { width: 150px; height: auto; margin-bottom: 18px; opacity: .92; }
 .flow p { max-width: 44em; }
 .flow .muted { color: #b9ae98; margin: 0; }
 .edition { margin-top: 22px; padding: 14px 16px; border: 1px dashed var(--gold); border-radius: 12px; font-size: .9rem; color: #4d463a; max-width: 52em; }
@@ -175,7 +176,7 @@ label.field { display: grid; gap: 6px; font-size: .9rem; color: var(--muted); ma
 
 /* QR во весь экран */
 .qr-full { position: fixed; inset: 0; z-index: 150; background: #fff; color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px var(--gutter-r) calc(24px + var(--safe-b)) var(--gutter-l); text-align: center; overflow: auto; }
-.qr-full .emb { width: 120px; mix-blend-mode: multiply; }
+.qr-full .emb { width: 120px; }
 .qr-full .code { width: min(70vmin, 520px); }
 .qr-full .code svg { width: 100%; height: auto; display: block; }
 .qr-full .url { font: 600 clamp(.85rem, 2.4vw, 1.1rem) ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; max-width: 640px; margin: 0; }
@@ -187,7 +188,7 @@ label.field { display: grid; gap: 6px; font-size: .9rem; color: var(--muted); ma
 </style>
 
 <header class="top"><div class="wrap">
-  <a class="brand" href="#"><img src="img/emblem.webp" alt="" width="70" height="19"><span>Dialogue Cards</span></a>
+  <a class="brand" href="#"><img src="img/emblem.webp" alt="" width="64" height="18"><span>Dialogue Cards</span></a>
   <nav class="nav" id="nav"></nav>
   <button class="lang" type="button" id="lang"></button>
 </div></header>
@@ -552,7 +553,7 @@ function viewHome() {
     <section class="page">
       <h2>${esc(t('howTitle'))}</h2>
       <ol class="steps"><li><b>1</b><p>${esc(t('how1'))}</p></li><li><b>2</b><p>${esc(t('how2'))}</p></li><li><b>3</b><p>${esc(t('how3'))}</p></li></ol>
-      <div class="flow"><h2>${esc(t('flowTitle'))}</h2><p>${esc(t('flowText'))}</p><p class="muted">${esc(t('flowMore'))}</p></div>
+      <div class="flow"><img class="flow-logo" src="img/logo-white.webp" alt="" width="900" height="434"><h2>${esc(t('flowTitle'))}</h2><p>${esc(t('flowText'))}</p><p class="muted">${esc(t('flowMore'))}</p></div>
       <p class="edition">${esc(t('edition'))}</p>
     </section></div>`;
 }

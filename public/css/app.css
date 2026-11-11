@@ -66,7 +66,7 @@ p { margin: 0 0 1em; }
   padding: 10px var(--gutter); border-bottom: 1px solid var(--line); background: var(--bg);
 }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); margin-right: auto; min-width: 0; }
-.brand img { width: 72px; height: auto; }
+.brand img { width: 64px; height: auto; }
 .brand span { font-family: var(--font-head); font-weight: 600; font-size: 1.25rem; white-space: nowrap; }
 .main-nav { display: flex; gap: 4px; }
 .main-nav a { padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: .95rem; }
@@ -145,6 +145,7 @@ input[type=file] { padding: 8px; }
 .steps p { margin: 4px 0 0; }
 .flow-card { background: var(--ink); color: #efe6d3; border-radius: calc(var(--radius) + 6px); padding: clamp(22px, 5vw, 44px); }
 .flow-card h2 { color: #e9cf8f; }
+.flow-logo { width: 150px; height: auto; margin-bottom: 18px; opacity: .92; }
 .flow-card p { max-width: 44em; }
 .flow-card .muted { color: #b9ae98; margin: 0; }
 

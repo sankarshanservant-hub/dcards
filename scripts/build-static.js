@@ -4,7 +4,7 @@
  *   dist/static/artifact/ — страница для claude.ai (без <html>/<head>: их добавляет публикация)
  *   dist/static/site/     — для harekrishna.info: public/apps/dialogue-cards/app/ (полный документ,
  *                           манифест, значки и приглашение установить — как у других приложений раздела /apps/)
- * В обеих: index.html + cards/{thumb,full}/NNN.webp + img/{logo,emblem}.webp. Пути относительные.
+ * В обеих: index.html + cards/{thumb,full}/NNN.webp + img/{logo,emblem,logo-white}.webp. Пути относительные.
  *
  *   node scripts/build-static.js
  */
@@ -31,7 +31,8 @@ function copyAssets(dir) {
   }
   fs.mkdirSync(path.join(dir, 'img'), { recursive: true });
   fs.copyFileSync(path.join(root, 'public', 'img', 'logo-gold.webp'), path.join(dir, 'img', 'logo.webp'));
-  fs.copyFileSync(path.join(root, 'public', 'img', 'emblem-gold.webp'), path.join(dir, 'img', 'emblem.webp'));
+  fs.copyFileSync(path.join(root, 'public', 'img', 'emblem-black.webp'), path.join(dir, 'img', 'emblem.webp'));
+  fs.copyFileSync(path.join(root, 'public', 'img', 'logo-white.webp'), path.join(dir, 'img', 'logo-white.webp'));
 }
 
 fs.rmSync(out, { recursive: true, force: true });

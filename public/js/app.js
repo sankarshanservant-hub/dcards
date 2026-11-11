@@ -119,6 +119,7 @@ async function viewHome(token) {
     </section>
     <section class="page flow">
       <div class="flow-card">
+        <img class="flow-logo" src="/img/logo-white.webp" alt="" width="900" height="434">
         <h2>${esc(t('home.flowTitle'))}</h2>
         <p>${esc(t('home.flowText'))}</p>
         <p class="muted">${esc(t('home.platform'))}</p>
@@ -504,7 +505,7 @@ function showQr(slug, title, url) {
   el.setAttribute('aria-modal', 'true');
   el.innerHTML = `
     <button class="icon-btn qr-close" type="button" aria-label="${esc(t('qr.close'))}">${icons.close}</button>
-    <img class="qr-logo" src="/img/emblem-gold.webp" alt="">
+    <img class="qr-logo" src="/img/emblem-black.webp" alt="">
     <h2>${esc(title)}</h2>
     <img class="qr-img" src="/api/c/${esc(slug)}/qr.svg" alt="QR">
     <p class="qr-url">${esc(url.replace(/^https?:\/\//, ''))}</p>
