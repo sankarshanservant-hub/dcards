@@ -1,7 +1,7 @@
 // Встречи Dialogue Flow для посетителя: страна → город → встречи, страница даты, запись без аккаунта, отмена.
 import { lang } from '../i18n.js';
 import { esc, tt, u, api, errorText, fmtTz, toast } from '../util.js';
-import { session, loading, failed, demoPill } from '../ui.js';
+import { session, loading, failed, demoPill, ic } from '../ui.js';
 
 export const LANG_NAMES = { ru: ['Русский', 'Russian'], en: ['Английский', 'English'], zh: ['Китайский', 'Chinese'], th: ['Тайский', 'Thai'], de: ['Немецкий', 'German'], fr: ['Французский', 'French'], es: ['Испанский', 'Spanish'], it: ['Итальянский', 'Italian'], uk: ['Украинский', 'Ukrainian'], kk: ['Казахский', 'Kazakh'], other: ['Другой', 'Other'] };
 export const langName = (code) => { const n = LANG_NAMES[code] || [code, code]; return lang === 'en' ? n[1] : n[0]; };
@@ -83,9 +83,10 @@ export async function datePage(ctx, id) {
     const reg = ctx.main.querySelector('#reg');
     if (done) {
       reg.innerHTML = `<h3>${esc(tt('Вы записаны', 'You are registered'))}</h3>
-        <p class="muted small">${esc(done.letter.sent ? tt('Письмо с подтверждением отправлено.', 'A confirmation email has been sent.') : tt('Почта пока не подключена: письмо не отправлено. Ниже — его текст (демо). Сохраните ссылку для отмены.', 'Email is not connected yet: the letter was not sent. Its text is below (demo). Keep the cancel link.'))}</p>
-        ${done.letter.body ? `<div class="letter">${esc(done.letter.body)}</div>` : ''}
-        <div class="row" style="margin-top:10px"><a class="btn dark" href="${u('/r/' + done.token)}">${esc(tt('Моя запись и отмена', 'My registration and cancel'))}</a></div>`;
+        ${confirmHtml(d, m, done.token)}
+        <p class="muted small" style="margin:12px 0 0">${esc(done.isDemo ? tt('Это демо-встреча: письмо не отправляется. Чтобы отменить запись, откройте «Моя запись и отмена».', 'This is a demo meeting: no email is sent. To cancel, open “My registration and cancel”.') : done.letter.sent ? tt('Письмо с этими данными и ссылкой для отмены отправлено на вашу почту.', 'An email with these details and a cancel link has been sent to you.')
+          : tt('Почта пока не подключена: письмо не отправлено. Сохраните ссылку «Моя запись и отмена» — по ней можно отменить запись.', 'Email is not connected yet: no letter was sent. Keep the “My registration” link — you can cancel there.'))}</p>
+        ${done.letter.body && !done.letter.sent ? `<details class="small" style="margin-top:8px"><summary>${esc(tt('Текст письма (демо)', 'Letter text (demo)'))}</summary><div class="letter">${esc(done.letter.body)}</div></details>` : ''}`;
       return;
     }
     if (state !== 'open') {
@@ -115,6 +116,23 @@ export async function datePage(ctx, id) {
   draw();
 }
 
+/** Подтверждение записи: дата, местное время встречи, пояс, место, календарь, ссылка на отмену. */
+function confirmHtml(d, m, token) {
+  const when = fmtTz(d.startsAt, m.timezone, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const mine = myTz() !== m.timezone ? fmtTz(d.startsAt, myTz(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const place = [m.venue, m.city, m.country].filter(Boolean).join(', ');
+  const start = new Date(d.startsAt).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const gcal = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({ action: 'TEMPLATE', text: m.title, dates: `${start}/${start}`, location: place, details: `${location.origin}${u('/r/' + token)}` });
+  return `<dl class="sheet-list confirm-list" style="margin:0">
+      <div><dt>${esc(tt('Когда', 'When'))}</dt><dd><b>${esc(when)}</b><br><span class="small muted">${esc(tt('местное время встречи', 'meeting local time'))} · ${esc(m.timezone)}</span>${mine ? `<br><span class="small muted">${esc(tt('По вашему времени:', 'Your local time:'))} ${esc(mine)} (${esc(myTz())})</span>` : ''}</dd></div>
+      <div><dt>${esc(tt('Где', 'Where'))}</dt><dd>${esc(place)}</dd></div>
+    </dl>
+    <div class="row" style="margin-top:12px">
+      <a class="btn yellow" href="${u('/api/registrations/' + token + '/ics?lang=' + lang)}" download="dialogue-flow.ics">${ic.calendar} ${esc(tt('Добавить в календарь', 'Add to calendar'))}</a>
+      <a class="btn light sm" href="${esc(gcal)}" target="_blank" rel="noopener">Google ${esc(tt('Календарь', 'Calendar'))}</a>
+      <a class="btn dark sm" href="${u('/r/' + token)}">${esc(tt('Моя запись и отмена', 'My registration and cancel'))}</a></div>`;
+}
+
 export async function registration(ctx, token) {
   loading(ctx.main);
   let x;
@@ -133,7 +151,8 @@ export async function registration(ctx, token) {
       <div class="card-ui stack">
         <div class="row between"><b>${esc(x.name)}</b>${active ? `<span class="pill mint">${esc(tt('Запись активна', 'Active'))}</span>` : `<span class="pill red">${esc(tt('Запись отменена', 'Cancelled'))}</span>`}</div>
         <span class="small muted">${esc(x.email)}</span>
-        ${active ? `<button class="btn danger" type="button" id="cancel">${esc(tt('Отменить запись и освободить место', 'Cancel and free my seat'))}</button>`
+        ${active ? `<a class="btn yellow" href="${u('/api/registrations/' + token + '/ics?lang=' + lang)}" download="dialogue-flow.ics">${ic.calendar} ${esc(tt('Добавить в календарь', 'Add to calendar'))}</a>
+          <button class="btn danger" type="button" id="cancel">${esc(tt('Отменить запись и освободить место', 'Cancel and free my seat'))}</button>`
           : `<p class="muted" style="margin:0">${esc(tt('Место освобождено. Спасибо, что предупредили.', 'Your seat has been freed. Thank you for letting us know.'))}</p>`}
         <a class="btn" href="${u('/m/' + x.date.id)}">${esc(tt('Страница встречи', 'Meeting page'))}</a>
       </div></div>`;

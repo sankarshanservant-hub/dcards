@@ -130,14 +130,15 @@ r.post('/api/auth/owner', (req, res) => {
 });
 r.post('/api/auth/logout', (req, res) => { auth.clear(res); res.json({ ok: true }); });
 // Тестовый переключатель ролей (только в демо-режиме). Права всё равно проверяются по ролям демо-пользователя.
-r.post('/api/demo/login', (req, res) => {
+r.post('/api/demo/login', wrap(async (req, res) => {
   if (!config.demoMode) return bad(res, 'demo_disabled', 403);
   const u = auth.demoUser(String(req.body.as || ''));
   if (!u) return bad(res, 'unknown_role');
+  try { await demo.ensure(); } catch (e) { console.error('demo seed', e); } // демо-данные создаются при первом входе в демо
   auth.issue(res, req, u.id);
   res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
   res.json({ user: auth.publicUser(u) });
-});
+}));
 r.post('/api/demo/view', (req, res) => {
   if (!config.demoMode) return bad(res, 'demo_disabled', 403);
   if (req.body.on) res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
@@ -233,6 +234,11 @@ r.get('/api/registrations/:token', (req, res) => {
   const x = meetings.registrationByToken(String(req.params.token));
   if (!x) return bad(res, 'not_found', 404);
   res.json(x);
+});
+r.get('/api/registrations/:token/ics', (req, res) => {
+  const ics = meetings.icsByToken(String(req.params.token), baseUrl(req), req.query.lang === 'en' ? 'en' : 'ru');
+  if (!ics) return bad(res, 'not_found', 404);
+  res.set('Content-Type', 'text/calendar; charset=utf-8').set('Content-Disposition', 'attachment; filename="dialogue-flow.ics"').set('Cache-Control', 'no-store').send(ics);
 });
 r.post('/api/registrations/:token/cancel', (req, res) => out(res, meetings.cancelByToken(String(req.params.token))));
 

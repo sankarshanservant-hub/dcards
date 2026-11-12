@@ -252,6 +252,17 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.equal(r1.status, 201);
   assert.ok(r1.json.letter.demo && /Вы записаны/.test(r1.json.letter.subject), 'текст подтверждения');
   assert.match(r1.json.letter.body, /\/r\//, 'в письме ссылка на отмену');
+  assert.match(r1.json.letter.body, /\/ics/, 'в письме ссылка «Добавить в календарь»');
+  assert.match(r1.json.letter.body, /Кафе, Казань, Россия/, 'в письме место');
+  // файл календаря: время в UTC, место, ссылка на запись
+  const ics = await fetch(`${base}/api/registrations/${r1.json.token}/ics`);
+  assert.equal(ics.status, 200);
+  assert.match(ics.headers.get('content-type'), /text\/calendar/);
+  const icsText = await ics.text();
+  assert.match(icsText, new RegExp(`DTSTART:${day.replace(/-/g, '')}T160000Z`), '19:00 Москвы = 16:00 UTC');
+  assert.match(icsText, /LOCATION:Кафе\\, Казань\\, Россия/);
+  assert.match(icsText.replace(/\r\n /g, ''), new RegExp(`/r/${r1.json.token}`));
+  assert.equal((await fetch(`${base}/api/registrations/nope/ics`)).status, 404);
   assert.equal((await reg('Аня', 'anya@example.org')).json.error, 'already_registered');
   const r2 = await reg('Борис', 'boris@example.org');
   assert.equal(r2.status, 201, 'запись на последнее свободное место');
@@ -266,12 +277,24 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.equal(ed.json.dates[0].registrations.find((x) => x.name === 'Аня').contact, '@tg');
   const other = await emailLogin('fac2@example.org', 'Другой');
   assert.equal((await call('GET', `/api/fac/meetings/${r.json.id}`, null, { cookie: other.cookie })).status, 404);
+  // «Повторить встречу»: новая встреча с теми же полями и новой датой — записи не переносятся
+  const src = ed.json;
+  const day2 = new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10);
+  const copy = await call('POST', '/api/fac/meetings', { title: src.title, description: src.description, country: src.country, city: src.city, venue: src.venue, language: src.language,
+    timezone: src.timezone, priceType: src.priceType, priceNote: src.priceNote, capacity: src.capacity, askContact: src.askContact, firstDate: `${day2}T19:00`, repeatWeekly: 1 }, { cookie: facil.cookie });
+  assert.equal(copy.status, 201);
+  const cm = (await call('GET', `/api/fac/meetings/${copy.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(cm.dates.length, 1);
+  assert.equal(cm.dates[0].registrations.length, 0, 'записи не копируются');
+  assert.equal(cm.askContact, true);
+  assert.equal((await call('POST', '/api/fac/meetings', { ...src, timezone: '', firstDate: `${day2}T19:00` }, { cookie: facil.cookie })).json.error, 'bad_timezone', 'пояс обязателен');
+  assert.equal((await call('POST', `/api/fac/meetings/${copy.json.id}/publish`, { published: false }, { cookie: facil.cookie })).status, 200, 'копию можно скрыть');
 });
 
 // ---------- Сценарий 5: администратор снимает встречу и меняет роль ----------
 test('Сценарий 5: администратор снимает встречу и меняет роль — результат виден в интерфейсе', async () => {
   const mine = await call('GET', '/api/fac/meetings', null, { cookie: facil.cookie });
-  const mid = mine.json.meetings[0].id;
+  const mid = mine.json.meetings.find((m) => m.status === 'published').id;
   assert.equal((await call('POST', `/api/admin/meetings/${mid}/remove`, { reason: 'Формат не соответствует' }, { cookie: facil.cookie })).status, 403);
   assert.equal((await call('POST', `/api/admin/meetings/${mid}/remove`, { reason: 'Формат не соответствует' }, { cookie: owner.cookie })).status, 200);
   assert.ok(!(await call('GET', '/api/meetings/places')).json.places.some((p) => p.cities.some((c) => c.city === 'Казань')), 'встреча исчезла из поиска');
@@ -331,6 +354,26 @@ test('Демо-роли: изменения только над демо-объ�
   const sub = await call('POST', '/api/artist/works', null, { cookie: artist.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['images', await png('#999'), 'r.png']]) });
   assert.equal((await call('POST', `/api/curation/works/${sub.json.ids[0]}/decide`, { action: 'approve' }, { cookie: cur.cookie })).json.error, 'demo_readonly');
   assert.equal((await call('GET', '/api/cards/DC-0001')).status, 200);
+});
+
+// ---------- «Посмотреть демо»: данные создаются сами, демо-встреча не шлёт писем ----------
+test('Демо: первый вход создаёт тестовую встречу с местами, подборку и работу в очереди', async () => {
+  const adm = await call('POST', '/api/demo/login', { as: 'admin' });
+  await call('POST', '/api/admin/demo/clear', null, { cookie: adm.cookie });
+  const fac = await call('POST', '/api/demo/login', { as: 'facilitator' });
+  const mts = (await call('GET', '/api/fac/meetings', null, { cookie: fac.cookie })).json.meetings;
+  const now = new Date().toISOString();
+  const open = mts.flatMap((m) => m.dates).find((d) => d.startsAt > now && d.left > 0);
+  assert.ok(open, 'есть будущая демо-дата со свободными местами');
+  assert.ok((await call('GET', '/api/collections', null, { cookie: fac.cookie })).json.collections.some((c) => c.isDemo), 'есть сохранённая демо-подборка');
+  const cur = await call('POST', '/api/demo/login', { as: 'curator' });
+  const q = await call('GET', '/api/curation/queue', null, { cookie: cur.cookie });
+  assert.ok(JSON.stringify(q.json).includes('"isDemo":true'), 'в очереди куратора есть демо-работа');
+  const reg = await call('POST', `/api/meetings/dates/${open.id}/register`, { name: 'Гость', email: 'guest@example.org' }, { cookie: fac.cookie });
+  assert.equal(reg.status, 201);
+  assert.equal(reg.json.isDemo, true);
+  assert.equal(reg.json.letter.sent, false, 'демо-встреча: письмо не отправляется');
+  assert.equal((await call('GET', '/api/meetings/places')).json.places.some((p) => p.country === 'Таиланд'), false, 'демо скрыто от посетителей');
 });
 
 // ---------- вход общим аккаунтом сайта ----------

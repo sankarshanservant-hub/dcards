@@ -52,9 +52,11 @@ export async function review(ctx, id) {
     <div class="row" style="gap:8px">${statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}${w.kind === 'replacement' ? `<span class="pill navy">${esc(tt('Новая версия опубликованной карты', 'New version of a published card'))}</span>` : ''}</div>
     <h1>${esc(w.artist)} · №${w.id}</h1>
     <p class="muted">${esc(tt('Ответственный:', 'Owner:'))} <b>${esc(w.assignedTo ? w.assignedTo.name : tt('любой куратор', 'any curator'))}</b></p>
-    <div class="compare">
-      ${compareA ? `<figure><img src="${esc(compareA.thumb)}" data-full="${esc(compareA.full)}" data-w="${compareA.width}" data-h="${compareA.height}" alt=""><figcaption>${esc(compareA.label)}</figcaption></figure>` : ''}
-      <figure><img src="${esc(cur.thumb)}" data-full="${esc(cur.full)}" data-w="${cur.width}" data-h="${cur.height}" alt=""><figcaption>${esc(tt(`Новая версия (${cur.n})`, `New version (${cur.n})`))}${cur.note ? ' · ' + esc(cur.note) : ''}</figcaption></figure>
+    ${compareA ? `<div class="seg ba-toggle" role="group" aria-label="${esc(tt('Сравнение версий', 'Compare versions'))}">
+        <button type="button" class="on" data-ba="a" aria-pressed="true">${esc(tt('Было', 'Before'))}</button><button type="button" data-ba="b" aria-pressed="false">${esc(tt('Стало', 'After'))}</button></div>` : ''}
+    <div class="compare same-scale ${compareA ? 'pair show-a' : ''}" id="cmp">
+      ${compareA ? `<figure class="ba-a"><div class="frame"><img src="${esc(compareA.full)}" data-full="${esc(compareA.full)}" data-w="${compareA.width}" data-h="${compareA.height}" alt="${esc(compareA.label)}"></div><figcaption><b>${esc(tt('Было', 'Before'))}:</b> ${esc(compareA.label)}</figcaption></figure>` : ''}
+      <figure class="ba-b"><div class="frame"><img src="${esc(cur.full)}" data-full="${esc(cur.full)}" data-w="${cur.width}" data-h="${cur.height}" alt=""></div><figcaption>${compareA ? `<b>${esc(tt('Стало', 'After'))}:</b> ` : ''}${esc(tt(`Новая версия (${cur.n})`, `New version (${cur.n})`))}${cur.note ? ' · ' + esc(cur.note) : ''}</figcaption></figure>
     </div>
     ${inReview ? `<form class="card-ui stack" id="df">
       <h2>${esc(tt('Решение', 'Decision'))}</h2>
@@ -84,6 +86,11 @@ export async function review(ctx, id) {
     <div class="list">${w.history.map(historyRow).join('')}</div>
     ${w.targetCardOldVersions && w.targetCardOldVersions.length ? `<h3>${esc(tt('Прежние изображения карты', 'Previous images of the card'))}</h3><div class="cells">${w.targetCardOldVersions.map((v) => `<div class="cell"><div class="tile"><img src="${esc(v.thumb)}" alt=""></div><small>${esc(fmtDate(v.replacedAt))}</small></div>`).join('')}</div>` : ''}
   </div>`;
+  const cmp = ctx.main.querySelector('#cmp');
+  ctx.main.querySelectorAll('[data-ba]').forEach((b) => b.addEventListener('click', () => {
+    cmp.classList.toggle('show-a', b.dataset.ba === 'a'); cmp.classList.toggle('show-b', b.dataset.ba === 'b');
+    ctx.main.querySelectorAll('[data-ba]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+  }));
   ctx.main.querySelectorAll('.compare img').forEach((img) => img.addEventListener('click', () => openViewer({ cards: [{ code: '', thumb: img.src, full: img.dataset.full, width: +img.dataset.w, height: +img.dataset.h }], index: 0, mode: 'admin' })));
   const df = ctx.main.querySelector('#df');
   if (!df) return;

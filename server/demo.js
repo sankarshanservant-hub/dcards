@@ -71,6 +71,30 @@ async function seed() {
   return { ok: true };
 }
 
+/** Для кнопки «Посмотреть демо»: создаёт демо-данные, если их нет, и добавляет будущие даты демо-встречам, если старые прошли. */
+let ensuring = null;
+async function ensure() {
+  if (ensuring) return ensuring;
+  ensuring = (async () => {
+    try {
+      const r = await seed();
+      if (!r.already) return r;
+      const now = new Date().toISOString();
+      const ms = db.prepare('SELECT id, timezone FROM meetings WHERE is_demo = 1').all();
+      let added = 0;
+      for (const m of ms) {
+        const future = db.prepare(`SELECT 1 FROM meeting_dates WHERE meeting_id = ? AND status = 'active' AND starts_at >= ?`).get(m.id, now);
+        if (future) continue;
+        const d = new Date(Date.now() + 4 * 86400000);
+        meetings.addDates(m.id, { firstDate: `${d.toISOString().slice(0, 10)}T19:00`, repeatWeekly: 2 });
+        added++;
+      }
+      return { already: true, datesAdded: added };
+    } finally { ensuring = null; }
+  })();
+  return ensuring;
+}
+
 /** Удаляет демо-данные (демо-пользователи остаются, чтобы можно было войти снова). */
 function clear() {
   db.transaction(() => {
@@ -95,4 +119,4 @@ function clear() {
   return { ok: true };
 }
 
-module.exports = { seed, clear, placeholder };
+module.exports = { seed, ensure, clear, placeholder };

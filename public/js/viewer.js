@@ -1,7 +1,8 @@
 // Полноэкранный просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием,
 // листание свайпом и стрелками. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
-import { t, dateLabel } from './i18n.js';
-import { esc, api, u, tt } from './util.js';
+import { t, dateLabel, lang } from './i18n.js';
+import { esc, api, u, tt, toast } from './util.js';
+import { PARTNER_QUESTIONS, START_GUIDES } from './content.js';
 
 let current = null; // открытый просмотр
 
@@ -44,7 +45,7 @@ export function openViewer(opts) {
     </div>
     <button class="viewer-nav viewer-nav--prev chrome" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
     <button class="viewer-nav viewer-nav--next chrome" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>
-    ${opts.mode === 'collection' ? '<div class="viewer-bottom chrome" data-bottom></div>' : ''}
+    ${opts.mode !== 'admin' ? '<div class="viewer-bottom chrome" data-bottom></div>' : ''}
     <div class="viewer-sheet" data-sheet hidden></div>`;
   root.appendChild(el);
   document.body.classList.add('no-scroll');
@@ -185,30 +186,75 @@ export function openViewer(opts) {
     show();
   }
 
+  // Блок под картой зависит от того, откуда её открыли: подборка встречи — выбор и «Вопросы для собеседника»;
+  // общая библиотека — «С чего начать?» и вход в обсуждение. Свёрнутые блоки не перекрывают картинку:
+  // высота панели освобождается под ней, и картинка подстраивается.
+  const ui = { questions: false, guide: false, guideKey: null };
+  const L = (o) => (o && (o[lang] || o.ru)) || '';
+  const chev = (open) => `<span class="chev ${open ? 'open' : ''}" aria-hidden="true">▾</span>`;
   function renderBottom() {
-    if (!bottom || !opts.collection) return;
+    if (!bottom) return;
     const c = opts.cards[index];
-    const { choice } = opts.collection.state();
-    const chosen = choice === c.code;
-    const count = opts.collection.countFor(c.code);
-    if (chosen) {
-      bottom.innerHTML = `
-        <div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>
-        <p class="viewer-count">${opts.collection.isTest ? esc(t('viewer.testNoCount'))
-          : esc(typeof count === 'number' ? t('viewer.selectedCount', { n: count }) : '')}</p>
-        <button class="link-btn" type="button" data-cancel>${esc(t('viewer.cancel'))}</button>`;
-    } else {
-      bottom.innerHTML = `
+    if (opts.mode === 'collection' && opts.collection) {
+      const { choice } = opts.collection.state();
+      const chosen = choice === c.code;
+      const count = opts.collection.countFor(c.code);
+      const qs = PARTNER_QUESTIONS[lang] || PARTNER_QUESTIONS.ru;
+      bottom.innerHTML = chosen ? `
+        <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>
+          <span class="viewer-count">${opts.collection.isTest ? esc(t('viewer.testNoCount')) : esc(typeof count === 'number' ? t('viewer.selectedCount', { n: count }) : '')}</span></div>
+        <div class="vb-panel">
+          <button class="vb-toggle" type="button" data-q aria-expanded="${ui.questions}">${esc(tt('Вопросы для собеседника', 'Questions for your conversation partner'))}${chev(ui.questions)}</button>
+          ${ui.questions ? `<div class="vb-body">${PARTNER_QUESTIONS.placeholder ? `<p class="vb-note">${esc(tt('Временные вопросы для теста — заменятся списком проекта.', 'Temporary test questions — to be replaced by the project’s list.'))}</p>` : ''}
+            <ol class="vb-questions">${qs.map((q) => `<li>${esc(q)}</li>`).join('')}</ol>
+            <p class="vb-note">${esc(tt('Вопросы — по желанию и в любом порядке. Отвечать письменно не нужно.', 'The questions are optional, in any order. No need to write answers.'))}</p></div>` : ''}
+        </div>
+        <div class="vb-row"><button class="link-btn" type="button" data-copy>${esc(tt('Ссылка на карту', 'Link to this card'))}</button>
+          <button class="link-btn" type="button" data-cancel>${esc(t('viewer.cancel'))}</button></div>`
+      : `
         <button class="btn yellow wide" type="button" data-choose>${esc(t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
-        ${choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}`;
+        ${choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}
+        <div class="vb-row"><button class="link-btn" type="button" data-copy>${esc(tt('Ссылка на карту', 'Link to this card'))}</button></div>`;
+    } else if (opts.mode === 'library') {
+      const info = detailsCache.get(c.code);
+      const g = START_GUIDES.find((x) => x.key === ui.guideKey);
+      bottom.innerHTML = `
+        <div class="vb-panel">
+          <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}">${esc(tt('С чего начать?', 'Where to start?'))}${chev(ui.guide)}</button>
+          ${ui.guide ? `<div class="vb-body"><div class="chips vb-chips">${START_GUIDES.map((x) => `<button class="chip ${x.key === ui.guideKey ? 'on' : ''}" type="button" data-g="${x.key}" aria-pressed="${x.key === ui.guideKey}">${esc(L(x.title))}</button>`).join('')}</div>
+            ${g ? `<div class="vb-guide"><p>${esc(L(g.text))}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}</div>` : ''}</div>` : ''}
+        </div>
+        <div class="vb-row"><a class="btn light sm" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Обсуждение', 'Discussion'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a>
+          <button class="link-btn" type="button" data-copy>${esc(tt('Ссылка на карту', 'Link to this card'))}</button></div>`;
+      if (!info) api(`/api/cards/${encodeURIComponent(c.code)}`).then((d) => { detailsCache.set(c.code, d); if (opts.cards[index].code === c.code) renderBottom(); }).catch(() => {});
     }
+    syncBottom();
+  }
+  // Высота панели снизу → место для картинки (картинка всегда целиком и не под панелью).
+  function syncBottom() {
+    if (!bottom) return;
+    el.style.setProperty('--bottom', `${bottom.offsetHeight + 4}px`);
+    layout();
+  }
+  async function copyLink() {
+    const url = location.href;
+    try {
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Dialogue Cards', url }); return; }
+      await navigator.clipboard.writeText(url); toast(tt('Ссылка на карту скопирована', 'Card link copied'));
+    } catch (e) { if (e && e.name !== 'AbortError') prompt(tt('Скопируйте ссылку:', 'Copy the link:'), url); }
   }
   if (bottom) {
     bottom.addEventListener('click', async (e) => {
+      const a = e.target.closest('a[data-discuss]');
+      if (a) { e.preventDefault(); const href = a.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
       const btn = e.target.closest('button'); if (!btn) return;
+      if (btn.hasAttribute('data-q')) { ui.questions = !ui.questions; renderBottom(); return; }
+      if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); return; }
+      if (btn.dataset.g) { ui.guideKey = ui.guideKey === btn.dataset.g ? null : btn.dataset.g; renderBottom(); return; }
+      if (btn.hasAttribute('data-copy')) { copyLink(); return; }
       btn.disabled = true;
       try {
-        if (btn.hasAttribute('data-choose')) await opts.collection.choose(opts.cards[index].code);
+        if (btn.hasAttribute('data-choose')) { await opts.collection.choose(opts.cards[index].code); ui.questions = false; }
         if (btn.hasAttribute('data-cancel')) await opts.collection.cancel();
       } finally { renderBottom(); }
     });
@@ -265,7 +311,7 @@ export function openViewer(opts) {
     else if (e.key === 'ArrowLeft') go(-1);
     else if (e.key === 'i') toggleSheet();
   };
-  const onResize = () => layout();
+  const onResize = () => (bottom ? syncBottom() : layout());
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
   state.cleanup = () => {

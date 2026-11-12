@@ -4,17 +4,23 @@ import { esc, tt, u, api, errorText, toast, fmtDate } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill, timeline, stepsBar, ic } from '../ui.js';
 
-const reasonsHtml = (d) => (d && d.criteria.length ? `<ul class="reasons">${d.criteria.map((c) => `<li><b>${c.number}.</b>${esc(c.text)}</li>`).join('')}</ul>` : '')
+const critHtml = (c) => `<li><b>${c.number}.</b>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временная формулировка', 'placeholder wording'))}</span>` : ''}</li>`;
+const reasonsHtml = (d) => (d && d.criteria.length ? `<ul class="reasons">${d.criteria.map(critHtml).join('')}</ul>` : '')
   + (d && d.comment ? `<p class="small" style="margin:6px 0 0">${esc(tt('Комментарий куратора:', 'Curator’s comment:'))} ${esc(d.comment)}</p>` : '');
 
 function workCard(w) {
-  return `<a class="work" href="${u('/artist/works/' + w.id)}" style="text-decoration:none;color:inherit">
-    <div class="thumb">${w.version ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</div>
+  const returned = w.status === 'needs_changes';
+  return `<div class="work" data-work="${w.id}">
+    <a class="thumb" href="${u('/artist/works/' + w.id)}" aria-label="${esc(tt(`Работа №${w.id}`, `Work #${w.id}`))}">${w.version ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</a>
     <div class="body"><div class="row" style="gap:6px">${statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}
       ${w.kind === 'replacement' ? `<span class="pill">${esc(tt('Новая версия', 'New version'))} ${esc(w.targetCard ? w.targetCard.code : '')}</span>` : ''}</div>
-      <span class="small muted">${esc(tt('Работа', 'Work'))} №${w.id} · ${esc(tt('версий', 'versions'))}: ${w.versionsCount} · ${esc(fmtDate(w.updatedAt, { day: 'numeric', month: 'short' }))}</span>
+      <a class="small muted" href="${u('/artist/works/' + w.id)}" style="color:inherit">${esc(tt('Работа', 'Work'))} №${w.id} · ${esc(tt('версий', 'versions'))}: ${w.versionsCount} · ${esc(fmtDate(w.updatedAt, { day: 'numeric', month: 'short' }))} →</a>
       ${w.card ? `<span class="small">${esc(tt('Карта', 'Card'))} <b>${esc(w.card.code)}</b></span>` : ''}
-      ${['needs_changes', 'rejected'].includes(w.status) ? reasonsHtml(w.lastResult) : ''}</div></a>`;
+      ${['needs_changes', 'rejected'].includes(w.status) ? `<div class="small"><b>${esc(returned ? tt('Почему возвращена:', 'Why it was returned:') : tt('Причина решения:', 'Reason:'))}</b></div>${reasonsHtml(w.lastResult)}` : ''}
+      ${returned ? `<form class="work-fix" data-fix="${w.id}">
+        <label class="field small">${esc(tt('Что исправлено (по желанию)', 'What was fixed (optional)'))}<input type="text" name="note" maxlength="300"></label>
+        <div class="row"><label class="btn yellow sm">${ic.plus} ${esc(tt('Загрузить исправленную версию', 'Upload corrected version'))}<input type="file" name="image" accept="image/*" hidden></label></div>
+      </form>` : ''}</div></div>`;
 }
 
 export async function cabinet(ctx) {
@@ -43,6 +49,13 @@ export async function cabinet(ctx) {
       <div id="ask"></div>
     </div>`;
   const ask = ctx.main.querySelector('#ask');
+  ctx.main.querySelectorAll('[data-fix]').forEach((f) => f.image.addEventListener('change', async () => {
+    if (!f.image.files.length) return;
+    const fd = new FormData(); fd.append('image', f.image.files[0]); fd.append('note', f.note.value);
+    f.querySelector('label.btn').classList.add('busy');
+    try { await api(`/api/artist/works/${f.dataset.fix}/versions`, { method: 'POST', form: fd }); toast(tt('Исправленная версия отправлена кураторам', 'Corrected version sent to curators')); ctx.rerender(); }
+    catch (x) { toast(errorText(x)); f.querySelector('label.btn').classList.remove('busy'); f.image.value = ''; }
+  }));
   ctx.main.querySelector('#mycards').addEventListener('click', (e) => {
     const w = e.target.closest('[data-withdraw]'); if (!w) return;
     const code = w.dataset.withdraw;
@@ -175,6 +188,6 @@ export function historyRow(h) {
   const rt = h.replacementType === 'fix' ? tt(' · исправление той же карты', ' · fix of the same card') : h.replacementType === 'new' ? tt(' · новая карта', ' · new card') : '';
   return `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(tt(ru, en))}${esc(rt)}</b>
     <span class="small">${esc(h.actor)} · ${esc(tt('версия', 'version'))} ${h.versionN} · ${esc(fmtDate(h.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${h.toUser ? ' → ' + esc(h.toUser) : ''}</span>
-    ${h.criteria.length ? `<ul class="reasons">${h.criteria.map((c) => `<li><b>${c.number}.</b>${esc(c.text)}</li>`).join('')}</ul>` : ''}
+    ${h.criteria.length ? `<ul class="reasons">${h.criteria.map(critHtml).join('')}</ul>` : ''}
     ${h.comment ? `<span class="small">${esc(h.comment)}</span>` : ''}</span></div>`;
 }

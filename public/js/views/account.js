@@ -30,8 +30,16 @@ export function login(ctx) {
   };
   const draw = () => {
     const codeLogin = session.config.emailLogin !== false;
-    ctx.main.innerHTML = `<div class="wrap page narrow stack">${step === 1 ? `<h1>${esc(tt('Вход в Dialogue Cards', 'Sign in to Dialogue Cards'))}</h1>` + siteBlock() : ''}
-      ${!codeLogin && !siteOn ? `<p class="notice demo">${esc(tt('Вход по email заработает после подключения почты. Сейчас роли можно посмотреть через демо-режим ниже.', 'Email sign-in will work once email is connected. For now, try the roles in demo mode below.'))}</p>` : ''}
+    ctx.main.innerHTML = `<div class="wrap page narrow stack">${step === 1 ? `<h1>${esc(tt('Вход в Dialogue Cards', 'Sign in to Dialogue Cards'))}</h1>` : ''}
+      ${step === 1 && session.config.demoMode ? `<div class="card-ui demo-entry stack" id="demo-entry">
+        <div class="row between" style="align-items:flex-start"><div><h2 style="margin:0">${esc(tt('Посмотреть демо', 'View the demo'))}</h2>
+          <p class="muted" style="margin:4px 0 0">${esc(tt('Без регистрации. Тестовые встречи, подборка и работы хранятся отдельно от настоящих и видны только в демо.', 'No sign-up. Test meetings, a selection and works are kept separate from real data and visible only in the demo.'))}</p></div>
+          <span class="pill demo">${esc(tt('демо', 'demo'))}</span></div>
+        <div class="demo-roles">${[['facilitator', 'Фасилитатор', 'Facilitator', 'Подборка, QR, встречи', 'Selection, QR, meetings'], ['artist', 'Художник', 'Artist', 'Работы и возвраты', 'Works and returns'], ['curator', 'Куратор', 'Curator', 'Очередь и решения', 'Queue and decisions'], ['admin', 'Администратор', 'Admin', 'Пользователи и роли', 'Users and roles'], ['guest', 'Участник', 'Participant', 'Встречи и обсуждения', 'Meetings and discussions']]
+          .map(([k, ru, en, dru, den], i) => `<button class="btn ${i === 0 ? 'yellow' : 'light'}" type="button" data-demo="${k}"><b>${esc(tt(ru, en))}</b><span class="small">${esc(tt(dru, den))}</span></button>`).join('')}</div>
+      </div>` : ''}
+      ${step === 1 ? siteBlock() : ''}
+      ${!codeLogin && !siteOn ? `<p class="notice demo">${esc(tt('Вход по email заработает после подключения почты. Сейчас роли можно посмотреть в демо выше.', 'Email sign-in will work once email is connected. For now, try the roles in the demo above.'))}</p>` : ''}
       ${codeLogin ? `<div class="card-ui navy stack">
         ${stepsBar(step, 2)}
         <h1 style="color:var(--on-navy)">${esc(step === 1 ? tt(siteOn ? 'Или кодом на почту' : 'Вход и регистрация', siteOn ? 'Or with an emailed code' : 'Sign in or sign up') : tt('Введите код', 'Enter the code'))}</h1>
@@ -53,9 +61,6 @@ export function login(ctx) {
       <details class="card-ui flat"><summary><b>${esc(tt('Вход владельца проекта (пароль)', 'Project owner sign-in (password)'))}</b></summary>
         <form class="form" id="fo" style="margin-top:12px"><label class="field">${esc(tt('Пароль', 'Password'))}<input type="password" name="password" autocomplete="current-password" required></label>
           <p class="form-error" id="oerr" role="alert"></p><button class="btn dark" type="submit">${esc(tt('Войти как владелец', 'Sign in as owner'))}</button></form></details>
-      ${session.config.demoMode ? `<div class="card-ui flat stack"><b>${esc(tt('Демо-режим: войти под тестовой ролью', 'Demo mode: sign in as a test role'))}</b>
-        <p class="small muted" style="margin:0">${esc(tt('Тестовый переключатель для показа путей ролей. Права проверяются на сервере. Он есть также в меню.', 'A test switch to show each role’s path. Permissions are checked on the server. Also available in the menu.'))}</p>
-        <div class="chips">${[['artist', 'Художник', 'Artist'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator'], ['admin', 'Администратор', 'Admin'], ['guest', 'Гость', 'Guest']].map(([k, ru, en]) => `<button class="chip" type="button" data-demo="${k}">${esc(tt(ru, en))}</button>`).join('')}</div></div>` : ''}
     </div>`;
     const err = (m) => { const e = ctx.main.querySelector('#err'); if (e) e.textContent = m; };
     const sg = ctx.main.querySelector('#site-go');
@@ -90,7 +95,8 @@ export function login(ctx) {
       catch (x) { ctx.main.querySelector('#oerr').textContent = errorText(x); }
     });
     ctx.main.querySelectorAll('[data-demo]').forEach((b) => b.addEventListener('click', async () => {
-      try { await api('/api/demo/login', { method: 'POST', body: { as: b.dataset.demo } }); await refreshSession(); goAfterLogin(ctx); } catch (x) { toast(errorText(x)); }
+      b.disabled = true; b.classList.add('busy');
+      try { await api('/api/demo/login', { method: 'POST', body: { as: b.dataset.demo } }); await refreshSession(); goAfterLogin(ctx); } catch (x) { toast(errorText(x)); b.disabled = false; b.classList.remove('busy'); }
     }));
   };
   draw();

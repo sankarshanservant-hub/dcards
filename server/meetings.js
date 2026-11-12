@@ -105,11 +105,13 @@ async function register(dateId, { name, email, contact }, baseUrl, lang = 'ru') 
   const link = `${baseUrl}${config.basePath}/r/${token}`;
   const when = fmtLocal(d, m, lang);
   const subject = lang === 'en' ? `You are registered: ${m.title}` : `Вы записаны: ${m.title}`;
+  const ics = `${baseUrl}${config.basePath}/api/registrations/${token}/ics`;
   const body = lang === 'en'
-    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${m.city}, ${m.venue}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? 'Payment is arranged by the facilitator. ' + m.price_note + '\n' : ''}\nCannot come? Cancel here to free your seat: ${link}`
-    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${m.city}, ${m.venue}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? 'Оплату организует фасилитатор. ' + m.price_note + '\n' : ''}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
-  const letter = await mail.send(e, subject, body);
-  return { ok: true, token, letter, link };
+    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? 'Payment is arranged by the facilitator. ' + m.price_note + '\n' : ''}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
+    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? 'Оплату организует фасилитатор. ' + m.price_note + '\n' : ''}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
+  // Демо-встреча: письмо не отправляется (честно сообщаем об этом на странице), настоящая почта не задействуется.
+  const letter = m.is_demo ? { sent: false, demo: true, demoMeeting: true, subject, body } : await mail.send(e, subject, body);
+  return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: [m.venue, m.city, m.country].filter(Boolean).join(', ') };
 }
 
 function registrationByToken(token) {
@@ -118,6 +120,26 @@ function registrationByToken(token) {
   const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(r.date_id);
   const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
   return { name: r.name, email: r.email, status: r.status, createdAt: r.created_at, cancelledAt: r.cancelled_at, date: dateOut(d, m), meeting: meetingOut(m) };
+}
+const icsText = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\.\d+/, '');
+function foldIcs(line) { const out = []; let rest = line; while (Buffer.byteLength(rest) > 74) { let n = 74; while (Buffer.byteLength(rest.slice(0, n)) > 74) n--; out.push(rest.slice(0, n)); rest = ' ' + rest.slice(n); } out.push(rest); return out.join('\r\n'); }
+/** Файл календаря (.ics) для записи: время в UTC (календарь покажет его в поясе устройства), место, ссылка для отмены. */
+function icsByToken(token, baseUrl, lang = 'ru') {
+  const r = db.prepare('SELECT * FROM registrations WHERE token = ?').get(token);
+  if (!r) return null;
+  const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(r.date_id);
+  const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
+  const link = `${baseUrl}${config.basePath}/r/${token}`;
+  const place = [m.venue, m.city, m.country].filter(Boolean).join(', ');
+  const desc = (lang === 'en'
+    ? `Dialogue Flow meeting.\nLocal time: ${fmtLocal(d, m, 'en')}\nPlace: ${place}\nFacilitator: ${userName(m.facilitator_id)}\nCannot come? Cancel to free your seat: ${link}`
+    : `Встреча Dialogue Flow.\nМестное время: ${fmtLocal(d, m, 'ru')}\nМесто: ${place}\nФасилитатор: ${userName(m.facilitator_id)}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`);
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dialogue Cards//Meetings//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    `UID:dcards-reg-${r.id}-${d.id}@dialogue-cards`, `DTSTAMP:${icsTime(new Date().toISOString())}`, `DTSTART:${icsTime(d.starts_at)}`,
+    `SUMMARY:${icsText(m.title)}`, `LOCATION:${icsText(place)}`, `DESCRIPTION:${icsText(desc)}`, `URL:${link}`,
+    `STATUS:${r.status === 'cancelled' || d.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED'}`, 'END:VEVENT', 'END:VCALENDAR'];
+  return lines.map(foldIcs).join('\r\n') + '\r\n';
 }
 function cancelByToken(token) {
   const r = db.prepare('SELECT * FROM registrations WHERE token = ?').get(token);
@@ -240,6 +262,6 @@ function restoreByAdmin(meetingId) {
 }
 
 module.exports = {
-  LANGS, validTz, zonedToUtc, places, upcoming, datePublic, register, registrationByToken, cancelByToken,
+  LANGS, validTz, zonedToUtc, places, upcoming, datePublic, register, registrationByToken, cancelByToken, icsByToken,
   create, update, addDates, setDate, setPublished, mine, oneForEditor, meetingOfDate, facilitatorOf, allForAdmin, removeByAdmin, restoreByAdmin,
 };

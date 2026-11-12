@@ -1,5 +1,5 @@
 // Общие части интерфейса: сессия, значки, статусы, шаги, ленты, сетка карт, меню.
-import { esc, tt, u, api } from './util.js';
+import { esc, tt, u, api, toast } from './util.js';
 
 export const session = { user: null, config: {}, showDemo: false };
 export const hasRole = (...roles) => !!session.user && (session.user.roles.includes('admin') || roles.some((r) => session.user.roles.includes(r)));
@@ -94,6 +94,25 @@ export async function loginWithSite({ force = false } = {}) {
 }
 export const skipSiteAutoLogin = () => lsSet('dc_site_skip', siteSession());
 
+// Миниатюры: при ошибке загрузки — подпись «Не загрузилось · нажмите, чтобы повторить».
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.closest('.tile')) return;
+  const tile = img.closest('.tile');
+  if (tile.querySelector('.tile-err')) return;
+  tile.classList.add('broken');
+  tile.insertAdjacentHTML('beforeend', `<span class="tile-err">${esc(tt('Не загрузилось · нажмите, чтобы повторить', 'Did not load · tap to retry'))}</span>`);
+}, true);
+document.addEventListener('click', (e) => {
+  const tile = e.target.closest('.tile.broken');
+  if (!tile) return;
+  e.preventDefault(); e.stopPropagation();
+  const img = tile.querySelector('img');
+  tile.classList.remove('broken'); tile.querySelector('.tile-err')?.remove();
+  const src = img.getAttribute('src').replace(/[?&]r=\d+$/, '');
+  img.src = `${src}${src.includes('?') ? '&' : '?'}r=${Date.now()}`;
+}, true);
+
 export async function refreshSession() {
   try {
     const [me, cfg] = await Promise.all([api('/api/me'), api('/api/config')]);
@@ -114,11 +133,15 @@ export function showQr(slug, title, url) {
     <h2>${esc(title)}</h2>
     <img class="qr-img" src="${u('/api/c/' + slug + '/qr.svg')}" alt="QR">
     <p class="qr-url">${esc(url.replace(/^https?:\/\//, ''))}</p>
-    <p class="muted">${esc(tt('Наведите камеру телефона на QR-код', 'Point your phone camera at the QR code'))}</p>`;
+    <div class="row" style="justify-content:center"><button class="btn yellow" type="button" data-copy>${esc(tt('Скопировать ссылку', 'Copy link'))}</button></div>
+    <p class="muted">${esc(tt('Наведите камеру телефона на QR-код. Ссылку можно отправить в чат Zoom.', 'Point your phone camera at the QR code. You can send the link in the Zoom chat.'))}</p>`;
   document.body.appendChild(el); document.body.classList.add('no-scroll');
   const close = () => { el.remove(); document.body.classList.remove('no-scroll'); document.removeEventListener('keydown', onKey); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   el.querySelector('.qr-close').addEventListener('click', close);
+  el.querySelector('[data-copy]').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); } catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), url); }
+  });
   el.querySelector('.qr-close').focus();
 }
