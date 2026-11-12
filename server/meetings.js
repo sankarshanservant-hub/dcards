@@ -206,6 +206,12 @@ function create(user, body) {
 }
 function update(meetingId, body) {
   const p = parseMeeting(body); if (p.error) return p;
+  const before = db.prepare('SELECT timezone FROM meetings WHERE id = ?').get(meetingId);
+  // Город сменился на другой часовой пояс: будущие даты сохраняют местное время (19:00 остаётся 19:00 в новом городе).
+  if (before && before.timezone !== p.m.timezone) {
+    const fut = db.prepare('SELECT id, local_time FROM meeting_dates WHERE meeting_id = ? AND starts_at >= ?').all(meetingId, nowIso());
+    for (const d of fut) { const utc = zonedToUtc(d.local_time, p.m.timezone); if (utc) db.prepare('UPDATE meeting_dates SET starts_at = ? WHERE id = ?').run(utc, d.id); }
+  }
   db.prepare(`UPDATE meetings SET title=@title, description=@description, country=@country, city=@city, venue=@venue, language=@language,
     timezone=@timezone, price_type=@price_type, price_note=@price_note, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
   return { ok: true };

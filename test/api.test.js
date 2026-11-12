@@ -217,7 +217,7 @@ test('Сценарий 2: фасилитатор собирает подборк
   assert.equal((await call('GET', '/api/cards/DC-0002')).json.selectedCount, 0, 'смена выбора в раунде');
   await sel('DC-0002', 2);
   const state = await call('POST', `/api/c/${slug}/visit`, { visitorId: visitorA });
-  assert.deepEqual(state.json.selections, [{ round: 1, code: 'DC-0003' }, { round: 2, code: 'DC-0002' }], 'выбор сохраняется, раунды не стирают друг друга');
+  assert.deepEqual(state.json.selections.map(({ round, code }) => ({ round, code })), [{ round: 1, code: 'DC-0003' }, { round: 2, code: 'DC-0002' }], 'выбор сохраняется, раунды не стирают друг друга');
   await sel('DC-0003', 1, visitorB);
   const stats = await call('GET', '/api/admin/cards', null, { cookie: owner.cookie });
   const c3 = stats.json.cards.find((c) => c.code === 'DC-0003');
@@ -287,7 +287,8 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.equal(cm.dates.length, 1);
   assert.equal(cm.dates[0].registrations.length, 0, 'записи не копируются');
   assert.equal(cm.askContact, true);
-  assert.equal((await call('POST', '/api/fac/meetings', { ...src, timezone: '', firstDate: `${day2}T19:00` }, { cookie: facil.cookie })).json.error, 'bad_timezone', 'пояс обязателен');
+  const unknown = await call('POST', '/api/fac/meetings', { ...src, city: 'Неведомск', country: '', firstDate: `${day2}T19:00` }, { cookie: facil.cookie });
+  assert.equal(unknown.json.error, 'city_unresolved', 'город не определён — встречу не опубликовать, просим уточнить');
   assert.equal((await call('POST', `/api/fac/meetings/${copy.json.id}/publish`, { published: false }, { cookie: facil.cookie })).status, 200, 'копию можно скрыть');
 });
 
@@ -374,6 +375,105 @@ test('Демо: первый вход создаёт тестовую встре
   assert.equal(reg.json.isDemo, true);
   assert.equal(reg.json.letter.sent, false, 'демо-встреча: письмо не отправляется');
   assert.equal((await call('GET', '/api/meetings/places')).json.places.some((p) => p.country === 'Таиланд'), false, 'демо скрыто от посетителей');
+});
+
+// ---------- местное время города встречи ----------
+test('Встреча: пояс определяется по городу, время сохраняется местным для города, откуда бы её ни создавали', async () => {
+  const r1 = await call('GET', '/api/places/resolve?city=' + encodeURIComponent('Чиангмай'), null, { cookie: facil.cookie });
+  assert.equal(r1.json.status, 'ok');
+  assert.equal(r1.json.place.timezone, 'Asia/Bangkok');
+  assert.equal(r1.json.place.country, 'Таиланд', 'страна подставляется по городу');
+  const amb = await call('GET', '/api/places/resolve?city=Springfield', null, { cookie: facil.cookie });
+  assert.equal(amb.json.status, 'ambiguous', 'несколько городов с разными поясами — просим уточнить');
+  assert.ok(amb.json.options.length >= 2);
+  assert.equal((await call('GET', '/api/places/resolve?city=' + encodeURIComponent('Неведомск'), null, { cookie: facil.cookie })).json.status, 'not_found');
+  assert.equal((await call('GET', '/api/places/resolve?city=' + encodeURIComponent('Пай') + '&country=' + encodeURIComponent('Таиланд'), null, { cookie: facil.cookie })).json.place.timezone, 'Asia/Bangkok', 'небольшой город в стране с одним поясом');
+  // Фасилитатор из Нью-Йорка: браузер прислал бы свой пояс — сервер его не использует.
+  const day = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+  const c = await call('POST', '/api/fac/meetings', { title: 'Вечер в Чиангмае', city: 'Чиангмай', country: '', venue: 'Ниммань', language: 'ru',
+    timezone: 'America/New_York', priceType: 'free', capacity: 8, firstDate: `${day}T16:30`, repeatWeekly: 1 }, { cookie: facil.cookie });
+  assert.equal(c.status, 201);
+  const ed = (await call('GET', `/api/fac/meetings/${c.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(ed.timezone, 'Asia/Bangkok');
+  assert.equal(ed.country, 'Таиланд');
+  assert.equal(ed.dates[0].startsAt, `${day}T09:30:00.000Z`, '16:30 в Чиангмае = 09:30 UTC');
+  const pub = (await call('GET', `/api/meetings/dates/${ed.dates[0].id}`)).json;
+  assert.equal(new Intl.DateTimeFormat('ru-RU', { timeZone: pub.meeting.timezone, hour: '2-digit', minute: '2-digit' }).format(new Date(pub.startsAt)), '16:30', 'участники видят 16:30');
+  // Повтор: город исходной встречи, новая дата
+  const day2 = new Date(Date.now() + 24 * 86400000).toISOString().slice(0, 10);
+  const rep = await call('POST', '/api/fac/meetings', { title: ed.title, city: ed.city, country: ed.country, venue: ed.venue, language: ed.language, priceType: ed.priceType,
+    capacity: ed.capacity, sameAs: ed.id, firstDate: `${day2}T16:30` }, { cookie: facil.cookie });
+  const repEd = (await call('GET', `/api/fac/meetings/${rep.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(repEd.timezone, 'Asia/Bangkok');
+  assert.equal(repEd.dates[0].startsAt, `${day2}T09:30:00.000Z`);
+  // Сменили город на Москву: будущая дата остаётся «16:30», но уже по Москве
+  const up = await call('PUT', `/api/fac/meetings/${c.json.id}`, { ...ed, city: 'Москва', country: '' }, { cookie: facil.cookie });
+  assert.equal(up.status, 200);
+  const moved = (await call('GET', `/api/fac/meetings/${c.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(moved.timezone, 'Europe/Moscow');
+  assert.equal(moved.dates[0].startsAt, `${day}T13:30:00.000Z`, '16:30 в Москве = 13:30 UTC');
+  for (const id of [c.json.id, rep.json.id]) await call('POST', `/api/fac/meetings/${id}/publish`, { published: false }, { cookie: facil.cookie });
+});
+
+// ---------- единый счётчик «Выбрали для обсуждения» ----------
+test('Счётчик выборов: библиотека и подборки дают одно число; автор, демо и обновление страницы его не меняют', async () => {
+  const db = require('../server/db');
+  const code = 'DC-0007';
+  const total = async () => (await call('GET', `/api/cards/${code}`)).json.selectedCount;
+  const t0 = await total();
+  // Подборка фасилитатора с этой картой
+  const cid = (await call('POST', '/api/collections', { title: 'Счётчик' }, { cookie: facil.cookie })).json.id;
+  await call('PUT', `/api/collections/${cid}/cards`, { codes: [code, 'DC-0008'] }, { cookie: facil.cookie });
+  const cslug = (await call('GET', `/api/collections/${cid}`, null, { cookie: facil.cookie })).json.slug;
+  const vLib = 'l'.repeat(32); const vCol = 'c'.repeat(32);
+  // 1. Другой участник выбирает карту в библиотеке (сценарий «Вдвоём»)
+  const lib = await call('POST', `/api/cards/${code}/choose`, { visitorId: vLib });
+  assert.equal(lib.json.selectedCount, t0 + 1, 'выбор из библиотеки прибавляет один');
+  assert.equal((await call('POST', `/api/cards/${code}/choose`, { visitorId: vLib })).json.selectedCount, t0 + 1, 'повторное нажатие не добавляет');
+  assert.equal((await call('GET', `/api/cards/${code}?visitor=${vLib}`)).json.chosenByMe, true, 'после обновления страницы выбор виден, число то же');
+  assert.equal(await total(), t0 + 1);
+  // 2. Участник выбирает ту же карту в подборке
+  await call('POST', `/api/c/${cslug}/visit`, { visitorId: vCol });
+  const sel = await call('POST', `/api/c/${cslug}/select`, { visitorId: vCol, code, round: 1 });
+  assert.equal(sel.json.counts[code], t0 + 2, 'в подборке видно общее число');
+  await call('POST', `/api/c/${cslug}/select`, { visitorId: vCol, code, round: 1 });
+  await call('POST', `/api/c/${cslug}/visit`, { visitorId: vCol });
+  assert.equal(await total(), t0 + 2, 'в библиотеке то же общее число; повтор и обновление не добавляют');
+  const inEditor = (await call('GET', `/api/collections/${cid}`, null, { cookie: facil.cookie })).json.cards.find((c) => c.code === code);
+  assert.equal(inEditor.selectedCount, t0 + 2, 'в подборке фасилитатора — то же число');
+  // 3. Автор выбирает свою карту: выбор сохраняется, число не меняется
+  const prevArtist = db.prepare('SELECT artist_id FROM cards WHERE code = ?').get(code).artist_id;
+  db.prepare('UPDATE cards SET artist_id = ? WHERE code = ?').run(artist.user.id, code);
+  const own = await call('POST', `/api/cards/${code}/choose`, { visitorId: 'o'.repeat(32) }, { cookie: artist.cookie });
+  assert.equal(own.json.chosen, true);
+  assert.equal(own.json.notCounted, 'own_card');
+  const ownCol = await call('POST', `/api/c/${cslug}/select`, { visitorId: 'p'.repeat(32), code, round: 1 }, { cookie: artist.cookie });
+  assert.equal(ownCol.json.notCounted, 'own_card');
+  assert.deepEqual(ownCol.json.selections.map((x) => [x.code, x.notCounted]), [[code, 'own_card']], 'выбор автора сохранён — подсказки показываются');
+  assert.equal(await total(), t0 + 2, 'выбор автором своей карты не увеличивает число');
+  // гость без входа на том же устройстве: авторство не определить — обычные правила
+  // 4. Демо-выбор
+  const demoGuest = await call('POST', '/api/demo/login', { as: 'guest' });
+  assert.equal((await call('POST', `/api/cards/${code}/choose`, { visitorId: 'd'.repeat(32) }, { cookie: demoGuest.cookie })).json.notCounted, 'demo');
+  await call('POST', `/api/c/${cslug}/select`, { visitorId: 'e'.repeat(32), code, round: 1 }, { cookie: demoGuest.cookie });
+  assert.equal(await total(), t0 + 2, 'демо-выборы вне общей статистики');
+  // 5. Отмена выбора в библиотеке
+  assert.equal((await call('POST', `/api/cards/${code}/unchoose`, { visitorId: vLib })).json.selectedCount, t0 + 1);
+  db.prepare('UPDATE cards SET artist_id = ? WHERE code = ?').run(prevArtist, code);
+});
+
+test('Администратор привязывает карты к аккаунту автора — после этого сервер узнаёт автора', async () => {
+  const users = (await call('GET', '/api/admin/users', null, { cookie: owner.cookie })).json.users;
+  const seed = users.find((u) => u.cardCount >= 40);
+  assert.ok(seed, 'у служебной записи первой колоды 40 карт');
+  const adm = await call('POST', '/api/demo/login', { as: 'admin' });
+  assert.equal((await call('POST', `/api/admin/users/${seed.id}/transfer-cards`, { to: artist.user.id }, { cookie: adm.cookie })).status, 403, 'демо-админ не может');
+  const t = await call('POST', `/api/admin/users/${seed.id}/transfer-cards`, { to: artist.user.id }, { cookie: owner.cookie });
+  assert.ok(t.json.moved >= 40);
+  const before = (await call('GET', '/api/cards/DC-0001')).json.selectedCount;
+  assert.equal((await call('POST', '/api/cards/DC-0001/choose', { visitorId: 'q'.repeat(32) }, { cookie: artist.cookie })).json.notCounted, 'own_card');
+  assert.equal((await call('GET', '/api/cards/DC-0001')).json.selectedCount, before);
+  await call('POST', `/api/admin/users/${artist.user.id}/transfer-cards`, { to: seed.id }, { cookie: owner.cookie });
 });
 
 // ---------- вход общим аккаунтом сайта ----------

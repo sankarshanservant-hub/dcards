@@ -36,6 +36,7 @@ export const START_GUIDES = [
       ru: 'Посмотрите на одну карту и по очереди расскажите, что каждый заметил.',
       en: 'Look at one card together and take turns saying what each of you noticed.',
     },
+    choose: true, // в сценарии есть необязательное действие «Выбрать для обсуждения»
     hints: {
       ru: ['Если вы с другом, карта может напомнить историю из жизни.', 'Если только познакомились, начните с картинки: «Как ты думаешь, что здесь происходит?»'],
       en: ['If you are with a friend, the card may bring back a story from your life.', 'If you have just met, start with the picture: “What do you think is happening here?”'],
@@ -44,6 +45,7 @@ export const START_GUIDES = [
   {
     key: 'group',
     title: { ru: 'В группе', en: 'In a group' },
+    choose: true,
     text: {
       ru: 'Покажите одну карту всем. Кто хочет, называет деталь или ассоциацию. Если чья-то мысль заинтересовала других, продолжите разговор с неё.',
       en: 'Show one card to everyone. Whoever wants to names a detail or an association. If someone’s thought catches the others’ interest, carry the conversation on from there.',

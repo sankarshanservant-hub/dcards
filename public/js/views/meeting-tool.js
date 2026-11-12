@@ -1,7 +1,7 @@
 // Инструмент встречи: подборка по QR/ссылке, без аккаунта. Выбор карты для обсуждения, раунды, случайная карта.
 import { t } from '../i18n.js';
 import { esc, tt, api, errorText, storage, visitorId, toast } from '../util.js';
-import { openViewer, refreshViewer, icons } from '../viewer.js';
+import { openViewer, refreshViewer, icons, notCountedText } from '../viewer.js';
 import { ic, tileHtml, loading, failed } from '../ui.js';
 
 export async function collection(ctx, slug) {
@@ -67,8 +67,13 @@ export async function collection(ctx, slug) {
     isTest: col.isTest,
     state: () => ({ choice: choiceIn(st.round), round: st.round }),
     countFor: (code) => st.counts[code],
+    notCountedFor: (code) => (st.selections.find((x) => x.round === st.round && x.code === code) || {}).notCounted || null,
     async choose(code) {
-      try { applyState(await api(`/api/c/${slug}/select`, { method: 'POST', body: { visitorId: vid, code, round: st.round } })); toast(t('col.saved')); } catch (e) { toast(errorText(e)); }
+      try {
+        const r = await api(`/api/c/${slug}/select`, { method: 'POST', body: { visitorId: vid, code, round: st.round } });
+        applyState(r);
+        toast(r.notCounted === 'own_card' ? notCountedText('own_card') : t('col.saved'));
+      } catch (e) { toast(errorText(e)); }
       redraw();
     },
     async cancel() {

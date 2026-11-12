@@ -1,7 +1,7 @@
 // Полноэкранный просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием,
 // листание свайпом и стрелками. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
 import { t, dateLabel, lang } from './i18n.js';
-import { esc, api, u, tt, toast } from './util.js';
+import { esc, api, u, tt, toast, visitorId, errorText } from './util.js';
 import { PARTNER_QUESTIONS, START_GUIDES } from './content.js';
 
 let current = null; // открытый просмотр
@@ -11,6 +11,13 @@ export function isViewerOpen() { return !!current; }
 /** Вызывается из общего обработчика popstate. */
 export function handleViewerPopState() {
   if (current && !(history.state && history.state.viewer)) teardown();
+}
+
+/** Почему выбор сохранён, но не идёт в общий счёт. */
+export function notCountedText(reason) {
+  return reason === 'own_card'
+    ? tt('Это ваша карта: выбор сохранён, но в общее число не идёт.', 'This is your card: the choice is saved but not added to the total.')
+    : tt('Демо: выбор сохранён, но в общую статистику не идёт.', 'Demo: the choice is saved but not added to the statistics.');
 }
 
 function cardUrl(code) {
@@ -59,6 +66,9 @@ export function openViewer(opts) {
   const z = { s: 1, x: 0, y: 0, fitW: 0, fitH: 0 };
   let index = opts.index;
   let detailsCache = new Map();
+  // Сведения о карте с общим числом «Выбрали для обсуждения» (и выбран ли уже этот браузер/аккаунт в библиотеке).
+  const fetchDetails = (code) => api(`/api/cards/${encodeURIComponent(code)}?visitor=${encodeURIComponent(visitorId())}`)
+    .then((d) => { detailsCache.set(code, d); return d; });
 
   const state = {
     el, opts, opener,
@@ -203,6 +213,7 @@ export function openViewer(opts) {
       bottom.innerHTML = chosen ? `
         <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>
           <span class="viewer-count">${opts.collection.isTest ? esc(t('viewer.testNoCount')) : esc(typeof count === 'number' ? t('viewer.selectedCount', { n: count }) : '')}</span></div>
+        ${!opts.collection.isTest && opts.collection.notCountedFor && opts.collection.notCountedFor(c.code) ? `<p class="viewer-count">${esc(notCountedText(opts.collection.notCountedFor(c.code)))}</p>` : ''}
         <div class="vb-panel">
           <button class="vb-toggle" type="button" data-q aria-expanded="${ui.questions}">${esc(tt('Вопросы для собеседника', 'Questions for your conversation partner'))}${chev(ui.questions)}</button>
           ${ui.questions ? `<div class="vb-body">${PARTNER_QUESTIONS.placeholder ? `<p class="vb-note">${esc(tt('Временные вопросы для теста — заменятся списком проекта.', 'Temporary test questions — to be replaced by the project’s list.'))}</p>` : ''}
@@ -222,13 +233,21 @@ export function openViewer(opts) {
         <div class="vb-panel">
           <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}">${esc(tt('С чего начать?', 'Where to start?'))}${chev(ui.guide)}</button>
           ${ui.guide ? `<div class="vb-body"><div class="chips vb-chips">${START_GUIDES.map((x) => `<button class="chip ${x.key === ui.guideKey ? 'on' : ''}" type="button" data-g="${x.key}" aria-pressed="${x.key === ui.guideKey}">${esc(L(x.title))}</button>`).join('')}</div>
-            ${g ? `<div class="vb-guide"><p>${esc(L(g.text))}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}</div>` : ''}</div>` : ''}
+            ${g ? `<div class="vb-guide"><p>${esc(L(g.text))}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}
+              ${g.choose ? libChoiceHtml(info) : ''}</div>` : ''}</div>` : ''}
         </div>
         <div class="vb-row"><a class="btn light sm" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Обсуждение', 'Discussion'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a>
           <button class="link-btn" type="button" data-copy>${esc(tt('Ссылка на карту', 'Link to this card'))}</button></div>`;
-      if (!info) api(`/api/cards/${encodeURIComponent(c.code)}`).then((d) => { detailsCache.set(c.code, d); if (opts.cards[index].code === c.code) renderBottom(); }).catch(() => {});
+      if (!info) fetchDetails(c.code).then(() => { if (opts.cards[index].code === c.code) renderBottom(); }).catch(() => {});
     }
     syncBottom();
+  }
+  // Необязательный выбор для обсуждения в библиотеке (внутри «Вдвоём» и «В группе»).
+  function libChoiceHtml(info) {
+    if (!info) return '';
+    return info.chosenByMe
+      ? `<div class="vb-choice"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div><button class="link-btn" type="button" data-lib-unchoose>${esc(t('viewer.cancel'))}</button></div>`
+      : `<div class="vb-choice"><button class="btn yellow sm" type="button" data-lib-choose>${esc(t('viewer.choose'))}</button><span class="vb-note">${esc(tt('по желанию', 'optional'))}</span></div>`;
   }
   // Высота панели снизу → место для картинки (картинка всегда целиком и не под панелью).
   function syncBottom() {
@@ -252,11 +271,23 @@ export function openViewer(opts) {
       if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); return; }
       if (btn.dataset.g) { ui.guideKey = ui.guideKey === btn.dataset.g ? null : btn.dataset.g; renderBottom(); return; }
       if (btn.hasAttribute('data-copy')) { copyLink(); return; }
+      if (btn.hasAttribute('data-lib-choose') || btn.hasAttribute('data-lib-unchoose')) {
+        const code = opts.cards[index].code; const on = btn.hasAttribute('data-lib-choose');
+        btn.disabled = true;
+        try {
+          const r = await api(`/api/cards/${encodeURIComponent(code)}/${on ? 'choose' : 'unchoose'}`, { method: 'POST', body: { visitorId: visitorId() } });
+          detailsCache.set(code, { ...(detailsCache.get(code) || {}), chosenByMe: r.chosen, selectedCount: r.selectedCount });
+          toast(on ? (r.notCounted ? notCountedText(r.notCounted) : t('col.saved')) : t('col.cancelled'));
+        } catch (x) { toast(errorText(x)); }
+        renderBottom(); if (!sheet.hidden) renderSheet();
+        return;
+      }
       btn.disabled = true;
       try {
         if (btn.hasAttribute('data-choose')) { await opts.collection.choose(opts.cards[index].code); ui.questions = false; }
         if (btn.hasAttribute('data-cancel')) await opts.collection.cancel();
-      } finally { renderBottom(); }
+        detailsCache.delete(opts.cards[index].code); // общее число изменилось — сведения перечитаем
+      } finally { renderBottom(); if (!sheet.hidden) renderSheet(); }
     });
   }
 
@@ -268,7 +299,7 @@ export function openViewer(opts) {
       if (opts.cards[index].code !== code) return;
       const author = info && info.author ? esc(info.author) : `<span class="muted">${esc(t('viewer.authorUnknown'))}</span>`;
       let countLine = '';
-      if (opts.mode === 'library' && info && typeof info.selectedCount === 'number') {
+      if (opts.mode !== 'admin' && info && typeof info.selectedCount === 'number') {
         countLine = `<p class="sheet-count">${esc(info.selectedCount ? t('viewer.selectedCount', { n: info.selectedCount }) : t('viewer.selectedNone'))}</p>`;
       }
       sheet.innerHTML = `
@@ -283,8 +314,8 @@ export function openViewer(opts) {
         <p class="sheet-hint">${esc(t('viewer.zoomHint'))}</p>`;
     };
     draw(d || c);
-    if (!d && opts.mode === 'library') {
-      try { d = await api(`/api/cards/${encodeURIComponent(code)}`); detailsCache.set(code, d); draw(d); } catch { /* показываем то, что есть */ }
+    if (!d && opts.mode !== 'admin') {
+      try { d = await fetchDetails(code); draw(d); } catch { /* показываем то, что есть */ }
     }
   }
   function toggleSheet(force) {

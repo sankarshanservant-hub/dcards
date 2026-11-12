@@ -3,8 +3,9 @@ import { esc, tt, u, api, errorText, toast, fmtTz, fmtDate } from '../util.js';
 import { openViewer, icons } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, demoPill, timeline, stepsBar, ic, showQr, refreshSession } from '../ui.js';
 import { langName, LANG_NAMES } from './meetings.js';
-import { suggestTz, zonedToDate } from '../tz.js';
 
+// «Asia/Bangkok» → «Bangkok»: подпись часового пояса в списке похожих городов.
+const tzCity = (tz) => String(tz).split('/').pop().replace(/_/g, ' ');
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 
 const MSTATUS = { published: ['Опубликована', 'Published', 'mint'], unpublished: ['Скрыта', 'Hidden', ''], removed: ['Снята администратором', 'Taken down by admin', 'red'] };
@@ -91,7 +92,7 @@ export async function collectionEditor(ctx, id) {
     $('#cnt').textContent = tt(`В подборке ${av.length} из ${MAX}`, `${av.length} of ${MAX} cards`);
     $('#unav').innerHTML = un.length ? `<div class="notice red stack"><b>${esc(tt('Недоступные карты:', 'Unavailable cards:'))} ${un.map(esc).join(', ')}</b><span>${esc(tt('Карты сняты с публикации, участники их не видят.', 'These cards were removed; participants do not see them.'))}</span><button class="btn sm" type="button" id="dropun" style="justify-self:start">${esc(tt('Убрать недоступные', 'Remove unavailable'))}</button></div>` : '';
     $('#sel').innerHTML = av.length ? av.map((code) => { const c = known.get(code); return `<div class="cell"><button class="tile" type="button" data-view="${esc(code)}" data-from="sel"><img src="${esc(c.thumb)}" alt="" loading="lazy"></button>
-      <button class="mini-btn r" type="button" data-remove="${esc(code)}" aria-label="${esc(tt('Убрать', 'Remove'))}">${ic.x}</button><small>${esc(code)}${c.selections ? ' · ' + esc(tt('выбрали ', 'chosen ')) + c.selections : ''}</small></div>`; }).join('') : `<p class="empty">${esc(tt('Добавьте карты из библиотеки ниже.', 'Add cards from the library below.'))}</p>`;
+      <button class="mini-btn r" type="button" data-remove="${esc(code)}" aria-label="${esc(tt('Убрать', 'Remove'))}">${ic.x}</button><small>${esc(code)}${c.selectedCount ? ' · ' + esc(tt('выбрали ', 'chosen ')) + c.selectedCount : ''}</small></div>`; }).join('') : `<p class="empty">${esc(tt('Добавьте карты из библиотеки ниже.', 'Add cards from the library below.'))}</p>`;
     const full = codes.length >= MAX;
     $('#hint').textContent = full ? tt('Уже 40 карт — уберите одну, чтобы добавить другую.', 'Already 40 cards — remove one to add another.') : tt('Нажмите на карту, чтобы добавить или убрать. Значок ⤢ — рассмотреть.', 'Tap a card to add or remove it. ⤢ — view.');
     $('#lib').innerHTML = library.map((c) => { const inC = codes.includes(c.code); return `<div class="cell ${inC ? 'in' : ''} ${!inC && full ? 'off' : ''}">
@@ -129,31 +130,29 @@ export async function meetingEditor(ctx, id) {
   if (!session.user) return needLogin(ctx.main, '');
   if (!hasRole('facilitator')) return noRole(ctx.main, tt('фасилитатор', 'facilitator'));
   loading(ctx.main);
-  let m = null; let tzs = []; let src = null;
+  let m = null; let src = null;
   const fromId = !id ? Number(new URL(location.href).searchParams.get('from')) || null : null;
   try {
-    const list = await api('/api/fac/meetings'); tzs = list.timezones;
     if (id) m = await api(`/api/fac/meetings/${id}`);
     else if (fromId) src = await api(`/api/fac/meetings/${fromId}`);
   } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  // Пояс не подставляется «по умолчанию»: только из исходной встречи, по городу (если однозначно) или выбором фасилитатора.
+  // Часовой пояс вручную не выбирается: его определяет сервер по городу встречи. Время вводится местное для этого города.
   const blank = { title: '', description: '', country: '', city: '', venue: '', language: 'ru', timezone: '', priceType: 'free', priceNote: '', capacity: 12, askContact: false };
   const v = m || (src ? { ...blank, ...pick(src, Object.keys(blank)) } : blank);
-  const tzOptions = (sel) => `<option value="" ${sel ? '' : 'selected'} disabled>${esc(tt('— выберите пояс —', '— choose a time zone —'))}</option>` + tzs.map((z) => `<option ${z === sel ? 'selected' : ''}>${esc(z)}</option>`).join('');
   const form = `<form class="card-ui form" id="mf">
     <label class="field">${esc(tt('Название встречи', 'Meeting title'))} *<input type="text" name="title" required maxlength="140" value="${esc(v.title)}"></label>
     <label class="field">${esc(tt('Описание', 'Description'))}<textarea name="description" maxlength="3000">${esc(v.description)}</textarea></label>
-    <div class="cols-2"><label class="field">${esc(tt('Страна', 'Country'))} *<input type="text" name="country" required maxlength="80" value="${esc(v.country)}"></label>
-      <label class="field">${esc(tt('Город', 'City'))} *<input type="text" name="city" required maxlength="80" value="${esc(v.city)}"></label></div>
+    <div class="cols-2"><label class="field">${esc(tt('Город встречи', 'Meeting city'))} *<input type="text" name="city" required maxlength="80" autocomplete="off" value="${esc(v.city)}"></label>
+      <label class="field">${esc(tt('Страна', 'Country'))} <span class="hint">${esc(tt('подставится по городу', 'filled in from the city'))}</span><input type="text" name="country" maxlength="80" autocomplete="off" value="${esc(v.country)}"></label></div>
+    <div class="place-status" id="place" aria-live="polite"></div>
     <label class="field">${esc(tt('Место', 'Venue'))}<input type="text" name="venue" maxlength="300" value="${esc(v.venue)}"></label>
-    <div class="cols-2"><label class="field">${esc(tt('Язык встречи', 'Meeting language'))}<select name="language">${Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === v.language ? 'selected' : ''}>${esc(langName(k))}</option>`).join('')}</select></label>
-      <label class="field">${esc(tt('Часовой пояс встречи', 'Meeting time zone'))}<select name="timezone" required>${tzOptions(v.timezone)}</select><span class="hint" id="tzhint" aria-live="polite"></span></label></div>
+    <label class="field">${esc(tt('Язык встречи', 'Meeting language'))}<select name="language">${Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === v.language ? 'selected' : ''}>${esc(langName(k))}</option>`).join('')}</select></label>
     <div class="cols-2"><label class="field">${esc(tt('Формат', 'Format'))}<select name="priceType"><option value="free" ${v.priceType === 'free' ? 'selected' : ''}>${esc(tt('Бесплатная', 'Free'))}</option><option value="paid" ${v.priceType === 'paid' ? 'selected' : ''}>${esc(tt('Платная', 'Paid'))}</option></select></label>
       <label class="field">${esc(tt('Мест на каждую дату', 'Seats per date'))} *<input type="number" name="capacity" min="1" max="500" required value="${v.capacity}"></label></div>
     <label class="field">${esc(tt('Об оплате', 'About payment'))} <span class="hint">${esc(tt('Сайт не принимает оплату — её организует фасилитатор', 'The site does not take payments — the facilitator arranges them'))}</span><input type="text" name="priceNote" maxlength="300" value="${esc(v.priceNote)}"></label>
     <label class="check"><input type="checkbox" name="askContact" ${v.askContact ? 'checked' : ''}><span>${esc(tt('Добавить в запись необязательное поле «телефон или мессенджер»', 'Add an optional “phone or messenger” field to sign-up'))}</span></label>
-    ${m ? '' : `<div class="cols-2"><label class="field">${esc(tt('Первая дата и время (по поясу встречи)', 'First date and time (meeting time zone)'))} *<input type="datetime-local" name="firstDate" required></label>
+    ${m ? '' : `<div class="cols-2"><label class="field">${esc(tt('Дата и время встречи', 'Meeting date and time'))} *<input type="datetime-local" name="firstDate" required><span class="hint" id="datehint"></span></label>
       <label class="field">${esc(tt('Повторять каждую неделю', 'Repeat weekly'))} <span class="hint">${esc(tt('число дат, 1 — без повтора', 'number of dates, 1 — no repeat'))}</span><input type="number" name="repeatWeekly" min="1" max="52" value="1"></label></div>
     <div class="tz-preview" id="tzprev" aria-live="polite"></div>`}
     <p class="form-error" id="err" role="alert"></p>
@@ -162,7 +161,7 @@ export async function meetingEditor(ctx, id) {
   ctx.main.innerHTML = `<div class="wrap page stack">
     <a class="small" href="${u('/facilitator')}">← ${esc(tt('Кабинет', 'Back'))}</a>
     <div class="row between"><h1 style="margin:0">${esc(m ? m.title : src ? tt('Повтор встречи', 'Repeat of a meeting') : tt('Новая встреча', 'New meeting'))}</h1>${m ? mPill(m.status) : ''}</div>
-    ${src ? `<div class="notice">${esc(tt(`Скопировано из «${src.title}»: описание, место, язык, формат, число мест и настройка контакта. Записи не переносятся. Задайте новую дату и проверьте часовой пояс.`, `Copied from “${src.title}”: description, place, language, format, seats and the contact setting. Sign-ups are not copied. Set a new date and check the time zone.`))}</div>` : ''}
+    ${src ? `<div class="notice">${esc(tt(`Скопировано из «${src.title}»: город, место, описание, язык, формат, число мест и настройка контакта. Записи не переносятся. Задайте новую дату и время — местное для города ${src.city}.`, `Copied from “${src.title}”: city, venue, description, language, format, seats and the contact setting. Sign-ups are not copied. Set a new date and time — local to ${src.city}.`))}</div>` : ''}
     ${m && m.status === 'removed' ? `<div class="notice red">${esc(tt('Администратор снял встречу с публикации:', 'An administrator took the meeting down:'))} ${esc(m.removedReason || '—')}</div>` : ''}
     ${m ? `<div class="row">${m.status !== 'removed' ? `<button class="btn sm" type="button" id="pub">${esc(m.status === 'published' ? tt('Скрыть встречу', 'Hide meeting') : tt('Опубликовать снова', 'Publish again'))}</button>` : ''}
       ${m.dates[0] ? `<a class="btn sm" href="${u('/m/' + (m.dates.find((d) => !d.past) || m.dates[0]).id)}" target="_blank">${esc(tt('Публичная страница', 'Public page'))}</a>` : ''}
@@ -174,53 +173,94 @@ export async function meetingEditor(ctx, id) {
           ${d.registrations.length ? `<div class="scroll-x"><table class="tbl"><tr><th>${esc(tt('Имя', 'Name'))}</th><th>Email</th><th>${esc(tt('Контакт', 'Contact'))}</th><th></th></tr>${d.registrations.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.contact || '—')}</td><td>${r.status === 'active' ? '' : `<span class="pill red">${esc(tt('отменил', 'cancelled'))}</span>`}</td></tr>`).join('')}</table></div>` : `<span class="small muted">${esc(tt('Записей пока нет', 'No sign-ups yet'))}</span>`}
           ${d.startsAt >= nowIso ? `<div class="row"><button class="linkbtn ${d.status === 'cancelled' ? '' : 'danger'}" type="button" data-date="${d.id}" data-set="${d.status === 'cancelled' ? 'active' : 'cancelled'}">${esc(d.status === 'cancelled' ? tt('Вернуть дату', 'Restore date') : tt('Отменить эту дату', 'Cancel this date'))}</button></div>` : ''}
           </div>`).join('')}
-        <form class="card-ui flat form" id="addd"><b>${esc(tt('Добавить даты', 'Add dates'))}</b><span class="small muted">${esc(tt(`Время — по поясу встречи: ${m.timezone}`, `Time is in the meeting time zone: ${m.timezone}`))}</span><input type="datetime-local" name="firstDate" required>
+        <form class="card-ui flat form" id="addd"><b>${esc(tt('Добавить даты', 'Add dates'))}</b><span class="small muted">${esc(tt(`Укажите время в городе ${m.city}`, `Enter the time in ${m.city}`))}</span><input type="datetime-local" name="firstDate" required>
           <label class="field">${esc(tt('Повторять каждую неделю (число дат)', 'Repeat weekly (number of dates)'))}<input type="number" name="repeatWeekly" min="1" max="52" value="1"></label>
           <div class="tz-preview" id="addprev" aria-live="polite"></div>
           <button class="btn sm dark" type="submit">${esc(tt('Добавить', 'Add'))}</button></form>
         <p class="small muted">${esc(tt('Уведомления участникам при отмене или переносе и лист ожидания ещё не согласованы.', 'Notifications on cancel/reschedule and a waiting list are not agreed yet.'))}</p></div>` : ''}</div>
   </div>`;
   const mf = ctx.main.querySelector('#mf');
-  const tzSel = mf.timezone; const tzHint = ctx.main.querySelector('#tzhint');
-  let tzAuto = false; // пояс подставлен по городу, а не выбран вручную
-  const suggest = () => {
-    const sTz = suggestTz(mf.country.value, mf.city.value);
-    if (sTz && tzs.includes(sTz) && (!tzSel.value || tzAuto)) { tzSel.value = sTz; tzAuto = true; }
-    else if (!sTz && tzAuto) { tzSel.value = ''; tzAuto = false; }
-    tzHint.textContent = tzAuto ? tt('Подставлен по городу — проверьте.', 'Suggested from the city — please check.')
-      : !tzSel.value ? tt('Не удалось определить по городу — выберите явно.', 'Could not tell from the city — choose explicitly.') : '';
+  const placeBox = ctx.main.querySelector('#place'); const dateHint = ctx.main.querySelector('#datehint');
+  // Город встречи: { placeId, city, country, timezone } — когда город определён однозначно.
+  let place = (m || src) && v.timezone ? { placeId: '', city: v.city, country: v.country, timezone: v.timezone } : null;
+  let lastQuery = place ? `${v.city}|${v.country}` : '';
+  const optBtn = (o) => `<button class="chip" type="button" data-place='${esc(JSON.stringify(o))}'>${esc(o.city)}, ${esc(o.country)} <span class="muted">· ${esc(tzCity(o.timezone))}</span></button>`;
+  const drawPlace = (state, options = []) => {
+    if (state === 'ok' && place) {
+      placeBox.innerHTML = `<span class="ok">✓ ${esc(place.city)}, ${esc(place.country)}</span> <span class="muted small">· ${esc(tt('сейчас там', 'local time now'))} ${esc(fmtTz(new Date().toISOString(), place.timezone, { hour: '2-digit', minute: '2-digit' }))}</span>`;
+    } else if (state === 'ambiguous') {
+      placeBox.innerHTML = `<span class="warn">${esc(tt('Городов с таким названием несколько — уточните город и страну:', 'There are several cities with this name — specify the city and country:'))}</span><div class="chips">${options.map(optBtn).join('')}</div>`;
+    } else if (state === 'not_found') {
+      placeBox.innerHTML = `<span class="warn">${esc(tt('Не удалось определить город. Уточните название и страну или укажите ближайший крупный город.', 'Could not identify the city. Check the name and country, or enter the nearest large city.'))}</span>${options.length ? `<div class="chips">${options.map(optBtn).join('')}</div>` : ''}`;
+    } else if (state === 'loading') placeBox.innerHTML = `<span class="muted small">${esc(tt('Определяем город…', 'Looking up the city…'))}</span>`;
+    else placeBox.innerHTML = '';
+    if (dateHint) dateHint.textContent = place ? tt(`Укажите время в городе ${place.city} — так, как его увидят участники`, `Enter the time in ${place.city}, as participants will see it`) : tt('Сначала укажите город — время вводится местное', 'Enter the city first — the time is local to it');
     preview();
   };
-  const previewFor = (box, local, tz, n) => {
-    if (!box) return;
-    const dt = zonedToDate(local, tz);
-    if (!dt) { box.innerHTML = local && !tz ? `<span class="warn">${esc(tt('Выберите часовой пояс, чтобы увидеть время встречи.', 'Choose a time zone to see the meeting time.'))}</span>` : ''; return; }
-    const opts = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' };
-    const mine = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const last = n > 1 ? new Date(dt.getTime() + (n - 1) * 7 * 86400000) : null;
-    box.innerHTML = `<b>${esc(tt('Участники увидят:', 'Participants will see:'))}</b> ${esc(fmtTz(dt.toISOString(), tz, opts))} <span class="muted">(${esc(tz)})</span>`
-      + (mine !== tz ? `<br><span class="small muted">${esc(tt('По вашему времени', 'Your local time'))} (${esc(mine)}): ${esc(fmtTz(dt.toISOString(), mine, opts))}</span>` : '')
-      + (last ? `<br><span class="small muted">${esc(tt(`Всего дат: ${n}, последняя — ${fmtTz(last.toISOString(), tz, { day: 'numeric', month: 'long' })}`, `${n} dates, the last on ${fmtTz(last.toISOString(), tz, { day: 'numeric', month: 'long' })}`))}</span>` : '');
+  let timer = null; let seq = 0;
+  const lookup = () => {
+    const q = `${mf.city.value.trim()}|${mf.country.value.trim()}`;
+    if (q === lastQuery && place) return;
+    place = null; lastQuery = q;
+    if (!mf.city.value.trim()) return drawPlace('empty');
+    drawPlace('loading');
+    clearTimeout(timer);
+    const my = ++seq;
+    timer = setTimeout(async () => {
+      try {
+        const r = await api(`/api/places/resolve?city=${encodeURIComponent(mf.city.value.trim())}&country=${encodeURIComponent(mf.country.value.trim())}`);
+        if (my !== seq) return;
+        if (r.status === 'ok') {
+          place = r.place;
+          if (!mf.country.value.trim()) { mf.country.value = r.place.country; lastQuery = `${mf.city.value.trim()}|${r.place.country}`; }
+        }
+        drawPlace(r.status, r.options || []);
+      } catch (x) { if (my === seq) placeBox.innerHTML = `<span class="warn">${esc(errorText(x))}</span>`; }
+    }, 350);
   };
-  const preview = () => { if (mf.firstDate) previewFor(ctx.main.querySelector('#tzprev'), mf.firstDate.value, tzSel.value, Number(mf.repeatWeekly.value) || 1); };
-  mf.country.addEventListener('input', suggest); mf.city.addEventListener('input', suggest);
-  tzSel.addEventListener('change', () => { tzAuto = false; tzHint.textContent = ''; preview(); });
+  placeBox.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-place]'); if (!b) return;
+    const o = JSON.parse(b.dataset.place);
+    place = o; mf.city.value = o.city; mf.country.value = o.country; lastQuery = `${o.city}|${o.country}`;
+    drawPlace('ok');
+  });
+  // Предпросмотр: дата и местное время так, как их увидят участники («Суббота, 21 ноября, 16:30 · Чиангмай»).
+  const localLabel = (local, plusWeeks = 0) => {
+    const mm = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local || ''); if (!mm) return '';
+    const d = new Date(Date.UTC(+mm[1], +mm[2] - 1, +mm[3] + plusWeeks * 7, +mm[4], +mm[5]));
+    const sDate = fmtTz(d.toISOString(), 'UTC', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return sDate.charAt(0).toUpperCase() + sDate.slice(1) + ', ' + fmtTz(d.toISOString(), 'UTC', { hour: '2-digit', minute: '2-digit' });
+  };
+  const previewFor = (box, local, city, n) => {
+    if (!box) return;
+    if (!local) { box.innerHTML = ''; return; }
+    if (!city) { box.innerHTML = `<span class="warn">${esc(tt('Укажите город, чтобы опубликовать встречу.', 'Enter the city to publish the meeting.'))}</span>`; return; }
+    box.innerHTML = `<span class="muted small">${esc(tt('Участники увидят:', 'Participants will see:'))}</span><br><b>${esc(localLabel(local))} · ${esc(city)}</b>`
+      + (n > 1 ? `<br><span class="small muted">${esc(tt(`Каждую неделю, всего дат: ${n}; последняя — ${localLabel(local, n - 1)}`, `Weekly, ${n} dates; the last — ${localLabel(local, n - 1)}`))}</span>` : '');
+  };
+  const preview = () => { if (mf.firstDate) previewFor(ctx.main.querySelector('#tzprev'), mf.firstDate.value, place && place.city, Number(mf.repeatWeekly.value) || 1); };
+  mf.city.addEventListener('input', lookup); mf.country.addEventListener('input', lookup);
   if (mf.firstDate) { mf.firstDate.addEventListener('input', preview); mf.repeatWeekly.addEventListener('input', preview); }
-  if (!m && !v.timezone) suggest(); else if (src) tzHint.textContent = tt('Пояс из исходной встречи — проверьте.', 'Time zone from the original meeting — please check.');
+  drawPlace(place ? 'ok' : 'empty');
+  if (!place && mf.city.value.trim()) lookup();
   mf.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(mf).entries());
-    const body = { ...fd, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: Number(fd.repeatWeekly || 1) };
+    if (!place) { ctx.main.querySelector('#err').textContent = tt('Уточните город встречи: по нему определяется местное время.', 'Specify the meeting city: the local time depends on it.'); placeBox.scrollIntoView({ block: 'center' }); return; }
+    const body = { ...fd, city: place.city, country: place.country, placeId: place.placeId || '', sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: Number(fd.repeatWeekly || 1) };
     try {
       if (m) { await api(`/api/fac/meetings/${id}`, { method: 'PUT', body }); toast(tt('Сохранено', 'Saved')); ctx.rerender(); }
       else { const r = await api('/api/fac/meetings', { method: 'POST', body }); toast(tt('Встреча опубликована', 'Meeting published')); ctx.navigate('/facilitator/m/' + r.id); }
-    } catch (x) { ctx.main.querySelector('#err').textContent = errorText(x); }
+    } catch (x) {
+      if (x.code === 'city_unresolved') { place = null; drawPlace((x.data && x.data.options || []).length ? 'ambiguous' : 'not_found', (x.data && x.data.options) || []); }
+      ctx.main.querySelector('#err').textContent = errorText(x);
+    }
   });
   const pub = ctx.main.querySelector('#pub');
   if (pub) pub.addEventListener('click', async () => { try { await api(`/api/fac/meetings/${id}/publish`, { method: 'POST', body: { published: m.status !== 'published' } }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
   ctx.main.querySelectorAll('[data-date]').forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/fac/dates/${b.dataset.date}`, { method: 'PATCH', body: { status: b.dataset.set } }); ctx.rerender(); } catch (x) { toast(errorText(x)); } }));
   const addd = ctx.main.querySelector('#addd');
-  if (addd) { const pv = () => previewFor(ctx.main.querySelector('#addprev'), addd.firstDate.value, m.timezone, Number(addd.repeatWeekly.value) || 1); addd.firstDate.addEventListener('input', pv); addd.repeatWeekly.addEventListener('input', pv); }
+  if (addd) { const pv = () => previewFor(ctx.main.querySelector('#addprev'), addd.firstDate.value, m.city, Number(addd.repeatWeekly.value) || 1); addd.firstDate.addEventListener('input', pv); addd.repeatWeekly.addEventListener('input', pv); }
   if (addd) addd.addEventListener('submit', async (e) => { e.preventDefault(); try { await api(`/api/fac/meetings/${id}/dates`, { method: 'POST', body: { firstDate: addd.firstDate.value, repeatWeekly: Number(addd.repeatWeekly.value) } }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
 }
 

@@ -37,7 +37,6 @@ const stmt = {
   maxNumber: db.prepare(`SELECT COALESCE(MAX(number), 0) AS n FROM cards`),
   insert: db.prepare(`INSERT INTO cards (code, number, author, image_full, image_thumb, image_original, width, height, source, published_at, artist_id, is_demo)
                       VALUES (@code, @number, @author, @image_full, @image_thumb, @image_original, @width, @height, @source, @published_at, @artist_id, @is_demo)`),
-  publicCount: db.prepare(`SELECT COUNT(*) AS n FROM selections WHERE card_id = ? AND cancelled_at IS NULL AND is_test = 0`),
   commentCount: db.prepare(`SELECT COUNT(*) AS n FROM comments WHERE card_id = ? AND deleted_at IS NULL`),
 };
 
@@ -49,7 +48,7 @@ function listPublished(showDemo) {
 function getPublished(code, showDemo) {
   const row = stmt.byCode.get(code);
   if (!row || row.status !== 'published' || (row.is_demo && !showDemo)) return null;
-  return { ...publicCard(row, { withDetails: true }), selectedCount: stmt.publicCount.get(row.id).n, comments: stmt.commentCount.get(row.id).n };
+  return { ...publicCard(row, { withDetails: true }), selectedCount: require('./choices').total(row.id), comments: stmt.commentCount.get(row.id).n };
 }
 
 /** Статус карты по имени файла изображения (для проверки доступа к /media). */

@@ -61,11 +61,17 @@ const SECTIONS = {
       <div class="list">${users.map((x) => `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(x.publicName)}${x.publicName !== x.name ? ` <span class="small muted">(${esc(x.name)})</span>` : ''} ${demoPill(x.isDemo)}</b>
         <span class="small">${esc(x.email || tt('без email', 'no email'))} · ${esc(rolesText(x.roles))}</span>
         <div class="chips" style="margin-top:6px">${['artist', 'curator', 'facilitator', 'admin'].map((r) => `<button class="chip ${x.roles.includes(r) ? 'on' : ''}" type="button" data-u="${x.id}" data-r="${r}" data-g="${x.roles.includes(r) ? 0 : 1}">${esc(ROLE_LABEL[r]())}</button>`).join('')}</div>
+        ${x.cardCount && !x.isDemo ? `<form class="row" data-transfer="${x.id}" style="margin-top:6px"><span class="small">${esc(tt(`Автор карт: ${x.cardCount}. Передать карты аккаунту:`, `Artist of ${x.cardCount} cards. Transfer them to:`))}</span>
+          <select name="to" style="max-width:240px"><option value="">—</option>${users.filter((y) => y.id !== x.id && !y.isDemo).map((y) => `<option value="${y.id}">${esc(y.publicName)}${y.email ? ' · ' + esc(y.email) : ''}</option>`).join('')}</select><button class="btn sm" type="submit">OK</button></form>` : ''}
         ${!x.email ? `<form class="row" data-email="${x.id}" style="margin-top:6px"><input type="email" name="email" placeholder="${esc(tt('Указать email для входа', 'Set an email for sign-in'))}" style="max-width:280px"><button class="btn sm" type="submit">OK</button></form>` : ''}</span></div>`).join('')}</div>`);
     sec.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-r]'); if (!b) return;
       try { await api(`/api/admin/users/${b.dataset.u}/roles`, { method: 'POST', body: { role: b.dataset.r, grant: b.dataset.g === '1' } }); toast(tt('Роли обновлены', 'Roles updated')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
     });
+    sec.querySelectorAll('[data-transfer]').forEach((f) => f.addEventListener('submit', async (e) => {
+      e.preventDefault(); if (!f.to.value) return;
+      try { const r = await api(`/api/admin/users/${f.dataset.transfer}/transfer-cards`, { method: 'POST', body: { to: Number(f.to.value) } }); toast(tt(`Карт передано: ${r.moved}`, `Cards transferred: ${r.moved}`)); ctx.rerender(); } catch (x) { toast(errorText(x)); }
+    }));
     sec.querySelectorAll('[data-email]').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault(); try { await api(`/api/admin/users/${f.dataset.email}`, { method: 'PATCH', body: { email: f.email.value } }); toast(tt('Email сохранён', 'Email saved')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
     }));
@@ -112,14 +118,14 @@ const SECTIONS = {
     const { cards } = await api('/api/admin/cards');
     if (!ctx.alive()) return;
     const sortKey = storage.get('dc_admin_sort') || 'number';
-    const rate = (c) => (c.offers ? c.selections / c.offers : 0);
+    const rate = (c) => (c.offers ? (c.colSelections ?? c.selections) / c.offers : 0);
     const sec = shell(ctx, 'cards', tt('Карты и статистика', 'Cards & statistics'), `
       <div class="cols-2"><form class="card-ui flat form" id="up"><h3>${esc(tt('Добавить карты', 'Add cards'))}</h3>
           <p class="small muted" style="margin:0">${esc(tt('Прямая загрузка владельцем (без кураторов). Код присваивается автоматически, исходник хранится отдельно.', 'Direct upload by the owner (no curation). Code is assigned automatically; the original is stored separately.'))}</p>
           <input type="file" name="images" accept="image/jpeg,image/png,image/webp,image/tiff" multiple required><label class="field">${esc(tt('Автор', 'Artist'))}<input type="text" name="author" maxlength="200"></label>
           <button class="btn dark" type="submit">${esc(tt('Загрузить', 'Upload'))}</button></form>
         <div class="card-ui flat stack"><h3>${esc(tt('Как считается статистика', 'How statistics are counted'))}</h3>
-          <p class="small muted" style="margin:0">${esc(tt('«Выбрали» — текущие нажатия «Выбрать для обсуждения» (без отменённых). «Предложена» — сколько участников открыли подборку с этой картой. Без регистрации участник = браузер. Тестовые и демо-подборки считаются отдельно. Правила раундов ещё согласуются.', '“Chosen” — current “Choose for discussion” presses (cancelled excluded). “Offered” — how many participants opened a selection with this card. Without sign-up a participant = a browser. Test and demo selections are counted separately. Round rules are still being agreed.'))}</p>
+          <p class="small muted" style="margin:0">${esc(tt('«Выбрали» — общее число выборов для обсуждения: в подборках и в библиотеке, без отменённых, без выбора автором своей карты. «Предложена» — сколько участников открыли подборку с этой картой; процент — выборы в подборках к предложениям. Без регистрации участник = браузер. Тестовые и демо-подборки считаются отдельно. Правила раундов ещё согласуются.', '“Chosen” — the total number of choices for discussion: in selections and in the library, cancelled and the artist’s own choices excluded. “Offered” — how many participants opened a selection with this card; the percentage is selection choices to offers. Without sign-up a participant = a browser. Test and demo selections are counted separately. Round rules are still being agreed.'))}</p>
           <label class="field">${esc(tt('Сортировка', 'Sort'))}<select id="sort"><option value="number">${esc(tt('по номеру', 'by number'))}</option><option value="popular">${esc(tt('по числу выборов', 'by choices'))}</option><option value="rate">${esc(tt('по доле выборов', 'by choice rate'))}</option></select></label></div></div>
       <div class="list" id="rows" style="margin-top:14px"></div><div id="ask"></div>`);
     const sortSel = sec.querySelector('#sort'); sortSel.value = sortKey;

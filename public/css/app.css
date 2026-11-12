@@ -431,3 +431,14 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
   .confirm-list > div { display: block; }
   .confirm-list dd { text-align: left; margin: 2px 0 0; }
 }
+
+/* Библиотека: необязательный выбор для обсуждения внутри «Вдвоём» / «В группе» */
+.vb-choice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.viewer-bottom .vb-choice .btn.yellow { width: auto; min-height: 44px; }
+
+/* Встреча: город → местное время */
+.place-status:empty { display: none; }
+.place-status { display: grid; gap: 8px; margin-top: -4px; }
+.place-status .ok { color: var(--mint, #7fd9b5); font-weight: 600; }
+.place-status .warn { color: var(--yellow, #f6c23c); }
+.place-status .chip .muted { font-weight: 400; }

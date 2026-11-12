@@ -15,6 +15,9 @@ const works = require('./works');
 const meetings = require('./meetings');
 const community = require('./community');
 const demo = require('./demo');
+const choices = require('./choices');
+const places = require('./places');
+const { cityKey } = require('./places-key');
 
 cards.syncSeed();
 if (config.demoMode) for (const u of auth.DEMO_USERS) auth.demoUser(u.key);
@@ -151,7 +154,25 @@ r.get('/api/cards', (req, res) => res.json({ cards: cards.listPublished(req.show
 r.get('/api/cards/:code', (req, res) => {
   const c = CODE_RE.test(req.params.code) && cards.getPublished(req.params.code, req.showDemo);
   if (!c) return bad(res, 'not_found', 404);
+  // Свой ли выбор у этого браузера/аккаунта (visitor — необязательный идентификатор браузера).
+  const v = typeof req.query.visitor === 'string' && VISITOR_RE.test(req.query.visitor) ? req.query.visitor : null;
+  if (v || req.user) c.chosenByMe = !!choices.mine(c.id ?? db.prepare('SELECT id FROM cards WHERE code = ?').get(c.code).id, v, req.user);
   res.json(c);
+});
+// Выбор для обсуждения в общей библиотеке («Вдвоём», «В группе»): без входа; в общий счёт — только явный выбор, один раз.
+const publishedCardRow = (req) => {
+  const row = CODE_RE.test(req.params.code) && db.prepare('SELECT * FROM cards WHERE code = ?').get(req.params.code);
+  return row && row.status === 'published' && (!row.is_demo || req.showDemo) ? row : null;
+};
+r.post('/api/cards/:code/choose', (req, res) => {
+  const row = publishedCardRow(req); if (!row) return bad(res, 'not_found', 404);
+  const v = visitorFrom(req, res); if (!v) return;
+  res.json(choices.choose(row, v, req.user));
+});
+r.post('/api/cards/:code/unchoose', (req, res) => {
+  const row = publishedCardRow(req); if (!row) return bad(res, 'not_found', 404);
+  const v = visitorFrom(req, res); if (!v) return;
+  res.json(choices.unchoose(row, v, req.user));
 });
 const publishedCardId = (req) => {
   const row = CODE_RE.test(req.params.code) && db.prepare('SELECT * FROM cards WHERE code = ?').get(req.params.code);
@@ -198,9 +219,9 @@ r.post('/api/c/:slug/select', (req, res) => {
   const f = loadCollection(req, res); if (!f) return;
   const v = visitorFrom(req, res); if (!v) return;
   const round = roundFrom(req, res); if (!round) return;
-  const x = collections.select(f.col, v, String(req.body.code || ''), round);
+  const x = collections.select(f.col, v, String(req.body.code || ''), round, req.user);
   if (x.error) return bad(res, x.error);
-  res.json(collections.visitorState(f.col, v));
+  res.json({ ...collections.visitorState(f.col, v), notCounted: x.notCounted || null });
 });
 r.post('/api/c/:slug/unselect', (req, res) => {
   const f = loadCollection(req, res); if (!f) return;
@@ -320,8 +341,30 @@ r.delete('/api/collections/:id', fac, (req, res) => {
 
 // ---------- фасилитатор: встречи ----------
 const ownsMeeting = (req, id) => meetings.facilitatorOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('meetings', 'id', id)));
-r.get('/api/fac/meetings', fac, (req, res) => res.json({ meetings: meetings.mine(req.user.id), timezones: Intl.supportedValuesOf('timeZone') }));
-r.post('/api/fac/meetings', fac, (req, res) => out(res, meetings.create(req.user, req.body || {}), 201));
+r.get('/api/fac/meetings', fac, (req, res) => res.json({ meetings: meetings.mine(req.user.id) }));
+// Город встречи → часовой пояс (пояс вручную не выбирается). ?city=&country=&placeId=
+r.get('/api/places/resolve', fac, (req, res) => res.json(places.resolve({ city: req.query.city, country: req.query.country, placeId: req.query.placeId })));
+/**
+ * Пояс встречи определяется по городу на сервере; присланный клиентом timezone не используется.
+ * При повторе встречи (sameAs) и при сохранении без смены города пояс берётся у исходной встречи.
+ */
+function meetingPlace(req, existing) {
+  const b = req.body || {};
+  const same = (m) => m && cityKey(m.city) === cityKey(b.city) && cityKey(m.country) === cityKey(b.country);
+  if (same(existing)) return { city: existing.city, country: existing.country, timezone: existing.timezone };
+  const srcId = Number(b.sameAs);
+  if (!existing && srcId && meetings.facilitatorOf(srcId) && ownsMeeting(req, srcId)) {
+    const src = meetings.oneForEditor(srcId);
+    if (same(src)) return { city: src.city, country: src.country, timezone: src.timezone };
+  }
+  const r = places.resolve({ city: b.city, country: b.country, placeId: b.placeId });
+  if (r.status !== 'ok') return { error: r.status === 'empty' ? 'required_fields' : 'city_unresolved', options: r.options || [] };
+  return { city: r.place.city, country: r.place.country, timezone: r.place.timezone };
+}
+r.post('/api/fac/meetings', fac, (req, res) => {
+  const pl = meetingPlace(req, null); if (pl.error) return res.status(400).json(pl);
+  out(res, meetings.create(req.user, { ...req.body, ...pl }), 201);
+});
 r.get('/api/fac/meetings/:id', fac, (req, res) => {
   const id = Number(req.params.id);
   if (!meetings.facilitatorOf(id) || !ownsMeeting(req, id)) return bad(res, 'not_found', 404);
@@ -330,7 +373,8 @@ r.get('/api/fac/meetings/:id', fac, (req, res) => {
 r.put('/api/fac/meetings/:id', fac, (req, res) => {
   const id = Number(req.params.id);
   if (!meetings.facilitatorOf(id) || !ownsMeeting(req, id)) return bad(res, 'not_found', 404);
-  out(res, meetings.update(id, req.body || {}));
+  const pl = meetingPlace(req, meetings.oneForEditor(id)); if (pl.error) return res.status(400).json(pl);
+  out(res, meetings.update(id, { ...req.body, ...pl }));
 });
 r.post('/api/fac/meetings/:id/dates', fac, (req, res) => {
   const id = Number(req.params.id);
@@ -361,7 +405,7 @@ r.post('/api/fac/application/submit', auth.requireUser, (req, res) => out(res, c
 r.get('/api/print', auth.requireUser, (req, res) => {
   if (!req.has('facilitator', 'curator', 'artist')) return bad(res, 'forbidden', 403);
   const rows = db.prepare(`SELECT k.code, k.number, k.author, k.print_permission, k.image_thumb, k.width, k.height,
-      (SELECT COUNT(*) FROM selections s WHERE s.card_id = k.id AND s.cancelled_at IS NULL AND s.is_test = 0) AS selections
+      ${choices.totalSql('k')} AS selections
     FROM cards k WHERE k.status = 'published' AND k.is_demo = 0 ORDER BY selections DESC, k.number LIMIT 60`).all();
   res.json({ downloadsEnabled: false, cards: rows.map((c) => ({ code: c.code, author: c.author, printPermission: c.print_permission, selections: c.selections,
     thumb: cards.mediaUrl('thumb', c.image_thumb), width: c.width, height: c.height })) });
@@ -397,7 +441,19 @@ admin.get('/overview', (req, res) => {
 });
 admin.get('/users', (req, res) => {
   const rows = db.prepare(`SELECT * FROM users WHERE ${req.user.is_demo ? 'is_demo = 1' : req.showDemo ? '1=1' : 'is_demo = 0'} ORDER BY is_demo, id`).all();
-  res.json({ users: rows.map((u) => ({ ...auth.publicUser(u), createdAt: u.created_at, lastLoginAt: u.last_login_at })) });
+  const cardsOf = db.prepare(`SELECT COUNT(*) AS n FROM cards WHERE artist_id = ? AND status = 'published'`);
+  res.json({ users: rows.map((u) => ({ ...auth.publicUser(u), createdAt: u.created_at, lastLoginAt: u.last_login_at, cardCount: cardsOf.get(u.id).n })) });
+});
+// Привязать карты к аккаунту автора (например, первую колоду «Ананды Майи» — к её настоящему аккаунту):
+// по этой связи сервер узнаёт автора, и его выбор своей карты не идёт в общий счёт.
+admin.post('/users/:id/transfer-cards', (req, res) => {
+  if (req.user.is_demo) return bad(res, 'demo_readonly', 403);
+  const from = Number(req.params.id); const to = Number(req.body && req.body.to);
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(to);
+  if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(from) || !target || target.is_demo || from === to) return bad(res, 'not_found', 404);
+  const r = db.prepare('UPDATE cards SET artist_id = ? WHERE artist_id = ? AND is_demo = 0').run(to, from);
+  auth.grant(to, 'artist', req.user.id);
+  res.json({ ok: true, moved: Number(r.changes) });
 });
 admin.post('/users/:id/roles', (req, res) => {
   const id = Number(req.params.id);
@@ -431,15 +487,16 @@ admin.post('/demo/clear', (req, res) => { if (!config.demoMode) return bad(res, 
 admin.get('/cards', (req, res) => {
   const rows = db.prepare(`
     SELECT k.*,
-      (SELECT COUNT(*) FROM selections s WHERE s.card_id = k.id AND s.cancelled_at IS NULL AND s.is_test = 0) AS selections,
-      (SELECT COUNT(*) FROM selections s WHERE s.card_id = k.id AND s.cancelled_at IS NULL AND s.is_test = 1) AS test_selections,
+      ${choices.totalSql('k')} AS selections,
+      (SELECT COUNT(*) FROM selections s WHERE s.card_id = k.id AND s.cancelled_at IS NULL AND s.is_test = 0 AND s.counted = 1) AS col_selections,
+      (SELECT COUNT(*) FROM selections s WHERE s.card_id = k.id AND s.cancelled_at IS NULL AND (s.is_test = 1 OR s.counted = 0)) AS test_selections,
       (SELECT COUNT(*) FROM card_offers o WHERE o.card_id = k.id AND o.is_test = 0) AS offers,
       (SELECT COUNT(*) FROM collection_cards cc WHERE cc.card_id = k.id) AS in_collections,
       (SELECT COUNT(*) FROM comments c WHERE c.card_id = k.id AND c.deleted_at IS NULL) AS comments
     FROM cards k WHERE ${req.showDemo ? '1=1' : 'k.is_demo = 0'} ORDER BY k.number ASC`).all();
   res.json({ cards: rows.map((x) => ({
     ...cards.publicCard(x, { withDetails: true }), status: x.status, source: x.source, removedAt: x.removed_at, removedBy: x.removed_by,
-    selections: x.selections, testSelections: x.test_selections, offers: x.offers, inCollections: x.in_collections, comments: x.comments,
+    selections: x.selections, colSelections: x.col_selections, testSelections: x.test_selections, offers: x.offers, inCollections: x.in_collections, comments: x.comments,
     printPermission: x.print_permission,
   })) });
 });

@@ -290,5 +290,20 @@ addColumn('users', 'site_uid', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_site_uid ON users(site_uid) WHERE site_uid IS NOT NULL');
 addColumn('collections', 'owner_id', 'INTEGER REFERENCES users(id)');
 addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
+// Единый счётчик «Выбрали для обсуждения»: выбор в подборке не идёт в счёт, если карту выбрал её автор или демо-роль.
+addColumn('selections', 'counted', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('selections', 'user_id', 'INTEGER REFERENCES users(id)');
+// Выбор для обсуждения в общей библиотеке (сценарии «Вдвоём» и «В группе»). Один активный выбор карты на браузер и на аккаунт.
+db.exec(`CREATE TABLE IF NOT EXISTS library_choices (
+  id           INTEGER PRIMARY KEY,
+  card_id      INTEGER NOT NULL REFERENCES cards(id),
+  visitor_id   TEXT NOT NULL,
+  user_id      INTEGER REFERENCES users(id),
+  counted      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  cancelled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lib_card ON library_choices(card_id) WHERE cancelled_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_lib_visitor ON library_choices(visitor_id, card_id) WHERE cancelled_at IS NULL;`);
 
 module.exports = db;
