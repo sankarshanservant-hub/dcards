@@ -3,9 +3,24 @@ import { lang } from '../i18n.js';
 import { esc, tt, u, api, errorText, toast } from '../util.js';
 import { session, refreshSession, rolesText, needLogin, stepsBar, ic, siteSession, siteProfileName, loginWithSite } from '../ui.js';
 
+const DEMO_ROLES = [['guest', 'Участник', 'Participant', 'Галерея и встречи', 'Gallery and meetings'], ['facilitator', 'Фасилитатор', 'Facilitator', 'Подборка, QR, встречи', 'Selection, QR, meetings'], ['artist', 'Художник', 'Artist', 'Работы и возвраты', 'Works and returns'], ['curator', 'Куратор', 'Curator', 'Работы на рассмотрении', 'Works under review'], ['admin', 'Администратор', 'Admin', 'Люди, заявки, встречи', 'People, applications, meetings']];
+const demoBtn = ([k, ru, en, dru, den], i) => `<button class="btn ${i === 0 ? 'yellow' : 'light'}" type="button" data-demo="${k}"><b>${esc(tt(ru, en))}</b><span class="small">${esc(tt(dru, den))}</span></button>`;
+
+/** Отдельный экран выбора демо-ролей (все роли, включая тестовую кнопку администратора). */
+export function demoRoles(ctx) {
+  if (!session.config.demoMode) { ctx.main.innerHTML = `<div class="wrap page narrow"><p class="empty">${esc(tt('Демо-режим выключен.', 'Demo mode is off.'))}</p></div>`; return; }
+  ctx.main.innerHTML = `<div class="wrap page narrow stack"><p class="eyebrow">${esc(tt('Демо', 'Demo'))}</p><h1>${esc(tt('Демо-роли', 'Demo roles'))}</h1>
+    <p class="muted">${esc(tt('Тестовый вход для показа путей. Роли проверяются на сервере; демо-данные хранятся отдельно от настоящих. В рабочей версии администратор входит через обычный вход.', 'Test sign-in to walk through each path. Roles are checked on the server; demo data is kept apart from real data. In the live version the administrator signs in the regular way.'))}</p>
+    <div class="demo-roles">${DEMO_ROLES.map(demoBtn).join('')}</div></div>`;
+  ctx.main.querySelectorAll('[data-demo]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await api('/api/demo/login', { method: 'POST', body: { as: b.dataset.demo } }); await refreshSession(); goAfterLogin(ctx); } catch (x) { toast(errorText(x)); b.disabled = false; }
+  }));
+}
+
 const goAfterLogin = (ctx) => {
   const next = ctx.query.get('next');
-  ctx.navigate(next && next.startsWith('/') ? next : (window.dcHomeFor ? window.dcHomeFor() : '/me'));
+  ctx.navigate(next && next.startsWith('/') ? next : (window.dcHomeFor ? window.dcHomeFor() : '/start'));
 };
 
 export function login(ctx) {
@@ -35,8 +50,8 @@ export function login(ctx) {
         <div class="row between" style="align-items:flex-start"><div><h2 style="margin:0">${esc(tt('Посмотреть демо', 'View the demo'))}</h2>
           <p class="muted" style="margin:4px 0 0">${esc(tt('Без регистрации. Тестовые встречи, подборка и работы хранятся отдельно от настоящих и видны только в демо.', 'No sign-up. Test meetings, a selection and works are kept separate from real data and visible only in the demo.'))}</p></div>
           <span class="pill demo">${esc(tt('демо', 'demo'))}</span></div>
-        <div class="demo-roles">${[['facilitator', 'Фасилитатор', 'Facilitator', 'Подборка, QR, встречи', 'Selection, QR, meetings'], ['artist', 'Художник', 'Artist', 'Работы и возвраты', 'Works and returns'], ['curator', 'Куратор', 'Curator', 'Очередь и решения', 'Queue and decisions'], ['admin', 'Администратор', 'Admin', 'Пользователи и роли', 'Users and roles'], ['guest', 'Участник', 'Participant', 'Встречи и обсуждения', 'Meetings and discussions']]
-          .map(([k, ru, en, dru, den], i) => `<button class="btn ${i === 0 ? 'yellow' : 'light'}" type="button" data-demo="${k}"><b>${esc(tt(ru, en))}</b><span class="small">${esc(tt(dru, den))}</span></button>`).join('')}</div>
+        <div class="demo-roles">${DEMO_ROLES.filter((r) => r[0] !== 'admin').map(demoBtn).join('')}</div>
+        <a class="small" href="${u('/demo')}">${esc(tt('Все демо-роли →', 'All demo roles →'))}</a>
       </div>` : ''}
       ${step === 1 ? siteBlock() : ''}
       ${!codeLogin && !siteOn ? `<p class="notice demo">${esc(tt('Вход по email заработает после подключения почты. Сейчас роли можно посмотреть в демо выше.', 'Email sign-in will work once email is connected. For now, try the roles in the demo above.'))}</p>` : ''}
@@ -105,10 +120,12 @@ export function login(ctx) {
 export function profile(ctx) {
   const s = session.user;
   if (!s) return needLogin(ctx.main, tt('Профиль доступен после входа.', 'Sign in to see your profile.'));
+  const has = (...r) => s.roles.includes('admin') || r.some((x) => s.roles.includes(x));
+  // «Мои кабинеты»: только доступные; администрирование — только администратору.
   const links = [
-    ['/artist', ic.brush, tt('Кабинет художника', 'Artist space')],
-    [s.roles.includes('facilitator') || s.roles.includes('admin') ? '/facilitator' : '/facilitator/apply', ic.qr, s.roles.includes('facilitator') || s.roles.includes('admin') ? tt('Кабинет фасилитатора', 'Facilitator space') : tt('Стать фасилитатором', 'Become a facilitator')],
-    ...(s.roles.includes('curator') || s.roles.includes('admin') ? [['/curator', ic.check, tt('Проверка работ', 'Review queue')]] : []),
+    ...(has('artist') ? [['/artist', ic.brush, tt('Кабинет художника', 'Artist space')]] : []),
+    ...(has('facilitator') ? [['/facilitator', ic.qr, tt('Кабинет фасилитатора', 'Facilitator space')]] : []),
+    ...(has('curator') ? [['/curator', ic.check, tt('Кабинет куратора', 'Curator space')]] : []),
     ...(s.roles.includes('admin') ? [['/admin', ic.shield, tt('Администрирование', 'Administration')]] : []),
   ];
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
@@ -119,7 +136,7 @@ export function profile(ctx) {
       <label class="field">${esc(tt('Публичное имя или псевдоним', 'Public name or pen name'))} <span class="hint">${esc(tt('Показывается в обсуждениях и под картами. Пусто — показывается имя.', 'Shown in discussions and under cards. Empty — your name is shown.'))}</span><input type="text" name="publicName" maxlength="100" value="${esc(s.publicName !== s.name ? s.publicName : '')}"></label>
       <p class="small muted" style="margin:0">Email: ${esc(s.email || tt('не указан', 'not set'))}</p>
       <div><button class="btn dark" type="submit">${esc(tt('Сохранить', 'Save'))}</button></div></form>
-    <div class="list">${links.map(([href, icon, label]) => `<a class="item" href="${u(href)}"><span class="ic">${icon}</span><span class="body"><b>${esc(label)}</b></span><span>→</span></a>`).join('')}</div>
+    ${links.length ? `<h2 style="margin:8px 0 0">${esc(tt('Мои кабинеты', 'My spaces'))}</h2><div class="list">${links.map(([href, icon, label]) => `<a class="item" href="${u(href)}"><span class="ic">${icon}</span><span class="body"><b>${esc(label)}</b></span><span>→</span></a>`).join('')}</div>` : `<div class="card-ui flat"><p class="muted" style="margin:0 0 10px">${esc(tt('Хотите присоединиться к проекту?', 'Want to join the project?'))}</p><a class="btn dark" href="${u('/start#join')}">${esc(tt('Как участвовать', 'Ways to take part'))}</a></div>`}
   </div>`;
   ctx.main.querySelector('#pf').addEventListener('submit', async (e) => {
     e.preventDefault();

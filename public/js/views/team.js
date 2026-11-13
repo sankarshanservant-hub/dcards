@@ -17,7 +17,7 @@ export async function chat(ctx, room) {
       <p class="eyebrow">${esc(tt('Командный чат', 'Team chat'))}</p><h1>${esc(title)}</h1>
       <div class="notice small"><b>${esc(tt('Кто видит переписку:', 'Who can read this chat:'))}</b> ${esc(room === 'curators' ? tt('кураторы и администраторы проекта', 'curators and project administrators') : tt('фасилитаторы и администраторы проекта', 'facilitators and project administrators'))}.
         ${esc(tt('Сейчас в доступе:', 'Currently:'))} ${d.members.map((m) => esc(m.name)).join(', ')}.</div>
-      <div class="chat card-ui flat" id="msgs">${d.messages.map((m) => `<div class="msg ${m.userId === session.user.id ? 'me' : ''}"><div class="meta">${esc(m.author)} · ${esc(fmtDate(m.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</div><p>${esc(m.text)}</p></div>`).join('') || `<p class="muted">${esc(tt('Сообщений пока нет.', 'No messages yet.'))}</p>`}</div>
+      <div class="chat card-ui flat" id="msgs">${d.messages.map((m) => `<div class="msg ${m.userId === session.user.id ? 'me' : ''}"><div class="meta">${esc(m.author)} · ${esc(fmtDate(m.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</div><p>${esc(m.text)}</p>${m.workId ? `<a class="btn sm yellow" href="${u('/curator/works/' + m.workId)}">${esc(tt(`Открыть работу №${m.workId}`, `Open work #${m.workId}`))} →</a>` : ''}</div>`).join('') || `<p class="muted">${esc(tt('Сообщений пока нет.', 'No messages yet.'))}</p>`}</div>
       <form class="row" id="cf"><textarea name="text" maxlength="4000" required style="flex:1 1 260px;min-height:52px" placeholder="${esc(tt('Сообщение', 'Message'))}"></textarea><button class="btn dark" type="submit">${esc(tt('Отправить', 'Send'))}</button></form>
       <p class="small muted">${esc(tt('Перевод сообщений пока не подключён. Правила модерации уточняются.', 'Message translation is not connected yet. Moderation rules are being agreed.'))}</p></div>`;
     const box = ctx.main.querySelector('#msgs'); box.scrollTop = box.scrollHeight;
@@ -31,7 +31,7 @@ export async function chat(ctx, room) {
 
 export async function print(ctx) {
   if (!session.user) return needLogin(ctx.main, '');
-  if (!hasRole('facilitator', 'curator', 'artist')) return noRole(ctx.main, tt('фасилитатор, куратор или художник', 'facilitator, curator or artist'));
+  if (!hasRole('curator', 'artist')) return noRole(ctx.main, tt('куратор или художник', 'curator or artist'));
   loading(ctx.main);
   let d;
   try { d = await api('/api/print'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }

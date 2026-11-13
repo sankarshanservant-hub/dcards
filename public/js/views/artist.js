@@ -40,12 +40,13 @@ export async function cabinet(ctx) {
       ${data.works.length ? [...bySub.entries()].map(([sid, ws]) => `<div class="stack" style="gap:8px"><p class="small muted" style="margin:6px 0 0">${esc(tt('Отправка', 'Submission'))} №${sid} · ${esc(tt('работ', 'works'))}: ${ws.length}</p>${ws.map(workCard).join('')}</div>`).join('')
         : `<p class="empty">${esc(tt('Вы ещё не подавали работ.', 'You have not submitted any works yet.'))}</p>`}
       <h2 style="margin-top:20px">${esc(tt('Мои опубликованные карты', 'My published cards'))}</h2>
-      <div class="list" id="mycards">${data.cards.length ? data.cards.map((c) => `<div class="item">
-          <span class="thumb"><img src="${esc(c.thumb)}" alt=""></span>
-          <span class="body"><b>${esc(c.code)}</b><span class="small">${c.status === 'published' ? esc(tt('В библиотеке', 'In the library')) : esc(tt('Снята с сайта', 'Removed from the site'))}${c.pendingReplacement ? ' · ' + esc(tt('новая версия на рассмотрении', 'new version in review')) : ''}</span></span>
-          ${c.status === 'published' ? `<span class="row" style="gap:6px"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/*" data-replace="${esc(c.code)}" hidden></label>
-            <button class="btn sm danger" type="button" data-withdraw="${esc(c.code)}">${esc(tt('Убрать', 'Remove'))}</button></span>` : ''}
-        </div>`).join('') : `<p class="empty">${esc(tt('Опубликованных карт пока нет.', 'No published cards yet.'))}</p>`}</div>
+      <div class="my-cards" id="mycards">${data.cards.length ? data.cards.map((c) => `<article class="my-card" data-card="${esc(c.code)}">
+          <div class="mc-head"><b>${esc(c.code)}</b> · <span>${c.status === 'published' ? esc(tt('В галерее', 'In the gallery')) : esc(tt('Снята с сайта', 'Removed from the site'))}</span>${c.pendingReplacement ? `<span class="small muted"> · ${esc(tt('новая версия на рассмотрении', 'new version in review'))}</span>` : ''}</div>
+          <div class="mc-img"><img src="${esc(c.thumb)}" alt="${esc(c.code)}" loading="lazy"></div>
+          ${c.status === 'published' ? `<div class="mc-actions"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/*" data-replace="${esc(c.code)}" hidden></label>
+            <button class="linkbtn mc-remove" type="button" data-withdraw="${esc(c.code)}">${esc(tt('Убрать', 'Remove'))}</button></div>` : ''}
+          <div class="mc-ask"></div>
+        </article>`).join('') : `<p class="empty">${esc(tt('Опубликованных карт пока нет.', 'No published cards yet.'))}</p>`}</div>
       <div id="ask"></div>
     </div>`;
   const ask = ctx.main.querySelector('#ask');
@@ -58,13 +59,15 @@ export async function cabinet(ctx) {
   }));
   ctx.main.querySelector('#mycards').addEventListener('click', (e) => {
     const w = e.target.closest('[data-withdraw]'); if (!w) return;
-    const code = w.dataset.withdraw;
-    ask.innerHTML = `<div class="notice red stack"><b>${esc(tt(`Убрать карту ${code} с сайта?`, `Remove card ${code} from the site?`))}</b>
-      <span>${esc(tt('Она исчезнет из библиотеки и из всех подборок фасилитаторов, обсуждение перестанет быть публичным. Одобрение куратора не нужно. Печатное использование регулируется отдельно.', 'It will disappear from the library and all facilitator selections; its discussion will no longer be public. No curator approval is needed. Print use is governed separately.'))}</span>
+    const code = w.dataset.withdraw; // номер — именно той карты, на которой нажали
+    const slot = w.closest('.my-card').querySelector('.mc-ask');
+    ctx.main.querySelectorAll('.mc-ask').forEach((x) => { if (x !== slot) x.innerHTML = ''; });
+    slot.innerHTML = `<div class="notice red stack"><b>${esc(tt(`Убрать карту ${code} с сайта?`, `Remove card ${code} from the site?`))}</b>
+      <span>${esc(tt('Она исчезнет из галереи и из всех подборок фасилитаторов, обсуждение перестанет быть публичным. Одобрение куратора не нужно. Печатное использование регулируется отдельно.', 'It will disappear from the gallery and all facilitator selections; its discussion will no longer be public. No curator approval is needed. Print use is governed separately.'))}</span>
       <div class="row"><button class="btn danger" type="button" data-yes>${esc(tt('Да, убрать', 'Yes, remove'))}</button><button class="linkbtn" type="button" data-no>${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
-    ask.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    ask.querySelector('[data-no]').onclick = () => { ask.innerHTML = ''; };
-    ask.querySelector('[data-yes]').onclick = async () => {
+    slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    slot.querySelector('[data-no]').onclick = () => { slot.innerHTML = ''; };
+    slot.querySelector('[data-yes]').onclick = async () => {
       try { await api(`/api/artist/cards/${code}/withdraw`, { method: 'POST' }); toast(tt('Карта убрана с сайта', 'Card removed')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
     };
   });
@@ -97,7 +100,7 @@ export function submit(ctx) {
       ${step === 1 ? `<h1>${esc(tt('Условия публикации', 'Publication terms'))}</h1>
         <p>${esc(tt('Публикация добровольная. Прочитайте короткое условие и отметьте галочку.', 'Publishing is voluntary. Read the short condition and tick the box.'))}</p>
         <label class="check card-ui flat"><input type="checkbox" id="terms" ${accepted ? 'checked' : ''}>
-          <span>${esc(tt('Я принимаю условия публикации и разрешаю бесплатно показывать эту работу в библиотеке Dialogue Cards и в подборках для встреч Dialogue Flow. Использование работы в печатной колоде согласуется со мной отдельно.', 'I accept the publication terms and allow this work to be shown free of charge in the Dialogue Cards library and in selections for Dialogue Flow meetings. Use of the work in a printed deck will be agreed with me separately.'))}
+          <span>${esc(tt('Я принимаю условия публикации и разрешаю бесплатно показывать эту работу в галерее Dialogue Cards и в подборках для встреч Dialogue Flow. Использование работы в печатной колоде согласуется со мной отдельно.', 'I accept the publication terms and allow this work to be shown free of charge in the Dialogue Cards gallery and in selections for Dialogue Flow meetings. Use of the work in a printed deck will be agreed with me separately.'))}
           <a href="${u('/terms')}" target="_blank">${esc(tt('Полные условия', 'Full terms'))}</a> <span class="pill demo">${esc(tt('черновик текста', 'draft text'))}</span></span></label>
         <button class="btn dark" type="button" id="next" ${accepted ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button>`
       : step === 2 ? `<h1>${esc(tt('Ваши работы', 'Your works'))}</h1>
@@ -149,7 +152,7 @@ export async function work(ctx, id) {
   const steps = [
     { title: tt('Отправлено', 'Sent'), note: esc(fmtDate(w.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })), state: 'done' },
     { title: w.status === 'discussion' ? tt('На обсуждении кураторов', 'Curators are discussing') : tt('Проверка куратором', 'Curator review'),
-      note: w.assignedTo ? esc(tt('Ответственный:', 'Assigned to:') + ' ' + w.assignedTo.name) : '', state: ['submitted', 'discussion'].includes(w.status) ? 'now' : 'done' },
+      note: '', state: ['submitted', 'discussion'].includes(w.status) ? 'now' : 'done' },
     { title: w.status === 'published' ? tt('Опубликовано', 'Published') : w.status === 'needs_changes' ? tt('Возвращено на доработку', 'Returned for changes') : w.status === 'rejected' ? tt('Отклонено', 'Declined') : tt('Решение', 'Decision'),
       note: w.status === 'published' && w.card ? `${esc(tt('Карта', 'Card'))} <a href="${u('/cards/' + w.card.code)}">${esc(w.card.code)}</a>` : '',
       state: w.status === 'published' ? 'done' : ['needs_changes', 'rejected'].includes(w.status) ? 'bad' : 'todo' },

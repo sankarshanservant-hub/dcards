@@ -22,10 +22,10 @@ const dict = {
     'home.platform': 'Dialogue Cards объединяет художников, кураторов, фасилитаторов и участников встреч.',
     'home.draft': 'Черновик текста — видно только владельцу',
 
-    'library.title': 'Библиотека карт',
+    'library.title': 'Галерея карт',
     'library.lead': 'Нажмите на карту, чтобы рассмотреть её крупно.',
     'library.count': ['{n} карта', '{n} карты', '{n} карт'],
-    'library.empty': 'В библиотеке пока нет карт.',
+    'library.empty': 'В галерее пока нет карт.',
 
     'viewer.close': 'Закрыть',
     'viewer.info': 'О карте',
@@ -171,10 +171,10 @@ const dict = {
     'home.platform': 'Dialogue Cards brings together artists, curators, facilitators and meeting participants.',
     'home.draft': 'Draft text — visible to the owner only',
 
-    'library.title': 'Card library',
+    'library.title': 'Card gallery',
     'library.lead': 'Tap a card to see it up close.',
     'library.count': ['{n} card', '{n} cards'],
-    'library.empty': 'There are no cards in the library yet.',
+    'library.empty': 'There are no cards in the gallery yet.',
 
     'viewer.close': 'Close',
     'viewer.info': 'About this card',

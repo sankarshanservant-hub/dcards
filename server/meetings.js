@@ -36,7 +36,7 @@ function dateOut(d, m) {
 function meetingOut(m, { withDates = false, includePast = false } = {}) {
   const out = {
     id: m.id, title: m.title, description: m.description, country: m.country, city: m.city, venue: m.venue,
-    language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, capacity: m.capacity,
+    language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, priceAmount: m.price_type === 'paid' ? m.price_amount : null, currency: m.price_type === 'paid' ? m.currency : '', capacity: m.capacity,
     askContact: !!m.ask_contact, status: m.status, removedReason: m.removed_reason, isDemo: !!m.is_demo,
     facilitator: userName(m.facilitator_id), facilitatorId: m.facilitator_id, createdAt: m.created_at,
   };
@@ -107,8 +107,8 @@ async function register(dateId, { name, email, contact }, baseUrl, lang = 'ru') 
   const subject = lang === 'en' ? `You are registered: ${m.title}` : `Вы записаны: ${m.title}`;
   const ics = `${baseUrl}${config.basePath}/api/registrations/${token}/ics`;
   const body = lang === 'en'
-    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? 'Payment is arranged by the facilitator. ' + m.price_note + '\n' : ''}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
-    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? 'Оплату организует фасилитатор. ' + m.price_note + '\n' : ''}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
+    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
+    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} с человека. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
   // Демо-встреча: письмо не отправляется (честно сообщаем об этом на странице), настоящая почта не задействуется.
   const letter = m.is_demo ? { sent: false, demo: true, demoMeeting: true, subject, body } : await mail.send(e, subject, body);
   return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: [m.venue, m.city, m.country].filter(Boolean).join(', ') };
@@ -162,12 +162,18 @@ function parseMeeting(body) {
     timezone: tz,
     price_type: body.priceType === 'paid' ? 'paid' : 'free',
     price_note: String(body.priceNote || '').trim().slice(0, 300),
+    price_amount: body.priceType === 'paid' ? Number(String(body.priceAmount ?? '').replace(',', '.')) : null,
+    currency: body.priceType === 'paid' ? String(body.currency || '').trim().toUpperCase().slice(0, 3) : '',
     capacity: Math.max(1, Math.min(500, Number(body.capacity) || 0)),
     ask_contact: body.askContact ? 1 : 0,
   };
   if (!m.title || !m.country || !m.city) return { error: 'required_fields' };
   if (!validTz(tz)) return { error: 'bad_timezone' };
   if (!Number(body.capacity)) return { error: 'capacity_required' };
+  if (m.price_type === 'paid') {
+    if (!(m.price_amount > 0) || m.price_amount > 1e9) return { error: 'price_required' };
+    if (!/^[A-Z]{3}$/.test(m.currency)) return { error: 'currency_required' };
+  }
   return { m };
 }
 /** Даты: список «YYYY-MM-DDTHH:MM» и/или повтор каждую неделю N раз от первой даты. */
@@ -195,8 +201,8 @@ function create(user, body) {
   const p = parseMeeting(body); if (p.error) return p;
   const ds = expandDates(body, p.m.timezone); if (ds.error) return ds;
   const id = db.transaction(() => {
-    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, capacity, ask_contact, is_demo)
-      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @capacity, @ask_contact, @is_demo)`)
+    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, capacity, ask_contact, is_demo)
+      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @capacity, @ask_contact, @is_demo)`)
       .run({ ...p.m, fid: user.id, is_demo: user.is_demo ? 1 : 0 });
     const ins = db.prepare('INSERT INTO meeting_dates (meeting_id, starts_at, local_time, capacity) VALUES (?, ?, ?, ?)');
     for (const d of ds.dates) ins.run(info.lastInsertRowid, d.utc, d.local, p.m.capacity);
@@ -213,7 +219,7 @@ function update(meetingId, body) {
     for (const d of fut) { const utc = zonedToUtc(d.local_time, p.m.timezone); if (utc) db.prepare('UPDATE meeting_dates SET starts_at = ? WHERE id = ?').run(utc, d.id); }
   }
   db.prepare(`UPDATE meetings SET title=@title, description=@description, country=@country, city=@city, venue=@venue, language=@language,
-    timezone=@timezone, price_type=@price_type, price_note=@price_note, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
+    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
   return { ok: true };
 }
 function addDates(meetingId, body) {

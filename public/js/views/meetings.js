@@ -4,6 +4,11 @@ import { esc, tt, u, api, errorText, fmtTz, toast } from '../util.js';
 import { session, loading, failed, demoPill, ic } from '../ui.js';
 
 export const LANG_NAMES = { ru: ['Русский', 'Russian'], en: ['Английский', 'English'], zh: ['Китайский', 'Chinese'], th: ['Тайский', 'Thai'], de: ['Немецкий', 'German'], fr: ['Французский', 'French'], es: ['Испанский', 'Spanish'], it: ['Итальянский', 'Italian'], uk: ['Украинский', 'Ukrainian'], kk: ['Казахский', 'Kazakh'], other: ['Другой', 'Other'] };
+/** Цена участия: «300 THB с человека» / «Бесплатно». */
+export const priceText = (m) => (m.priceType === 'paid' && m.priceAmount
+  ? tt(`${fmtNum(m.priceAmount)} ${m.currency} с человека`, `${fmtNum(m.priceAmount)} ${m.currency} per person`)
+  : m.priceType === 'paid' ? tt('Платная', 'Paid') : tt('Бесплатно', 'Free'));
+const fmtNum = (n) => new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'ru-RU', { maximumFractionDigits: 2 }).format(n);
 export const langName = (code) => { const n = LANG_NAMES[code] || [code, code]; return lang === 'en' ? n[1] : n[0]; };
 const myTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -16,7 +21,7 @@ export function eventRow(d) {
     <div class="stack" style="gap:4px"><b style="font:700 1.1rem var(--font-head)">${esc(m.title)} ${demoPill(m.isDemo)}</b>
       <span class="small muted">${esc(m.city)}, ${esc(m.country)} · ${esc(time)} (${esc(m.timezone)})</span>
       <div class="row" style="gap:6px"><span class="pill">${esc(langName(m.language))}</span>
-        <span class="pill">${esc(m.priceType === 'paid' ? tt('Платная', 'Paid') : tt('Бесплатная', 'Free'))}</span>
+        <span class="pill ${m.priceType === 'paid' ? '' : 'mint'}">${esc(priceText(m))}</span>
         <span class="pill ${d.left ? 'mint' : 'red'}">${esc(d.left ? tt(`Свободно мест: ${d.left}`, `Seats left: ${d.left}`) : tt('Мест нет', 'Full'))}</span></div>
       <span class="small muted">${esc(tt('Фасилитатор', 'Facilitator'))}: ${esc(m.facilitator)}</span></div></a>`;
 }
@@ -65,7 +70,7 @@ export async function datePage(ctx, id) {
         <h1>${esc(m.title)} ${demoPill(m.isDemo)}</h1>
         <p class="lead">${esc(m.city)}, ${esc(m.country)}${m.venue ? ' · ' + esc(m.venue) : ''}</p>
         <div class="row"><span class="pill yellow">${esc(langName(m.language))}</span><span class="pill">${esc(m.timezone)}</span>
-          <span class="pill">${esc(m.priceType === 'paid' ? tt('Платная', 'Paid') : tt('Бесплатная', 'Free'))}</span>
+          <span class="pill ${m.priceType === 'paid' ? '' : 'mint'}">${esc(priceText(m))}</span>
           <span class="pill ${d.left ? 'mint' : 'red'}">${esc(tt(`Мест: ${d.left} из ${d.capacity}`, `Seats: ${d.left} of ${d.capacity}`))}</span></div>
         ${mine ? `<p class="small" style="color:var(--on-navy-muted);margin-top:10px">${esc(tt('По вашему времени:', 'Your local time:'))} ${esc(mine)} (${esc(myTz())})</p>` : ''}
       </div>
@@ -76,7 +81,7 @@ export async function datePage(ctx, id) {
       <div class="card-ui flat"><dl class="sheet-list" style="margin:0">
         <div><dt>${esc(tt('Фасилитатор', 'Facilitator'))}</dt><dd>${esc(m.facilitator)}</dd></div>
         <div><dt>${esc(tt('Язык встречи', 'Meeting language'))}</dt><dd>${esc(langName(m.language))}</dd></div>
-        <div><dt>${esc(tt('Оплата', 'Payment'))}</dt><dd>${esc(m.priceType === 'paid' ? (m.priceNote || tt('Оплату организует фасилитатор', 'Arranged by the facilitator')) : tt('Бесплатно', 'Free'))}</dd></div>
+        <div><dt>${esc(tt('Оплата', 'Payment'))}</dt><dd>${esc(priceText(m))}${m.priceType === 'paid' ? `<br><span class="small muted">${esc(m.priceNote || tt('Оплату организует фасилитатор', 'Arranged by the facilitator'))}</span>` : ''}</dd></div>
       </dl><p class="small muted" style="margin:8px 0 0">${esc(tt('Сайт не принимает оплату: её организует фасилитатор.', 'The site does not take payments: the facilitator arranges them.'))}</p></div>
       ${d.otherDates.length ? `<h3>${esc(tt('Другие даты этой встречи', 'Other dates of this meeting'))}</h3><div class="chips">${d.otherDates.map((o) => `<a class="chip" href="${u('/m/' + o.id)}">${esc(fmtTz(o.startsAt, m.timezone, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} · ${o.left}</a>`).join('')}</div>` : ''}
     </div>`;

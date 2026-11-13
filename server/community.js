@@ -32,7 +32,7 @@ function recentComments(showDemo) {
 const ROOMS = { curators: ['curator'], facilitators: ['facilitator'] };
 function chat(room, showDemo) {
   return db.prepare(`SELECT * FROM chat_messages WHERE room = ? AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC LIMIT 200`).all(room).reverse()
-    .map((m) => ({ id: m.id, author: userName(m.user_id), userId: m.user_id, text: m.text, createdAt: m.created_at }));
+    .map((m) => ({ id: m.id, author: userName(m.user_id), userId: m.user_id, text: m.text, createdAt: m.created_at, workId: m.work_id || null }));
 }
 function post(room, user, text) {
   const t = String(text || '').trim().slice(0, 4000);
@@ -104,7 +104,36 @@ function decideApplication(adminId, userId, approve, note = '') {
   return { ok: true };
 }
 
+// ---------- заявка на роль куратора ----------
+const curApp = (a) => a && { status: a.status, name: a.name, contact: a.contact, motivation: a.motivation, decisionNote: a.decision_note, decidedAt: a.decided_at, createdAt: a.created_at };
+function curatorApplication(userId) { return curApp(db.prepare('SELECT * FROM curator_applications WHERE user_id = ?').get(userId)); }
+function submitCuratorApplication(user, { name, contact, motivation }) {
+  const n = String(name || '').trim().slice(0, 100); const c = String(contact || '').trim().slice(0, 200); const m = String(motivation || '').trim().slice(0, 2000);
+  if (!n) return { error: 'name_required' };
+  if (!c) return { error: 'contact_required' };
+  if (!m) return { error: 'motivation_required' };
+  const old = db.prepare('SELECT * FROM curator_applications WHERE user_id = ?').get(user.id);
+  if (old && old.status === 'submitted') return { error: 'already_submitted' };
+  if (old && old.status === 'approved') return { error: 'already_curator' };
+  if (old) db.prepare(`UPDATE curator_applications SET name=?, contact=?, motivation=?, status='submitted', decision_note='', decided_at=NULL, decided_by=NULL, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`).run(n, c, m, old.id);
+  else db.prepare('INSERT INTO curator_applications (user_id, name, contact, motivation, is_demo) VALUES (?, ?, ?, ?, ?)').run(user.id, n, c, m, user.is_demo ? 1 : 0);
+  return { ok: true };
+}
+function curatorApplications(showDemo) {
+  return db.prepare(`SELECT * FROM curator_applications WHERE ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY CASE status WHEN 'submitted' THEN 0 ELSE 1 END, updated_at DESC`).all()
+    .map((a) => ({ userId: a.user_id, accountName: userName(a.user_id), ...curApp(a), updatedAt: a.updated_at, isDemo: !!a.is_demo }));
+}
+function decideCuratorApplication(adminId, userId, approve, note = '') {
+  const a = db.prepare('SELECT * FROM curator_applications WHERE user_id = ?').get(userId);
+  if (!a) return { error: 'not_found' };
+  db.prepare(`UPDATE curator_applications SET status = ?, decision_note = ?, decided_by = ?, decided_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(approve ? 'approved' : 'rejected', String(note).slice(0, 1000), adminId, a.id);
+  if (approve) db.prepare(`INSERT OR IGNORE INTO user_roles (user_id, role, granted_by) VALUES (?, 'curator', ?)`).run(userId, adminId);
+  return { ok: true };
+}
+
 module.exports = {
+  curatorApplication, submitCuratorApplication, curatorApplications, decideCuratorApplication,
   comments, addComment, deleteComment, recentComments, ROOMS, chat, post, members,
   COURSE, QUESTIONS, application, startApplication, saveApplication, submitApplication, applications, decideApplication,
 };

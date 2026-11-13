@@ -277,7 +277,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .92rem; }
 .collection { padding-bottom: 130px; }
 .choice-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 10px var(--gutter) calc(10px + var(--safe-b)); }
 .choice-bar .in { max-width: 640px; margin: 0 auto; background: var(--navy-3); border: 1px solid #2c355d; color: var(--on-navy); border-radius: 22px; padding: 10px 12px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px rgba(14, 19, 48, .35); }
-.bar-thumb { flex: none; width: 40px; padding: 0; border: 0; border-radius: 7px; overflow: hidden; cursor: pointer; box-shadow: 0 0 0 2px var(--yellow); background: none; }
+.bar-thumb { flex: none; width: 40px; padding: 0; border: 0; border-radius: 7px; overflow: hidden; box-shadow: 0 0 0 2px var(--yellow); background: none; }
 .bar-text { flex: 1; display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .bar-text span { font-size: .8rem; color: var(--on-navy-muted); }
 
@@ -442,3 +442,95 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 .place-status .ok { color: var(--mint, #7fd9b5); font-weight: 600; }
 .place-status .warn { color: var(--yellow, #f6c23c); }
 .place-status .chip .muted { font-weight: 400; }
+
+/* Кабинет художника: карточка опубликованной карты — номер и статус, иллюстрация, действия */
+.my-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.my-card { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 14px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.mc-head { font-weight: 600; overflow-wrap: anywhere; }
+.mc-img { border-radius: 14px; overflow: hidden; background: var(--cream-2); }
+.mc-img img { width: 100%; height: auto; }
+.mc-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mc-remove { color: var(--muted); font-size: .88rem; text-decoration: underline; }
+.mc-ask:empty { display: none; }
+
+/* Профиль: одна буква или значок */
+.acct .ava svg, .sheet-menu .head .ava svg { width: 60%; height: 60%; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Главная: «Присоединяйтесь» — карточка целиком ссылка, пиктограмма рядом с заголовком */
+.role .role-head { display: flex; align-items: center; gap: 12px; }
+.role .role-head .ic { flex: none; width: 44px; height: 44px; }
+.role .role-head b { font: 700 1.15rem/1.2 var(--font-head); }
+.role p { margin-top: 2px; }
+.role:focus-visible, .big-action:focus-visible, .item:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+#join { scroll-margin-top: 78px; }
+
+/* Стартовая страница участника: два равных крупных действия и спокойный блок «присоединиться» */
+.big-actions { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 680px) { .big-actions { grid-template-columns: 1fr 1fr; } }
+.big-action { display: grid; gap: 8px; align-content: start; padding: 22px; border-radius: 26px; text-decoration: none; min-height: 168px; }
+.big-action .ic { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; }
+.big-action .ic svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.big-action b { font: 800 1.6rem/1.1 var(--font-head); letter-spacing: -.02em; }
+.big-action.yellow { background: var(--yellow); color: #0c122a; }
+.big-action.yellow .ic { background: #0c122a; color: var(--yellow); }
+.big-action.navy { background: var(--navy-3); color: var(--on-navy); border: 1px solid #2c355d; }
+.big-action.navy .ic { background: var(--yellow); color: #0c122a; }
+.join-block { display: grid; gap: 12px; margin-top: 10px; }
+.join-block h2 { font-size: 1.3rem; margin: 0; }
+
+/* ===== Три поверхности (по примеру владельца: тёмная, светлая, жёлтая) =====
+   тёмная (по умолчанию) — обычные разделы: кабинеты, встречи, вход, администрирование, чаты;
+   светлая — «серьёзное»: условия, критерии, подача и проверка работ, курс и заявки, документы для чтения;
+   жёлтая — «творческое»: главная, знакомство, галерея карт, подборка на встрече.
+   Поверхность задаёт app.js: main[data-surface]. Шапка и подвал остаются тёмными. */
+main[data-surface="light"] {
+  --cream: #f8efd8; --paper: #fffaf0; --navy-2: #fffaf0; --navy-3: #f1e6c8; --cream-2: #efe2bd;
+  --ink: #0c122a; --muted: #585d78; --line: #e3d6b1; --on-navy: #0c122a; --on-navy-muted: #585d78;
+  --shadow: 0 1px 2px rgba(12, 18, 42, .05), 0 10px 24px rgba(12, 18, 42, .07);
+  background: var(--cream); color: var(--ink); color-scheme: light;
+}
+main[data-surface="yellow"] {
+  --cream: #ffc928; --paper: #fff4d2; --navy-2: #fff4d2; --navy-3: #fff4d2; --cream-2: #f3b90f;
+  --ink: #0c122a; --muted: #4f4a2c; --line: rgba(12, 18, 42, .18); --on-navy: #0c122a; --on-navy-muted: #4f4a2c;
+  --shadow: 0 10px 24px rgba(12, 18, 42, .14);
+  background: var(--cream); color: var(--ink); color-scheme: light;
+}
+/* общее для светлой и жёлтой: поля, чипы, герой, тёмные кнопки */
+main[data-surface="light"] input:not([type=checkbox]):not([type=radio]):not([type=file]), main[data-surface="light"] select, main[data-surface="light"] textarea,
+main[data-surface="yellow"] input:not([type=checkbox]):not([type=radio]):not([type=file]), main[data-surface="yellow"] select, main[data-surface="yellow"] textarea { background: #fffdf6; border-color: #d6c89c; color: #0c122a; }
+main[data-surface="light"] input[type=file], main[data-surface="yellow"] input[type=file] { background: #fffdf6; border-color: #c9b983; color: #0c122a; }
+main[data-surface="light"] .chip, main[data-surface="yellow"] .chip { background: #fffdf6; border-color: #d6c89c; color: #0c122a; }
+main[data-surface="light"] .chip.on { background: #0c122a; border-color: #0c122a; color: #f6efd8; }
+main[data-surface="light"] .btn.dark, main[data-surface="yellow"] .btn.dark { background: #0c122a; border-color: #0c122a; color: #f6efd8; }
+main[data-surface="light"] .btn.dark:hover, main[data-surface="yellow"] .btn.dark:hover { background: #1b2349; }
+main[data-surface="light"] .hero { background: var(--cream); color: var(--ink); border-bottom: 1px solid var(--line); }
+main[data-surface="light"] .hero .lead, main[data-surface="yellow"] .hero .lead { color: var(--muted); }
+main[data-surface="light"] .eyebrow { color: #8a6a00; }
+main[data-surface="light"] .pill.yellow, main[data-surface="light"] .badge { color: #0c122a; }
+/* «тёмное остаётся тёмным» внутри светлой и жёлтой */
+main[data-surface="light"] .card-ui.navy, main[data-surface="yellow"] .card-ui.navy { background: #0c122a; color: #f1e6c8; border-color: #222a4d; }
+main[data-surface="light"] .card-ui.navy .muted, main[data-surface="yellow"] .card-ui.navy .muted { color: #a3a8c3; }
+main[data-surface="light"] .pill.navy, main[data-surface="yellow"] .pill.navy { background: #0c122a; color: #f6c23c; }
+main[data-surface="light"] .cal, main[data-surface="yellow"] .cal { background: #0c122a; color: #f1e6c8; }
+main[data-surface="yellow"] .choice-bar .in { background: #0c122a; border-color: #222a4d; color: #f1e6c8; }
+main[data-surface="yellow"] .choice-bar .in .link-btn { color: #f1e6c8; }
+/* жёлтая: акценты, которые были жёлтыми на тёмном, становятся тёмными на жёлтом */
+main[data-surface="yellow"] .hero { background: transparent; color: var(--ink); }
+main[data-surface="yellow"] .eyebrow { color: #0c122a; opacity: .75; }
+main[data-surface="yellow"] .btn.yellow { background: #0c122a; border-color: #0c122a; color: #ffc928; }
+main[data-surface="yellow"] .btn.yellow:hover { background: #1b2349; }
+main[data-surface="yellow"] .btn.light { border-color: #0c122a; color: #0c122a; }
+main[data-surface="yellow"] .chip.on, main[data-surface="yellow"] .pill.yellow { background: #0c122a; border-color: #0c122a; color: #ffc928; }
+main[data-surface="yellow"] .pill.demo { color: #0c122a; }
+main[data-surface="yellow"] .big-action.yellow { background: #0c122a; color: #f6efd8; }
+main[data-surface="yellow"] .big-action.yellow .ic { background: #ffc928; color: #0c122a; }
+main[data-surface="yellow"] .big-action.navy { background: #fff4d2; color: #0c122a; border-color: rgba(12, 18, 42, .18); }
+main[data-surface="yellow"] .big-action.navy .ic { background: #0c122a; color: #ffc928; }
+main[data-surface="yellow"] .role, main[data-surface="yellow"] .item { border-color: rgba(12, 18, 42, .14); }
+main[data-surface="yellow"] .role .ic, main[data-surface="yellow"] .item .ic { background: #0c122a; }
+main[data-surface="yellow"] .role .ic svg, main[data-surface="yellow"] .item .ic svg { stroke: #ffc928; }
+main[data-surface="yellow"] .how li { background: #fff4d2; color: #0c122a; border-color: rgba(12, 18, 42, .14); }
+main[data-surface="yellow"] .how .n { background: #0c122a; color: #ffc928; }
+main[data-surface="yellow"] .month-title { color: #0c122a; }
+main[data-surface="yellow"] .notice { background: rgba(12, 18, 42, .08); border-color: rgba(12, 18, 42, .3); }
+main[data-surface="yellow"] .sun { opacity: .9; }

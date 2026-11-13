@@ -235,6 +235,21 @@ CREATE TABLE IF NOT EXISTS fac_applications (
   created_at    TEXT NOT NULL DEFAULT ${NOW},
   updated_at    TEXT NOT NULL DEFAULT ${NOW}
 );
+-- заявки на роль куратора: имя, контакт, короткий ответ «почему хочу участвовать»; решает администратор
+CREATE TABLE IF NOT EXISTS curator_applications (
+  id            INTEGER PRIMARY KEY,
+  user_id       INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  name          TEXT NOT NULL DEFAULT '',
+  contact       TEXT NOT NULL DEFAULT '',
+  motivation    TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','approved','rejected')),
+  decision_note TEXT NOT NULL DEFAULT '',
+  decided_by    INTEGER,
+  decided_at    TEXT,
+  is_demo       INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT ${NOW},
+  updated_at    TEXT NOT NULL DEFAULT ${NOW}
+);
 CREATE TABLE IF NOT EXISTS meetings (
   id             INTEGER PRIMARY KEY,
   facilitator_id INTEGER NOT NULL REFERENCES users(id),
@@ -291,6 +306,18 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_site_uid ON users(site_uid)
 addColumn('collections', 'owner_id', 'INTEGER REFERENCES users(id)');
 addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 // Единый счётчик «Выбрали для обсуждения»: выбор в подборке не идёт в счёт, если карту выбрал её автор или демо-роль.
+addColumn('meetings', 'price_amount', 'REAL');          // стоимость участия с человека (платная встреча)
+addColumn('meetings', 'currency', "TEXT NOT NULL DEFAULT ''"); // ISO 4217, например THB
+// Запросы фасилитаторов на готовую печатную колоду — для команды проекта.
+db.exec(`CREATE TABLE IF NOT EXISTS print_requests (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  note       TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','done')),
+  is_demo    INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+)`);
+addColumn('chat_messages', 'work_id', 'INTEGER REFERENCES works(id)'); // вопрос куратора со ссылкой на работу
 addColumn('selections', 'counted', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('selections', 'user_id', 'INTEGER REFERENCES users(id)');
 // Выбор для обсуждения в общей библиотеке (сценарии «Вдвоём» и «В группе»). Один активный выбор карты на браузер и на аккаунт.

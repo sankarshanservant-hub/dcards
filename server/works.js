@@ -68,7 +68,6 @@ function workOut(w, { full = false } = {}) {
   const out = {
     id: w.id, submissionId: w.submission_id, kind: w.kind, status: w.status, isDemo: !!w.is_demo,
     artist: userName(w.artist_id), artistId: w.artist_id,
-    assignedTo: w.assigned_to ? { id: w.assigned_to, name: userName(w.assigned_to) } : null,
     version: last ? versionOut(last) : null, versionsCount: versions.length,
     targetCard: target ? cards.publicCard(target, { withDetails: true }) : null,
     card: w.card_id ? (() => { const c = q.card.get(w.card_id); return c ? { code: c.code, status: c.status } : null; })() : null,
@@ -226,23 +225,22 @@ function decide(curator, workId, { action, criteria = [], comment = '', replacem
   })();
 }
 
-/** Передать работу другому куратору — работа остаётся в очереди с ответственным. */
-function assign(curator, workId, toUserId) {
-  const w = q.work.get(workId);
-  if (!w || !['submitted', 'discussion'].includes(w.status)) return { error: 'not_in_review' };
-  const target = db.prepare(`SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE u.id = ? AND r.role IN ('curator','admin')`).get(toUserId);
-  if (!target) return { error: 'not_a_curator' };
-  db.prepare(`UPDATE works SET assigned_to = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(toUserId, workId);
-  q.log.run(workId, q.lastVersion.get(workId).n, curator.id, 'assign', '[]', '', null, toUserId);
-  return { ok: true };
-}
-/** Вынести сложную работу на обсуждение кураторов. Пороги голосования не согласованы: голоса видны, решение принимает куратор. */
-function discuss(curator, workId, comment = '') {
+/**
+ * Вынести работу на обсуждение кураторов. Куратор пишет вопрос («Что хотите обсудить с коллегами?») и подтверждает:
+ * вопрос публикуется в чате кураторов со ссылкой на работу. Коллеги открывают работу по ссылке и оставляют голоса и комментарии.
+ * Пороги голосования не согласованы: голоса видны, решение принимает куратор.
+ */
+function discuss(curator, workId, question = '') {
   const w = q.work.get(workId);
   if (!w || w.status !== 'submitted') return { error: 'not_in_review' };
-  q.setStatus.run('discussion', workId);
-  q.log.run(workId, q.lastVersion.get(workId).n, curator.id, 'discuss', '[]', String(comment).slice(0, 2000), null, null);
-  return { ok: true };
+  const text = String(question || '').trim().slice(0, 2000);
+  if (!text) return { error: 'question_required' };
+  return db.transaction(() => {
+    q.setStatus.run('discussion', workId);
+    q.log.run(workId, q.lastVersion.get(workId).n, curator.id, 'discuss', '[]', text, null, null);
+    db.prepare('INSERT INTO chat_messages (room, user_id, text, is_demo, work_id) VALUES (?, ?, ?, ?, ?)').run('curators', curator.id, text, curator.is_demo ? 1 : 0, workId);
+    return { ok: true };
+  })();
 }
 function vote(curator, workId, value, comment = '') {
   const w = q.work.get(workId);
@@ -267,5 +265,5 @@ function workMediaAllowed(file, user, roles) {
 
 module.exports = {
   criteriaList, setCriteria, submit, proposeReplacement, addVersion, myWorks, myCards, withdrawCard,
-  queue, recentDecided, detail, canSee, decide, assign, discuss, vote, curators, workMediaAllowed,
+  queue, recentDecided, detail, canSee, decide, discuss, vote, curators, workMediaAllowed,
 };

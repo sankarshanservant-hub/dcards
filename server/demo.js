@@ -51,7 +51,7 @@ async function seed() {
     country: 'Россия', city: 'Москва', venue: 'Кафе на Покровке (демо-адрес)', language: 'ru', timezone: 'Europe/Moscow', priceType: 'free', capacity: 12, askContact: true,
     firstDate: day(5), repeatWeekly: 3 });
   meetings.create(fac, { title: 'Dialogue Flow evening (demo)', description: 'Demo meeting in English.', country: 'Таиланд', city: 'Чиангмай',
-    venue: 'Nimman, coworking (demo address)', language: 'en', timezone: 'Asia/Bangkok', priceType: 'paid', priceNote: 'Оплата фасилитатору на месте (демо).', capacity: 2,
+    venue: 'Nimman, coworking (demo address)', language: 'en', timezone: 'Asia/Bangkok', priceType: 'paid', priceAmount: 300, currency: 'THB', priceNote: 'Оплата фасилитатору на месте (демо).', capacity: 2,
     firstDate: day(3, '18:30') });
   const firstDate = db.prepare('SELECT id FROM meeting_dates WHERE meeting_id = ? ORDER BY starts_at LIMIT 1').get(m1.id);
   await meetings.register(firstDate.id, { name: 'Иван (демо)', email: 'ivan.demo@example.org' }, 'http://localhost', 'ru');
@@ -106,6 +106,7 @@ function clear() {
       db.prepare('DELETE FROM comments WHERE card_id = ?').run(id);
       db.prepare('DELETE FROM card_versions WHERE card_id = ?').run(id);
     }
+    db.prepare('DELETE FROM chat_messages WHERE is_demo = 1').run(); // сообщения со ссылкой на демо-работу — до удаления работ
     db.prepare('UPDATE works SET card_id = NULL WHERE is_demo = 1').run();
     db.prepare('DELETE FROM works WHERE is_demo = 1').run();
     db.prepare('DELETE FROM submissions WHERE is_demo = 1').run();
@@ -115,6 +116,8 @@ function clear() {
     db.prepare('DELETE FROM meetings WHERE is_demo = 1').run();
     db.prepare('DELETE FROM collections WHERE is_demo = 1').run();
     db.prepare('DELETE FROM fac_applications WHERE is_demo = 1').run();
+    db.prepare('DELETE FROM curator_applications WHERE is_demo = 1').run();
+    db.prepare('DELETE FROM print_requests WHERE is_demo = 1').run();
   })();
   return { ok: true };
 }

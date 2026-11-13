@@ -208,11 +208,10 @@ export function openViewer(opts) {
     if (opts.mode === 'collection' && opts.collection) {
       const { choice } = opts.collection.state();
       const chosen = choice === c.code;
-      const count = opts.collection.countFor(c.code);
       const qs = PARTNER_QUESTIONS[lang] || PARTNER_QUESTIONS.ru;
       bottom.innerHTML = chosen ? `
         <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>
-          <span class="viewer-count">${opts.collection.isTest ? esc(t('viewer.testNoCount')) : esc(typeof count === 'number' ? t('viewer.selectedCount', { n: count }) : '')}</span></div>
+          ${opts.collection.isTest ? `<span class="viewer-count">${esc(t('viewer.testNoCount'))}</span>` : ''}</div>
         ${!opts.collection.isTest && opts.collection.notCountedFor && opts.collection.notCountedFor(c.code) ? `<p class="viewer-count">${esc(notCountedText(opts.collection.notCountedFor(c.code)))}</p>` : ''}
         <div class="vb-panel">
           <button class="vb-toggle" type="button" data-q aria-expanded="${ui.questions}">${esc(tt('Вопросы для собеседника', 'Questions for your conversation partner'))}${chev(ui.questions)}</button>

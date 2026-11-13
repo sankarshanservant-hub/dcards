@@ -289,11 +289,10 @@ r.get('/api/works/:id', auth.requireUser, (req, res) => {
 
 // ---------- кураторы ----------
 const curator = auth.requireRole('curator');
-r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queue(req.showDemo), recent: works.recentDecided(req.showDemo), curators: works.curators(), criteria: works.criteriaList(), me: req.user.id }));
+r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queue(req.showDemo), recent: works.recentDecided(req.showDemo), criteria: works.criteriaList(), me: req.user.id }));
 r.use('/api/curation/works/:id', (req, res, next) => (demoOnly(req, res, isDemoRow('works', 'id', Number(req.params.id))) ? next() : undefined));
 r.post('/api/curation/works/:id/decide', curator, (req, res) => out(res, works.decide(req.user, Number(req.params.id), req.body || {})));
-r.post('/api/curation/works/:id/assign', curator, (req, res) => out(res, works.assign(req.user, Number(req.params.id), Number(req.body.to))));
-r.post('/api/curation/works/:id/discuss', curator, (req, res) => out(res, works.discuss(req.user, Number(req.params.id), req.body.comment)));
+r.post('/api/curation/works/:id/discuss', curator, (req, res) => out(res, works.discuss(req.user, Number(req.params.id), req.body.question ?? req.body.comment)));
 r.post('/api/curation/works/:id/vote', curator, (req, res) => out(res, works.vote(req.user, Number(req.params.id), req.body.vote, req.body.comment)));
 
 // ---------- командные чаты ----------
@@ -399,11 +398,21 @@ r.get('/api/fac/application', auth.requireUser, (req, res) => res.json({
 }));
 r.post('/api/fac/application', auth.requireUser, (req, res) => res.json({ application: community.startApplication(req.user) }));
 r.put('/api/fac/application', auth.requireUser, (req, res) => out(res, community.saveApplication(req.user, req.body || {})));
+// Заявка на роль куратора (вошедший пользователь); решение — администратор.
+r.get('/api/curator/application', auth.requireUser, (req, res) => res.json({ isCurator: req.roles.includes('curator'), application: community.curatorApplication(req.user.id) }));
+r.post('/api/curator/application', auth.requireUser, (req, res) => out(res, community.submitCuratorApplication(req.user, req.body || {}), 201));
+// Запрос фасилитатора на готовую печатную колоду: уходит команде проекта (виден администратору).
+r.post('/api/fac/print-request', fac, (req, res) => {
+  const note = String((req.body && req.body.note) || '').trim().slice(0, 1000);
+  const dup = db.prepare(`SELECT 1 FROM print_requests WHERE user_id = ? AND status = 'new'`).get(req.user.id);
+  if (!dup) db.prepare('INSERT INTO print_requests (user_id, note, is_demo) VALUES (?, ?, ?)').run(req.user.id, note, req.user.is_demo ? 1 : 0);
+  res.status(201).json({ ok: true, already: !!dup });
+});
 r.post('/api/fac/application/submit', auth.requireUser, (req, res) => out(res, community.submitApplication(req.user)));
 
 // ---------- печатное направление ----------
 r.get('/api/print', auth.requireUser, (req, res) => {
-  if (!req.has('facilitator', 'curator', 'artist')) return bad(res, 'forbidden', 403);
+  if (!req.has('curator', 'artist')) return bad(res, 'forbidden', 403); // состав печатной колоды определяет владелец проекта; фасилитатору отбор карт для печати не нужен
   const rows = db.prepare(`SELECT k.code, k.number, k.author, k.print_permission, k.image_thumb, k.width, k.height,
       ${choices.totalSql('k')} AS selections
     FROM cards k WHERE k.status = 'published' AND k.is_demo = 0 ORDER BY selections DESC, k.number LIMIT 60`).all();
@@ -423,6 +432,8 @@ admin.use((req, res, next) => {
   if (p === '/demo/seed' || p === '/demo/clear') ok = true;
   else if ((mm = p.match(/^\/users\/(\d+)/))) ok = isDemoRow('users', 'id', Number(mm[1]));
   else if ((mm = p.match(/^\/applications\/(\d+)/))) ok = isDemoRow('fac_applications', 'user_id', Number(mm[1]));
+  else if ((mm = p.match(/^\/print-requests\/(\d+)/))) ok = isDemoRow('print_requests', 'id', Number(mm[1]));
+  else if ((mm = p.match(/^\/curator-applications\/(\d+)/))) ok = isDemoRow('curator_applications', 'user_id', Number(mm[1]));
   else if ((mm = p.match(/^\/meetings\/(\d+)/))) ok = isDemoRow('meetings', 'id', Number(mm[1]));
   else if ((mm = p.match(/^\/cards\/(DC-\d+)/)) && p !== '/cards/bulk-author') ok = isDemoRow('cards', 'code', mm[1]);
   return ok ? next() : bad(res, 'demo_readonly', 403);
@@ -433,7 +444,8 @@ admin.get('/overview', (req, res) => {
   res.json({
     cards: byStatus('cards'), works: byStatus('works'), meetings: byStatus('meetings'),
     users: count('SELECT COUNT(*) AS n FROM users WHERE is_demo = 0'),
-    pendingApplications: count(`SELECT COUNT(*) AS n FROM fac_applications WHERE status = 'submitted'`),
+    pendingApplications: count(`SELECT COUNT(*) AS n FROM fac_applications WHERE status = 'submitted'`) + count(`SELECT COUNT(*) AS n FROM curator_applications WHERE status = 'submitted'`),
+    printRequests: count(`SELECT COUNT(*) AS n FROM print_requests WHERE status = 'new' AND is_demo = 0`),
     registrations: count(`SELECT COUNT(*) AS n FROM registrations WHERE status = 'active'`),
     comments: count('SELECT COUNT(*) AS n FROM comments WHERE deleted_at IS NULL'),
     mailConnected: mail.connected(), demoMode: config.demoMode,
@@ -473,6 +485,11 @@ admin.patch('/users/:id', (req, res) => {
   try { db.prepare('UPDATE users SET email = COALESCE(?, email) WHERE id = ?').run(email, id); } catch { return bad(res, 'email_taken'); }
   res.json({ ok: true });
 });
+admin.get('/print-requests', (req, res) => res.json({ requests: db.prepare(`SELECT p.*, COALESCE(NULLIF(u.public_name,''), u.name) AS name, u.email FROM print_requests p JOIN users u ON u.id = p.user_id WHERE ${req.showDemo ? '1=1' : 'p.is_demo = 0'} ORDER BY (p.status = 'new') DESC, p.id DESC LIMIT 100`).all()
+  .map((p) => ({ id: p.id, name: p.name, email: p.email, note: p.note, status: p.status, createdAt: p.created_at, isDemo: !!p.is_demo })) }));
+admin.post('/print-requests/:id/done', (req, res) => { db.prepare(`UPDATE print_requests SET status = 'done' WHERE id = ?`).run(Number(req.params.id)); res.json({ ok: true }); });
+admin.get('/curator-applications', (req, res) => res.json({ applications: community.curatorApplications(req.showDemo) }));
+admin.post('/curator-applications/:userId/decide', (req, res) => out(res, community.decideCuratorApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note)));
 admin.get('/applications', (req, res) => res.json({ applications: community.applications(req.showDemo) }));
 admin.post('/applications/:userId/decide', (req, res) => out(res, community.decideApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note)));
 admin.get('/meetings', (req, res) => res.json({ meetings: meetings.allForAdmin(req.showDemo) }));

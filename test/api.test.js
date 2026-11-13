@@ -139,22 +139,26 @@ test('Сценарий 1: подача, возврат по критерию, и
 });
 
 // ---------- 08: передача, обсуждение, голоса ----------
-test('08: передать другому куратору, вынести на обсуждение, голосовать — работа остаётся в очереди', async () => {
+test('08: общий список кураторов; вынести на обсуждение публикует вопрос в чате со ссылкой; голоса коллег', async () => {
   const c2 = await emailLogin('curator2@example.org', 'Второй куратор');
   await call('POST', `/api/admin/users/${c2.user.id}/roles`, { role: 'curator', grant: true }, { cookie: owner.cookie });
   const sub = await call('POST', '/api/artist/works', null, { cookie: artist.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['images', await png('#777'), 'q.png']]) });
   const id = sub.json.ids[0];
-  assert.equal((await call('POST', `/api/curation/works/${id}/assign`, { to: c2.user.id }, { cookie: curatorU.cookie })).status, 200);
-  assert.equal((await call('POST', `/api/curation/works/${id}/discuss`, { comment: 'сложно' }, { cookie: c2.cookie })).status, 200);
+  assert.equal((await call('POST', `/api/curation/works/${id}/assign`, { to: c2.user.id }, { cookie: curatorU.cookie })).status, 404, 'персональной передачи больше нет');
+  assert.equal((await call('POST', `/api/curation/works/${id}/discuss`, { question: '  ' }, { cookie: c2.cookie })).json.error, 'question_required', 'без вопроса обсуждение не открыть');
+  assert.equal((await call('POST', `/api/curation/works/${id}/discuss`, { question: 'Не уверен насчёт цвета — как вам?' }, { cookie: c2.cookie })).status, 200);
+  const chat = (await call('GET', '/api/chats/curators', null, { cookie: curatorU.cookie })).json.messages;
+  const posted = chat.find((m) => m.workId === id);
+  assert.ok(posted && posted.text === 'Не уверен насчёт цвета — как вам?', 'вопрос в чате кураторов со ссылкой на работу');
+  assert.equal((await call('POST', `/api/curation/works/${id}/discuss`, { question: 'ещё раз' }, { cookie: c2.cookie })).json.error, 'not_in_review');
   await call('POST', `/api/curation/works/${id}/vote`, { vote: 'approve' }, { cookie: curatorU.cookie });
   await call('POST', `/api/curation/works/${id}/vote`, { vote: 'return', comment: 'поля' }, { cookie: c2.cookie });
   const q = await call('GET', '/api/curation/queue', null, { cookie: curatorU.cookie });
   const w = q.json.queue.find((x) => x.id === id);
   assert.equal(w.status, 'discussion');
-  assert.equal(w.assignedTo.id, c2.user.id);
   const d = await call('GET', `/api/works/${id}`, null, { cookie: c2.cookie });
   assert.equal(d.json.votes.length, 2);
-  assert.deepEqual(d.json.history.map((h) => h.action), ['submitted', 'assign', 'discuss', 'vote', 'vote']);
+  assert.deepEqual(d.json.history.map((h) => h.action), ['submitted', 'discuss', 'vote', 'vote']);
 });
 
 // ---------- Сценарий 4: новая версия опубликованной карты ----------
@@ -238,12 +242,16 @@ test('10: снятая карта исчезает из подборок без 
 test('Сценарий 3: публикация встречи, поиск, запись на последнее место, закрытие, отмена освобождает место', async () => {
   const day = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const r = await call('POST', '/api/fac/meetings', { title: 'Тестовая встреча', country: 'Россия', city: 'Казань', venue: 'Кафе', language: 'ru',
-    timezone: 'Europe/Moscow', priceType: 'paid', priceNote: '500 ₽ на месте', capacity: 2, askContact: true, firstDate: `${day}T19:00`, repeatWeekly: 3 }, { cookie: facil.cookie });
-  assert.equal(r.status, 201);
+    timezone: 'Europe/Moscow', priceType: 'paid', priceAmount: 500, currency: 'RUB', priceNote: 'наличными на месте', capacity: 2, askContact: true, firstDate: `${day}T19:00`, repeatWeekly: 3 }, { cookie: facil.cookie });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
   const places = await call('GET', '/api/meetings/places');
   assert.ok(places.json.places.some((p) => p.country === 'Россия' && p.cities.some((c) => c.city === 'Казань' && c.count === 3)), 'страна → город, три даты');
   const list = await call('GET', '/api/meetings?country=Россия&city=Казань');
   const first = list.json.dates[0];
+  assert.equal(first.meeting.priceAmount, 500); assert.equal(first.meeting.currency, 'RUB'); assert.equal(first.meeting.priceType, 'paid');
+  const noPrice = await call('POST', '/api/fac/meetings', { title: 'Платная без цены', country: 'Россия', city: 'Казань', language: 'ru', priceType: 'paid', capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie });
+  assert.equal(noPrice.json.error, 'price_required', 'у платной встречи цена обязательна');
+  assert.equal((await call('POST', '/api/fac/meetings', { title: 'Платная без валюты', country: 'Россия', city: 'Казань', language: 'ru', priceType: 'paid', priceAmount: 100, capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie })).json.error, 'currency_required');
   assert.equal(first.startsAt, `${day}T16:00:00.000Z`, 'местное время 19:00 в Москве = 16:00 UTC');
   assert.equal(list.json.dates[1].capacity, 2, 'у каждой даты свои места');
   const reg = (name, email) => call('POST', `/api/meetings/dates/${first.id}/register`, { name, email, contact: '@tg' });
@@ -253,6 +261,7 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.ok(r1.json.letter.demo && /Вы записаны/.test(r1.json.letter.subject), 'текст подтверждения');
   assert.match(r1.json.letter.body, /\/r\//, 'в письме ссылка на отмену');
   assert.match(r1.json.letter.body, /\/ics/, 'в письме ссылка «Добавить в календарь»');
+  assert.match(r1.json.letter.body, /500 RUB с человека/, 'в письме стоимость участия');
   assert.match(r1.json.letter.body, /Кафе, Казань, Россия/, 'в письме место');
   // файл календаря: время в UTC, место, ссылка на запись
   const ics = await fetch(`${base}/api/registrations/${r1.json.token}/ics`);
@@ -281,12 +290,13 @@ test('Сценарий 3: публикация встречи, поиск, за�
   const src = ed.json;
   const day2 = new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10);
   const copy = await call('POST', '/api/fac/meetings', { title: src.title, description: src.description, country: src.country, city: src.city, venue: src.venue, language: src.language,
-    timezone: src.timezone, priceType: src.priceType, priceNote: src.priceNote, capacity: src.capacity, askContact: src.askContact, firstDate: `${day2}T19:00`, repeatWeekly: 1 }, { cookie: facil.cookie });
-  assert.equal(copy.status, 201);
+    timezone: src.timezone, priceType: src.priceType, priceAmount: src.priceAmount, currency: src.currency, priceNote: src.priceNote, capacity: src.capacity, askContact: src.askContact, firstDate: `${day2}T19:00`, repeatWeekly: 1 }, { cookie: facil.cookie });
+  assert.equal(copy.status, 201, JSON.stringify(copy.json));
   const cm = (await call('GET', `/api/fac/meetings/${copy.json.id}`, null, { cookie: facil.cookie })).json;
   assert.equal(cm.dates.length, 1);
   assert.equal(cm.dates[0].registrations.length, 0, 'записи не копируются');
   assert.equal(cm.askContact, true);
+  assert.equal(cm.priceAmount, 500, 'цена копируется при повторе');
   const unknown = await call('POST', '/api/fac/meetings', { ...src, city: 'Неведомск', country: '', firstDate: `${day2}T19:00` }, { cookie: facil.cookie });
   assert.equal(unknown.json.error, 'city_unresolved', 'город не определён — встречу не опубликовать, просим уточнить');
   assert.equal((await call('POST', `/api/fac/meetings/${copy.json.id}/publish`, { published: false }, { cookie: facil.cookie })).status, 200, 'копию можно скрыть');
@@ -323,7 +333,7 @@ test('16: курс, проверка, заявка, одобрение адми�
 test('17: чаты — сообщения в своём пространстве, доступ по ролям, администратор видит оба', async () => {
   assert.equal((await call('POST', '/api/chats/curators', { text: 'Коллеги, привет' }, { cookie: curatorU.cookie })).status, 201);
   assert.equal((await call('POST', '/api/chats/facilitators', { text: 'Всем привет' }, { cookie: facil.cookie })).status, 201);
-  assert.equal((await call('GET', '/api/chats/curators', null, { cookie: owner.cookie })).json.messages.length, 1);
+  assert.ok((await call('GET', '/api/chats/curators', null, { cookie: owner.cookie })).json.messages.some((m) => m.text === 'Коллеги, привет'));
   assert.equal((await call('GET', '/api/chats/facilitators', null, { cookie: owner.cookie })).json.messages.length, 1);
   assert.equal((await call('GET', '/api/chats/facilitators', null, { cookie: curatorU.cookie })).status, 403);
 });
@@ -474,6 +484,33 @@ test('Администратор привязывает карты к аккау
   assert.equal((await call('POST', '/api/cards/DC-0001/choose', { visitorId: 'q'.repeat(32) }, { cookie: artist.cookie })).json.notCounted, 'own_card');
   assert.equal((await call('GET', '/api/cards/DC-0001')).json.selectedCount, before);
   await call('POST', `/api/admin/users/${artist.user.id}/transfer-cards`, { to: seed.id }, { cookie: owner.cookie });
+});
+
+// ---------- заявка на роль куратора и запрос печатной колоды ----------
+test('Заявка куратора доходит до администратора, одобрение выдаёт роль; запрос печатной колоды; права', async () => {
+  const cand = await emailLogin('cand.curator@example.org', 'Кандидат');
+  assert.equal((await call('POST', '/api/curator/application', { name: 'К', contact: 'tg', motivation: 'x' })).status, 401, 'без входа нельзя');
+  assert.equal((await call('POST', '/api/curator/application', { name: 'Кандидат', contact: '', motivation: 'хочу' }, { cookie: cand.cookie })).json.error, 'contact_required');
+  assert.equal((await call('POST', '/api/curator/application', { name: 'Кандидат', contact: '@cand', motivation: '' }, { cookie: cand.cookie })).json.error, 'motivation_required');
+  assert.equal((await call('POST', '/api/curator/application', { name: 'Кандидат', contact: '@cand', motivation: 'Люблю иллюстрации' }, { cookie: cand.cookie })).status, 201);
+  assert.equal((await call('POST', '/api/curator/application', { name: 'Кандидат', contact: '@cand', motivation: 'ещё' }, { cookie: cand.cookie })).json.error, 'already_submitted');
+  assert.equal((await call('GET', '/api/admin/curator-applications', null, { cookie: cand.cookie })).status, 403, 'заявки видит только администратор');
+  const list = (await call('GET', '/api/admin/curator-applications', null, { cookie: owner.cookie })).json.applications;
+  const mine = list.find((a) => a.userId === cand.user.id);
+  assert.ok(mine && mine.status === 'submitted' && mine.contact === '@cand' && mine.motivation === 'Люблю иллюстрации', 'заявка у администратора');
+  assert.equal((await call('GET', '/api/curation/queue', null, { cookie: cand.cookie })).status, 403, 'кабинет куратора закрыт до одобрения');
+  assert.equal((await call('POST', `/api/admin/curator-applications/${cand.user.id}/decide`, { approve: true }, { cookie: cand.cookie })).status, 403);
+  assert.equal((await call('POST', `/api/admin/curator-applications/${cand.user.id}/decide`, { approve: true, note: 'Добро пожаловать' }, { cookie: owner.cookie })).status, 200);
+  assert.equal((await call('GET', '/api/curation/queue', null, { cookie: cand.cookie })).status, 200, 'после одобрения кабинет открыт');
+  assert.equal((await call('GET', '/api/curator/application', null, { cookie: cand.cookie })).json.isCurator, true);
+  // запрос печатной колоды: фасилитатор отправляет, видит администратор; печатный отбор фасилитатору недоступен
+  assert.equal((await call('POST', '/api/fac/print-request', { note: '2 колоды' }, { cookie: cand.cookie })).status, 403, 'только фасилитатор');
+  assert.equal((await call('POST', '/api/fac/print-request', { note: '2 колоды для встречи в Казани' }, { cookie: facil.cookie })).status, 201);
+  assert.equal((await call('POST', '/api/fac/print-request', { note: 'ещё' }, { cookie: facil.cookie })).json.already, true, 'повторно не дублируется');
+  const reqs = (await call('GET', '/api/admin/print-requests', null, { cookie: owner.cookie })).json.requests;
+  assert.ok(reqs.some((r) => r.note === '2 колоды для встречи в Казани'));
+  assert.equal((await call('GET', '/api/print', null, { cookie: facil.cookie })).status, 403, 'фасилитатор не отбирает карты для печати');
+  assert.equal((await call('GET', '/api/print', null, { cookie: artist.cookie })).status, 200, 'доступ художника сохранён');
 });
 
 // ---------- вход общим аккаунтом сайта ----------

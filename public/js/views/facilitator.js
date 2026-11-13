@@ -2,14 +2,24 @@
 import { esc, tt, u, api, errorText, toast, fmtTz, fmtDate } from '../util.js';
 import { openViewer, icons } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, demoPill, timeline, stepsBar, ic, showQr, refreshSession } from '../ui.js';
-import { langName, LANG_NAMES } from './meetings.js';
+import { langName, LANG_NAMES, priceText } from './meetings.js';
 
 // «Asia/Bangkok» → «Bangkok»: подпись часового пояса в списке похожих городов.
 const tzCity = (tz) => String(tz).split('/').pop().replace(/_/g, ' ');
+const CURRENCIES = ['RUB', 'USD', 'EUR', 'THB', 'INR', 'UAH', 'BYN', 'KZT', 'GEL', 'AMD', 'TRY', 'AED', 'VND', 'IDR', 'CNY', 'GBP', 'JPY', 'KRW', 'SGD', 'MYR', 'PLN', 'CZK', 'RSD'];
+// Валюта страны по умолчанию (подсказка для платной встречи).
+const CC_CURRENCY = { RU: 'RUB', US: 'USD', TH: 'THB', IN: 'INR', UA: 'UAH', BY: 'BYN', KZ: 'KZT', GE: 'GEL', AM: 'AMD', TR: 'TRY', AE: 'AED', VN: 'VND', ID: 'IDR', CN: 'CNY', GB: 'GBP', JP: 'JPY', KR: 'KRW', SG: 'SGD', MY: 'MYR', PL: 'PLN', CZ: 'CZK', RS: 'RSD', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', LV: 'EUR', LT: 'EUR', EE: 'EUR' };
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 
 const MSTATUS = { published: ['Опубликована', 'Published', 'mint'], unpublished: ['Скрыта', 'Hidden', ''], removed: ['Снята администратором', 'Taken down by admin', 'red'] };
 const mPill = (s) => { const x = MSTATUS[s] || [s, s, '']; return `<span class="pill ${x[2]}">${esc(tt(x[0], x[1]))}</span>`; };
+
+/** Строка под названием встречи: место, язык, цена и ближайшая дата с занятыми местами («3 из 12 мест занято»). */
+function nextDateLine(m, nowIso) {
+  const next = m.dates.find((d) => d.startsAt >= nowIso && d.status === 'active');
+  const when = next ? `${fmtTz(next.startsAt, m.timezone, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${tt(`${next.taken} из ${next.capacity} мест занято`, `${next.taken} of ${next.capacity} seats taken`)}` : tt('нет будущих дат', 'no upcoming dates');
+  return `<span class="small">${esc(m.city)}, ${esc(m.country)} · ${esc(langName(m.language))} · ${esc(priceText(m))}</span><span class="small">${esc(tt('Ближайшая:', 'Next:'))} ${esc(when)}</span>`;
+}
 
 export async function cabinet(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Кабинет фасилитатора.', 'Facilitator space.'));
@@ -19,25 +29,42 @@ export async function cabinet(ctx) {
   try { [cols, mts] = await Promise.all([api('/api/collections'), api('/api/fac/meetings')]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   const nowIso = new Date().toISOString();
-  const upcomingRegs = mts.meetings.reduce((n, m) => n + m.dates.filter((d) => d.startsAt >= nowIso).reduce((k, d) => k + d.taken, 0), 0);
+  // Показатели: запланированные = будущие даты опубликованных встреч (каждая дата — отдельно); прошедшие = даты, время которых прошло, без отменённых.
+  const allDates = mts.meetings.filter((m) => m.status !== 'removed').flatMap((m) => m.dates.map((d) => ({ ...d, mStatus: m.status })));
+  const planned = allDates.filter((d) => d.mStatus === 'published' && d.status === 'active' && d.startsAt >= nowIso).length;
+  const pastCount = allDates.filter((d) => d.startsAt < nowIso && d.status !== 'cancelled').length;
   ctx.main.innerHTML = `<section class="hero"><div class="wrap" style="padding-block:30px"><div>
       <p class="eyebrow">${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</p><h1>${esc(session.user.publicName)}</h1>
-      <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Новая встреча', 'New meeting'))}</a>
-        <a class="btn light" href="${u('/team/facilitators')}">${esc(tt('Чат фасилитаторов', 'Facilitators’ chat'))}</a>
-        <a class="btn light" href="${u('/print')}">${esc(tt('Печатная колода', 'Printed deck'))}</a></div></div>
-      <div class="kpis"><div class="kpi"><b>${cols.collections.length}</b><span>${esc(tt('подборок', 'selections'))}</span></div>
-        <div class="kpi"><b>${mts.meetings.length}</b><span>${esc(tt('встреч', 'meetings'))}</span></div>
-        <div class="kpi"><b>${upcomingRegs}</b><span>${esc(tt('записей на будущие даты', 'sign-ups for upcoming dates'))}</span></div></div></div></section>
+      <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
+        <button class="btn light" type="button" id="newcol-go">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</button></div>
+      <p style="margin:12px 0 0"><a class="small" href="${u('/team/facilitators')}">${esc(tt('Чат фасилитаторов', 'Facilitators’ chat'))}</a></p></div>
+      <div class="kpis"><div class="kpi"><b>${cols.collections.length}</b><span>${esc(tt('Подборки', 'Selections'))}</span></div>
+        <div class="kpi"><b>${planned}</b><span>${esc(tt('Запланированные встречи', 'Scheduled meetings'))}</span></div>
+        <div class="kpi"><b>${pastCount}</b><span>${esc(tt('Прошедшие встречи', 'Past meetings'))}</span></div></div></div></section>
     <div class="wrap page stack">
       <div class="row between"><h2 style="margin:0">${esc(tt('Подборки карт для встреч', 'Card selections for meetings'))}</h2></div>
       <p class="muted" style="margin:0">${esc(tt('До 40 карт из общей библиотеки. Участники открывают подборку по ссылке или QR-коду без регистрации. Ссылка всегда показывает текущий состав.', 'Up to 40 cards from the library. Participants open the selection via link or QR code without signing up. The link always shows the current cards.'))}</p>
       <form class="row" id="newcol"><input type="text" name="title" class="grow" maxlength="120" placeholder="${esc(tt('Название, например «Встреча 20 ноября»', 'Title, e.g. “Meeting on 20 November”'))}" style="flex:1 1 240px"><button class="btn dark" type="submit">${esc(tt('Создать подборку', 'Create selection'))}</button></form>
       <div class="list" id="cols">${cols.collections.map((c) => `<div class="item"><button class="btn yellow sm" type="button" data-qr="${esc(c.slug)}" data-title="${esc(c.title)}">${ic.qr} ${esc(tt('Показать QR', 'Show QR'))}</button><a class="body" href="${u('/facilitator/c/' + c.id)}" style="text-decoration:none;color:inherit"><b>${esc(c.title)} ${demoPill(c.isDemo)}</b>
-          <span class="small">${esc(tt(`карт: ${c.cardCount} · открывали: ${c.visitors} · выборов: ${c.selections}`, `cards: ${c.cardCount} · opened: ${c.visitors} · choices: ${c.selections}`))}${c.unavailableCount ? ` · <span class="warn">${esc(tt('недоступно: ', 'unavailable: '))}${c.unavailableCount}</span>` : ''}${hasRole('admin') && c.ownerName ? ' · ' + esc(c.ownerName) : ''}</span></a><a href="${u('/facilitator/c/' + c.id)}" aria-label="${esc(tt('Открыть подборку', 'Open selection'))}">→</a></div>`).join('') || `<p class="empty">${esc(tt('Подборок пока нет.', 'No selections yet.'))}</p>`}</div>
+          <span class="small">${esc(tt(`карт: ${c.cardCount} · открывали: ${c.visitors} · выборов в этой подборке: ${c.selections}`, `cards: ${c.cardCount} · opened: ${c.visitors} · choices in this selection: ${c.selections}`))}${c.unavailableCount ? ` · <span class="warn">${esc(tt('недоступно: ', 'unavailable: '))}${c.unavailableCount}</span>` : ''}${hasRole('admin') && c.ownerName ? ' · ' + esc(c.ownerName) : ''}</span></a><a href="${u('/facilitator/c/' + c.id)}" aria-label="${esc(tt('Открыть подборку', 'Open selection'))}">→</a></div>`).join('') || `<p class="empty">${esc(tt('Подборок пока нет.', 'No selections yet.'))}</p>`}</div>
       <h2 style="margin-top:20px">${esc(tt('Мои встречи', 'My meetings'))}</h2>
       <div class="list">${mts.meetings.map((m) => `<a class="item" href="${u('/facilitator/m/' + m.id)}"><span class="ic">${ic.calendar}</span><span class="body"><b>${esc(m.title)} ${demoPill(m.isDemo)}</b>
-          <span class="small">${esc(m.city)}, ${esc(m.country)} · ${esc(langName(m.language))} · ${esc(tt(`дат: ${m.dates.length}`, `dates: ${m.dates.length}`))} · ${esc(tt(`записей: ${m.dates.reduce((k, d) => k + d.taken, 0)}`, `sign-ups: ${m.dates.reduce((k, d) => k + d.taken, 0)}`))}</span></span>${mPill(m.status)}</a>`).join('') || `<p class="empty">${esc(tt('Встреч пока нет.', 'No meetings yet.'))}</p>`}</div>
+          ${nextDateLine(m, nowIso)}</span>${mPill(m.status)}</a>`).join('') || `<p class="empty">${esc(tt('Встреч пока нет.', 'No meetings yet.'))}</p>`}</div>
+      <div class="card-ui flat stack" id="print-box"><b>${esc(tt('Нужна печатная колода?', 'Need a printed deck?'))}</b>
+        <span class="small muted">${esc(tt('Если вам нужна печатная колода для встреч Dialogue Flow, отправьте запрос команде проекта.', 'If you need a printed deck for Dialogue Flow meetings, send a request to the project team.'))}</span>
+        <div id="print-ui"><button class="linkbtn" type="button" id="print-open">${esc(tt('Запросить печатную колоду', 'Request a printed deck'))}</button></div></div>
     </div>`;
+  ctx.main.querySelector('#newcol-go').addEventListener('click', () => { const f = ctx.main.querySelector('#newcol'); f.scrollIntoView({ behavior: 'smooth', block: 'center' }); f.title.focus({ preventScroll: true }); });
+  ctx.main.querySelector('#print-open').addEventListener('click', () => {
+    const box = ctx.main.querySelector('#print-ui');
+    box.innerHTML = `<form class="form" id="pf"><label class="field">${esc(tt('Комментарий', 'Note'))} <span class="hint">${esc(tt('по желанию: сколько колод, для какой встречи, как с вами связаться', 'optional: how many decks, for which meeting, how to reach you'))}</span><textarea name="note" maxlength="1000" rows="3"></textarea></label>
+      <div class="row"><button class="btn dark sm" type="submit">${esc(tt('Отправить запрос', 'Send request'))}</button><button class="linkbtn" type="button" id="pc">${esc(tt('Отмена', 'Cancel'))}</button></div></form>`;
+    box.querySelector('#pc').onclick = () => ctx.rerender();
+    box.querySelector('#pf').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { const r = await api('/api/fac/print-request', { method: 'POST', body: { note: e.target.note.value } }); box.innerHTML = `<p class="small" style="margin:0"><b>${esc(r.already ? tt('Ваш запрос уже у команды проекта.', 'Your request is already with the project team.') : tt('Запрос отправлен команде проекта.', 'Request sent to the project team.'))}</b></p>`; } catch (x) { toast(errorText(x)); }
+    });
+  });
   ctx.main.querySelector('#cols').addEventListener('click', (e) => {
     const b = e.target.closest('[data-qr]'); if (!b) return;
     showQr(b.dataset.qr, b.dataset.title, `${cols.baseUrl}/s/${b.dataset.qr}`);
@@ -138,7 +165,7 @@ export async function meetingEditor(ctx, id) {
   } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   // Часовой пояс вручную не выбирается: его определяет сервер по городу встречи. Время вводится местное для этого города.
-  const blank = { title: '', description: '', country: '', city: '', venue: '', language: 'ru', timezone: '', priceType: 'free', priceNote: '', capacity: 12, askContact: false };
+  const blank = { title: '', description: '', country: '', city: '', venue: '', language: 'ru', timezone: '', priceType: 'free', priceAmount: null, currency: '', priceNote: '', capacity: 12, askContact: false };
   const v = m || (src ? { ...blank, ...pick(src, Object.keys(blank)) } : blank);
   const form = `<form class="card-ui form" id="mf">
     <label class="field">${esc(tt('Название встречи', 'Meeting title'))} *<input type="text" name="title" required maxlength="140" value="${esc(v.title)}"></label>
@@ -150,7 +177,11 @@ export async function meetingEditor(ctx, id) {
     <label class="field">${esc(tt('Язык встречи', 'Meeting language'))}<select name="language">${Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === v.language ? 'selected' : ''}>${esc(langName(k))}</option>`).join('')}</select></label>
     <div class="cols-2"><label class="field">${esc(tt('Формат', 'Format'))}<select name="priceType"><option value="free" ${v.priceType === 'free' ? 'selected' : ''}>${esc(tt('Бесплатная', 'Free'))}</option><option value="paid" ${v.priceType === 'paid' ? 'selected' : ''}>${esc(tt('Платная', 'Paid'))}</option></select></label>
       <label class="field">${esc(tt('Мест на каждую дату', 'Seats per date'))} *<input type="number" name="capacity" min="1" max="500" required value="${v.capacity}"></label></div>
-    <label class="field">${esc(tt('Об оплате', 'About payment'))} <span class="hint">${esc(tt('Сайт не принимает оплату — её организует фасилитатор', 'The site does not take payments — the facilitator arranges them'))}</span><input type="text" name="priceNote" maxlength="300" value="${esc(v.priceNote)}"></label>
+    <div id="paid-fields" ${v.priceType === 'paid' ? '' : 'hidden'}>
+      <div class="cols-2"><label class="field">${esc(tt('Стоимость участия', 'Price per person'))} *<input type="number" name="priceAmount" min="0" step="any" inputmode="decimal" value="${v.priceAmount ?? ''}"></label>
+        <label class="field">${esc(tt('Валюта', 'Currency'))} *<select name="currency"><option value="">—</option>${CURRENCIES.map((c) => `<option ${c === v.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></label></div>
+      <p class="small muted" style="margin:6px 0 0">${esc(tt('Цена показывается участнику до записи. Сайт не принимает оплату — её принимает фасилитатор вне сайта.', 'The price is shown before sign-up. The site does not take payments — the facilitator collects them outside the site.'))}</p>
+      <label class="field" style="margin-top:8px">${esc(tt('Как оплатить', 'How to pay'))} <span class="hint">${esc(tt('по желанию: например, наличными на месте', 'optional: e.g. cash on site'))}</span><input type="text" name="priceNote" maxlength="300" value="${esc(v.priceNote)}"></label></div>
     <label class="check"><input type="checkbox" name="askContact" ${v.askContact ? 'checked' : ''}><span>${esc(tt('Добавить в запись необязательное поле «телефон или мессенджер»', 'Add an optional “phone or messenger” field to sign-up'))}</span></label>
     ${m ? '' : `<div class="cols-2"><label class="field">${esc(tt('Дата и время встречи', 'Meeting date and time'))} *<input type="datetime-local" name="firstDate" required><span class="hint" id="datehint"></span></label>
       <label class="field">${esc(tt('Повторять каждую неделю', 'Repeat weekly'))} <span class="hint">${esc(tt('число дат, 1 — без повтора', 'number of dates, 1 — no repeat'))}</span><input type="number" name="repeatWeekly" min="1" max="52" value="1"></label></div>
@@ -164,12 +195,12 @@ export async function meetingEditor(ctx, id) {
     ${src ? `<div class="notice">${esc(tt(`Скопировано из «${src.title}»: город, место, описание, язык, формат, число мест и настройка контакта. Записи не переносятся. Задайте новую дату и время — местное для города ${src.city}.`, `Copied from “${src.title}”: city, venue, description, language, format, seats and the contact setting. Sign-ups are not copied. Set a new date and time — local to ${src.city}.`))}</div>` : ''}
     ${m && m.status === 'removed' ? `<div class="notice red">${esc(tt('Администратор снял встречу с публикации:', 'An administrator took the meeting down:'))} ${esc(m.removedReason || '—')}</div>` : ''}
     ${m ? `<div class="row">${m.status !== 'removed' ? `<button class="btn sm" type="button" id="pub">${esc(m.status === 'published' ? tt('Скрыть встречу', 'Hide meeting') : tt('Опубликовать снова', 'Publish again'))}</button>` : ''}
-      ${m.dates[0] ? `<a class="btn sm" href="${u('/m/' + (m.dates.find((d) => !d.past) || m.dates[0]).id)}" target="_blank">${esc(tt('Публичная страница', 'Public page'))}</a>` : ''}
+      ${m.dates[0] ? `<a class="btn sm" href="${u('/m/' + (m.dates.find((d) => !d.past) || m.dates[0]).id)}" target="_blank">${esc(tt('Посмотреть страницу встречи', 'View the meeting page'))}</a>` : ''}
       <a class="btn sm yellow" href="${u('/facilitator/m/new?from=' + m.id)}">${ic.plus} ${esc(tt('Повторить встречу', 'Repeat meeting'))}</a></div>` : ''}
     <div class="cols-2" style="align-items:start">${form}
       ${m ? `<div class="stack"><h2>${esc(tt('Даты и записи', 'Dates and sign-ups'))}</h2>
         ${m.dates.map((d) => `<div class="card-ui flat stack" style="gap:8px"><div class="row between"><b>${esc(fmtTz(d.startsAt, m.timezone, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</b>
-            <span class="pill ${d.status === 'cancelled' ? 'red' : d.left ? 'mint' : 'red'}">${esc(d.status === 'cancelled' ? tt('Отменена', 'Cancelled') : tt(`${d.taken} из ${d.capacity}`, `${d.taken} of ${d.capacity}`))}</span></div>
+            <span class="pill ${d.status === 'cancelled' ? 'red' : d.left ? 'mint' : 'red'}">${esc(d.status === 'cancelled' ? tt('Отменена', 'Cancelled') : tt(`${d.taken} из ${d.capacity} мест занято`, `${d.taken} of ${d.capacity} seats taken`))}</span></div>
           ${d.registrations.length ? `<div class="scroll-x"><table class="tbl"><tr><th>${esc(tt('Имя', 'Name'))}</th><th>Email</th><th>${esc(tt('Контакт', 'Contact'))}</th><th></th></tr>${d.registrations.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.contact || '—')}</td><td>${r.status === 'active' ? '' : `<span class="pill red">${esc(tt('отменил', 'cancelled'))}</span>`}</td></tr>`).join('')}</table></div>` : `<span class="small muted">${esc(tt('Записей пока нет', 'No sign-ups yet'))}</span>`}
           ${d.startsAt >= nowIso ? `<div class="row"><button class="linkbtn ${d.status === 'cancelled' ? '' : 'danger'}" type="button" data-date="${d.id}" data-set="${d.status === 'cancelled' ? 'active' : 'cancelled'}">${esc(d.status === 'cancelled' ? tt('Вернуть дату', 'Restore date') : tt('Отменить эту дату', 'Cancel this date'))}</button></div>` : ''}
           </div>`).join('')}
@@ -197,14 +228,14 @@ export async function meetingEditor(ctx, id) {
     if (dateHint) dateHint.textContent = place ? tt(`Укажите время в городе ${place.city} — так, как его увидят участники`, `Enter the time in ${place.city}, as participants will see it`) : tt('Сначала укажите город — время вводится местное', 'Enter the city first — the time is local to it');
     preview();
   };
-  let timer = null; let seq = 0;
+  let timer = null; let nfTimer = null; let seq = 0;
   const lookup = () => {
     const q = `${mf.city.value.trim()}|${mf.country.value.trim()}`;
     if (q === lastQuery && place) return;
     place = null; lastQuery = q;
     if (!mf.city.value.trim()) return drawPlace('empty');
     drawPlace('loading');
-    clearTimeout(timer);
+    clearTimeout(timer); clearTimeout(nfTimer);
     const my = ++seq;
     timer = setTimeout(async () => {
       try {
@@ -212,7 +243,15 @@ export async function meetingEditor(ctx, id) {
         if (my !== seq) return;
         if (r.status === 'ok') {
           place = r.place;
+          if (!mf.currency.value && mf.priceType.value === 'paid' && CC_CURRENCY[r.place.cc]) mf.currency.value = CC_CURRENCY[r.place.cc];
           if (!mf.country.value.trim()) { mf.country.value = r.place.country; lastQuery = `${mf.city.value.trim()}|${r.place.country}`; }
+        }
+        if (r.status === 'not_found') { // пока человек печатает, «не нашли» не показываем: сообщение — только после паузы или ухода из поля
+          placeBox.innerHTML = '';
+          const showLater = () => { if (my === seq) drawPlace('not_found', r.options || []); };
+          clearTimeout(nfTimer); nfTimer = setTimeout(showLater, 1200);
+          mf.city.addEventListener('blur', showLater, { once: true });
+          return;
         }
         drawPlace(r.status, r.options || []);
       } catch (x) { if (my === seq) placeBox.innerHTML = `<span class="warn">${esc(errorText(x))}</span>`; }
@@ -239,6 +278,9 @@ export async function meetingEditor(ctx, id) {
       + (n > 1 ? `<br><span class="small muted">${esc(tt(`Каждую неделю, всего дат: ${n}; последняя — ${localLabel(local, n - 1)}`, `Weekly, ${n} dates; the last — ${localLabel(local, n - 1)}`))}</span>` : '');
   };
   const preview = () => { if (mf.firstDate) previewFor(ctx.main.querySelector('#tzprev'), mf.firstDate.value, place && place.city, Number(mf.repeatWeekly.value) || 1); };
+  const paidBox = ctx.main.querySelector('#paid-fields');
+  const syncPaid = () => { paidBox.hidden = mf.priceType.value !== 'paid'; };
+  mf.priceType.addEventListener('change', () => { syncPaid(); if (!paidBox.hidden && !mf.currency.value && place && CC_CURRENCY[place.cc]) mf.currency.value = CC_CURRENCY[place.cc]; });
   mf.city.addEventListener('input', lookup); mf.country.addEventListener('input', lookup);
   if (mf.firstDate) { mf.firstDate.addEventListener('input', preview); mf.repeatWeekly.addEventListener('input', preview); }
   drawPlace(place ? 'ok' : 'empty');
@@ -247,7 +289,7 @@ export async function meetingEditor(ctx, id) {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(mf).entries());
     if (!place) { ctx.main.querySelector('#err').textContent = tt('Уточните город встречи: по нему определяется местное время.', 'Specify the meeting city: the local time depends on it.'); placeBox.scrollIntoView({ block: 'center' }); return; }
-    const body = { ...fd, city: place.city, country: place.country, placeId: place.placeId || '', sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: Number(fd.repeatWeekly || 1) };
+    const body = { ...fd, priceAmount: mf.priceAmount.value, currency: mf.currency.value, city: place.city, country: place.country, placeId: place.placeId || '', sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: Number(fd.repeatWeekly || 1) };
     try {
       if (m) { await api(`/api/fac/meetings/${id}`, { method: 'PUT', body }); toast(tt('Сохранено', 'Saved')); ctx.rerender(); }
       else { const r = await api('/api/fac/meetings', { method: 'POST', body }); toast(tt('Встреча опубликована', 'Meeting published')); ctx.navigate('/facilitator/m/' + r.id); }

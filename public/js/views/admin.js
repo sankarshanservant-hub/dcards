@@ -5,7 +5,7 @@ import { openViewer } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, rolesText, demoPill, WORK_STATUS, statusPill } from '../ui.js';
 import { langName } from './meetings.js';
 
-const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['applications', 'Заявки фасилитаторов', 'Facilitator applications'], ['meetings', 'Встречи', 'Meetings'],
+const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
   ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['letters', 'Письма', 'Letters']];
 const tabs = (cur) => `<div class="chips" style="margin-bottom:18px">${TABS.map(([k, ru, en]) => `<a class="chip ${cur === k ? 'on' : ''}" href="${u('/admin' + (k ? '/' + k : ''))}">${esc(tt(ru, en))}</a>`).join('')}</div>`;
 const guard = (ctx) => {
@@ -78,20 +78,35 @@ const SECTIONS = {
   },
 
   async applications(ctx) {
-    const { applications } = await api('/api/admin/applications');
+    const [{ applications }, { applications: curApps }, { requests }] = await Promise.all([api('/api/admin/applications'), api('/api/admin/curator-applications'), api('/api/admin/print-requests')]);
     if (!ctx.alive()) return;
     const ST = { in_progress: tt('проходит курс', 'taking the course'), submitted: tt('ждёт решения', 'awaiting decision'), approved: tt('одобрена', 'approved'), rejected: tt('не одобрена', 'not approved') };
-    const sec = shell(ctx, 'applications', tt('Заявки фасилитаторов', 'Facilitator applications'), applications.length ? `<div class="list">${applications.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
+    const decide = (kind, a, grant) => `${a.status === 'submitted' ? `<div class="row" style="margin-top:8px"><input type="text" placeholder="${esc(tt('Комментарий (по желанию)', 'Note (optional)'))}" data-note="${kind}${a.userId}" style="max-width:280px">
+          <button class="btn dark sm" type="button" data-ok="${kind}${a.userId}">${esc(grant)}</button><button class="btn sm danger" type="button" data-no="${kind}${a.userId}">${esc(tt('Отклонить', 'Decline'))}</button></div>` : ''}`;
+    const sec = shell(ctx, 'applications', tt('Заявки', 'Applications'), `
+      <h3>${esc(tt('Заявки на роль куратора', 'Curator applications'))}</h3>
+      ${curApps.length ? `<div class="list">${curApps.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
+        <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.contact)}${a.accountName !== a.name ? ' · ' + esc(tt('аккаунт', 'account')) + ': ' + esc(a.accountName) : ''}</span>
+        <p class="small" style="margin:4px 0 0;white-space:pre-wrap">${esc(a.motivation)}</p>
+        ${decide('c', a, tt('Одобрить и выдать роль куратора', 'Approve and grant the curator role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль куратора нет.', 'No curator applications.'))}</p>`}
+      <h3 style="margin-top:22px">${esc(tt('Заявки на роль фасилитатора', 'Facilitator applications'))}</h3>
+      ${applications.length ? `<div class="list">${applications.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
         <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.city || '—')} · ${esc(tt('глав', 'chapters'))}: ${a.courseDone}/8 · ${esc(tt('проверка', 'quiz'))}: ${a.quizPassed ? '✓' : '—'}</span>
         ${a.about ? `<p class="small" style="margin:4px 0 0">${esc(a.about)}</p>` : ''}
-        ${a.status === 'submitted' ? `<div class="row" style="margin-top:8px"><input type="text" placeholder="${esc(tt('Комментарий (по желанию)', 'Note (optional)'))}" data-note="${a.userId}" style="max-width:280px">
-          <button class="btn dark sm" type="button" data-ok="${a.userId}">${esc(tt('Одобрить и выдать роль', 'Approve and grant role'))}</button><button class="btn sm danger" type="button" data-no="${a.userId}">${esc(tt('Отклонить', 'Decline'))}</button></div>` : ''}
-      </span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок нет.', 'No applications.'))}</p>`);
+        ${decide('f', a, tt('Одобрить и выдать роль', 'Approve and grant role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль фасилитатора нет.', 'No facilitator applications.'))}</p>`}
+      <h3 style="margin-top:22px">${esc(tt('Запросы печатной колоды', 'Printed deck requests'))}</h3>
+      ${requests.length ? `<div class="list">${requests.map((r) => `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(r.name)} ${demoPill(r.isDemo)}</b><span class="small">${esc(r.email || '—')} · ${esc(fmtDate(r.createdAt, { day: 'numeric', month: 'short' }))} · ${r.status === 'new' ? esc(tt('новый', 'new')) : esc(tt('обработан', 'done'))}</span>
+        ${r.note ? `<p class="small" style="margin:4px 0 0;white-space:pre-wrap">${esc(r.note)}</p>` : ''}
+        ${r.status === 'new' ? `<div class="row" style="margin-top:8px"><button class="btn sm" type="button" data-pdone="${r.id}">${esc(tt('Отметить обработанным', 'Mark as done'))}</button></div>` : ''}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Запросов нет.', 'No requests.'))}</p>`}`);
     sec.addEventListener('click', async (e) => {
-      const ok = e.target.closest('[data-ok]'); const no = e.target.closest('[data-no]'); const id = (ok || no)?.dataset.ok || (ok || no)?.dataset.no;
-      if (!id) return;
-      const note = sec.querySelector(`[data-note="${id}"]`).value;
-      try { await api(`/api/admin/applications/${id}/decide`, { method: 'POST', body: { approve: !!ok, note } }); toast(ok ? tt('Роль фасилитатора выдана', 'Facilitator role granted') : tt('Заявка отклонена', 'Application declined')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
+      const pd = e.target.closest('[data-pdone]');
+      if (pd) { try { await api(`/api/admin/print-requests/${pd.dataset.pdone}/done`, { method: 'POST' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } return; }
+      const ok = e.target.closest('[data-ok]'); const no = e.target.closest('[data-no]'); const key = (ok || no)?.dataset.ok || (ok || no)?.dataset.no;
+      if (!key) return;
+      const kind = key[0]; const id = key.slice(1);
+      const note = sec.querySelector(`[data-note="${key}"]`).value;
+      const path = kind === 'c' ? 'curator-applications' : 'applications';
+      try { await api(`/api/admin/${path}/${id}/decide`, { method: 'POST', body: { approve: !!ok, note } }); toast(ok ? (kind === 'c' ? tt('Роль куратора выдана', 'Curator role granted') : tt('Роль фасилитатора выдана', 'Facilitator role granted')) : tt('Заявка отклонена', 'Application declined')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
     });
   },
 

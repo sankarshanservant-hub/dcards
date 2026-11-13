@@ -56,7 +56,7 @@ export async function collection(ctx, slug) {
     const card = cards.find((c) => c.code === current);
     const roundLabel = st.round > 1 || st.selections.length ? `<span>${esc(t('col.round', { n: st.round }))}</span>` : '';
     bar.innerHTML = card
-      ? `<button class="bar-thumb" type="button" data-open="${esc(card.code)}" aria-label="${esc(tt('К выбранной карте', 'To the chosen card'))}"><img src="${esc(card.thumb)}" alt=""></button>
+      ? `<span class="bar-thumb" aria-hidden="true"><img src="${esc(card.thumb)}" alt=""></span>
         <div class="bar-text"><strong>${esc(t('col.yourChoice'))}</strong>${roundLabel}</div>
         <button class="btn yellow sm" type="button" data-open="${esc(card.code)}">${esc(tt('К выбранной карте', 'To the chosen card'))}</button>
         <button class="link-btn" type="button" data-next-round>${esc(t('col.nextRound'))}</button>`

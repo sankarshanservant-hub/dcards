@@ -26,6 +26,8 @@ export const ic = {
   sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'),
   globe: P('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>'),
   book: P('<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-6M20 4v14h-6"/>'),
+  picPlus: P('<rect x="3" y="6" width="14" height="14" rx="2"/><path d="M3 17l4-4 3 3 2-2 5 5"/><path d="M19 2v6M16 5h6"/>'),
+  picCheck: P('<rect x="3" y="6" width="14" height="14" rx="2"/><path d="M3 17l4-4 3 3 2-2 5 5"/><path d="M16.5 5.5l2.5 2.5 4-4.5"/>'),
   arrow: P('<path d="M5 12h14M13 6l6 6-6 6"/>'),
 };
 
