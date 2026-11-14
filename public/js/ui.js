@@ -66,7 +66,7 @@ export function loading(main) { main.innerHTML = `<div class="wrap page"><p clas
 export function needLogin(main, why) {
   main.innerHTML = `<div class="wrap page narrow"><div class="card-ui stack">
     <h2>${esc(tt('Нужно войти', 'Please sign in'))}</h2><p class="muted">${esc(why || '')}</p>
-    <div class="row"><a class="btn dark" href="${u('/login?next=' + encodeURIComponent(location.pathname.slice((u('') || '').length) || '/'))}">${esc(tt('Войти по email', 'Sign in with email'))}</a></div>
+    <div class="row"><a class="btn dark" href="${u('/login?next=' + encodeURIComponent((location.pathname.slice((u('') || '').length) || '/') + location.search))}">${esc(tt('Войти по email', 'Sign in with email'))}</a></div>
   </div></div>`;
 }
 export function noRole(main, roleText) {
@@ -131,14 +131,15 @@ export function showQr(slug, title, url) {
   el.className = 'qr-overlay';
   el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
   el.innerHTML = `<button class="icon-btn qr-close" type="button" aria-label="${esc(tt('Закрыть', 'Close'))}">${ic.close}</button>
-    <img class="qr-logo" src="${u('/img/emblem-white.webp')}" alt="">
+    <img class="qr-logo em-dark" src="${u('/img/emblem-white.webp')}" alt=""><img class="qr-logo em-light" src="${u('/img/emblem-black.webp')}" alt="">
     <h2>${esc(title)}</h2>
     <img class="qr-img" src="${u('/api/c/' + slug + '/qr.svg')}" alt="QR">
     <p class="qr-url">${esc(url.replace(/^https?:\/\//, ''))}</p>
     <div class="row" style="justify-content:center"><button class="btn yellow" type="button" data-copy>${esc(tt('Скопировать ссылку', 'Copy link'))}</button></div>
     <p class="muted">${esc(tt('Наведите камеру телефона на QR-код. Ссылку можно отправить в чат Zoom.', 'Point your phone camera at the QR code. You can send the link in the Zoom chat.'))}</p>`;
   document.body.appendChild(el); document.body.classList.add('no-scroll');
-  const close = () => { el.remove(); document.body.classList.remove('no-scroll'); document.removeEventListener('keydown', onKey); };
+  const opener = document.activeElement;
+  const close = () => { el.remove(); document.body.classList.remove('no-scroll'); document.removeEventListener('keydown', onKey); if (opener && document.contains(opener)) opener.focus({ preventScroll: true }); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   el.querySelector('.qr-close').addEventListener('click', close);

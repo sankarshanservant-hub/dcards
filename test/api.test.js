@@ -261,7 +261,7 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.ok(r1.json.letter.demo && /Вы записаны/.test(r1.json.letter.subject), 'текст подтверждения');
   assert.match(r1.json.letter.body, /\/r\//, 'в письме ссылка на отмену');
   assert.match(r1.json.letter.body, /\/ics/, 'в письме ссылка «Добавить в календарь»');
-  assert.match(r1.json.letter.body, /500 RUB с человека/, 'в письме стоимость участия');
+  assert.match(r1.json.letter.body, /500 RUB за участника/, 'в письме стоимость участия');
   assert.match(r1.json.letter.body, /Кафе, Казань, Россия/, 'в письме место');
   // файл календаря: время в UTC, место, ссылка на запись
   const ics = await fetch(`${base}/api/registrations/${r1.json.token}/ics`);
@@ -511,6 +511,68 @@ test('Заявка куратора доходит до администрато
   assert.ok(reqs.some((r) => r.note === '2 колоды для встречи в Казани'));
   assert.equal((await call('GET', '/api/print', null, { cookie: facil.cookie })).status, 403, 'фасилитатор не отбирает карты для печати');
   assert.equal((await call('GET', '/api/print', null, { cookie: artist.cookie })).status, 200, 'доступ художника сохранён');
+});
+
+// ---------- 14.11: длительность, одновременная запись, руководство фасилитатора ----------
+test('Встреча: длительность и время окончания, одновременная запись на последнее место, повтор отправки', async () => {
+  const day = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+  assert.equal((await call('POST', '/api/fac/meetings', { title: 'Длинная', city: 'Казань', language: 'ru', priceType: 'free', capacity: 2, durationMin: 5, firstDate: `${day}T18:00` }, { cookie: facil.cookie })).json.error, 'bad_duration', 'окончание должно быть позже начала (мин. 15 мин)');
+  const c = await call('POST', '/api/fac/meetings', { title: 'Два места', city: 'Казань', language: 'ru', priceType: 'free', capacity: 2, durationMin: 90, firstDate: `${day}T18:00` }, { cookie: facil.cookie });
+  assert.equal(c.status, 201);
+  const ed = (await call('GET', `/api/fac/meetings/${c.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(ed.durationMin, 90);
+  const dateId = ed.dates[0].id;
+  const pub = (await call('GET', `/api/meetings/dates/${dateId}`)).json;
+  assert.equal(pub.endsAt, `${day}T16:30:00.000Z`, '18:00 + 1 ч 30 мин в Москве = 16:30 UTC');
+  // пять человек одновременно на два места — записаны ровно двое
+  const rs = await Promise.all([1, 2, 3, 4, 5].map((i) => call('POST', `/api/meetings/dates/${dateId}/register`, { name: 'Гость ' + i, email: `g${i}@example.org` })));
+  assert.equal(rs.filter((r) => r.status === 201).length, 2);
+  assert.ok(rs.filter((r) => r.status !== 201).every((r) => r.json.error === 'full'));
+  assert.equal((await call('GET', `/api/meetings/dates/${dateId}`)).json.left, 0);
+  // повторная отправка той же формы не создаёт вторую запись
+  const ok1 = rs.find((r) => r.status === 201);
+  const ics = await (await fetch(`${base}/api/registrations/${ok1.json.token}/ics`)).text();
+  assert.match(ics, new RegExp(`DTEND:${day.replace(/-/g, '')}T163000Z`), 'в календаре есть время окончания');
+  await call('POST', `/api/registrations/${ok1.json.token}/cancel`);
+  const again = await call('POST', `/api/meetings/dates/${dateId}/register`, { name: 'Гость 9', email: 'g9@example.org' });
+  assert.equal(again.status, 201);
+  assert.equal((await call('POST', `/api/meetings/dates/${dateId}/register`, { name: 'Гость 9', email: 'g9@example.org' })).json.error, 'full');
+  await call('POST', `/api/fac/meetings/${c.json.id}/publish`, { published: false }, { cookie: facil.cookie });
+});
+
+/** Простейший .docx (zip без сжатия) с document.xml — для проверки загрузки руководства. */
+function tinyDocx(xml) {
+  const name = Buffer.from('word/document.xml'); const data = Buffer.from(xml);
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26);
+  const cen = Buffer.alloc(46); cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt32LE(data.length, 20); cen.writeUInt32LE(data.length, 24); cen.writeUInt16LE(name.length, 28); cen.writeUInt32LE(0, 42);
+  const body = Buffer.concat([local, name, data]);
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(cen.length + name.length, 12); end.writeUInt32LE(body.length, 16);
+  return Buffer.concat([body, cen, name, end]);
+}
+test('Руководство фасилитатора: администратор загружает .docx, главы курса с текстом, отметка «прочитано» отдельно', async () => {
+  const para = (style, text) => `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''}<w:r><w:t>${text}</w:t></w:r></w:p>`;
+  let xml = para('Title', 'Dialogue Flow');
+  for (let i = 1; i <= 8; i++) xml += para('Heading1', `Глава ${i}. Тестовая глава`) + para('Heading2', 'Раздел') + para('', `Текст главы ${i} &amp; пример`);
+  xml += para('Heading1', 'Приложения') + para('', 'Чек-лист');
+  const doc = tinyDocx(`<w:document><w:body>${xml}</w:body></w:document>`);
+  const fd = () => { const f = new FormData(); f.append('file', new Blob([doc]), 'guide.docx'); return f; };
+  assert.equal((await call('POST', '/api/admin/guide', null, { cookie: facil.cookie, form: fd() })).status, 403, 'только администратор');
+  const adm = await call('POST', '/api/demo/login', { as: 'admin' });
+  assert.equal((await call('POST', '/api/admin/guide', null, { cookie: adm.cookie, form: fd() })).status, 403, 'демо-администратор не может');
+  const bad = new FormData(); bad.append('file', new Blob([Buffer.from('not a zip')]), 'x.docx');
+  assert.equal((await call('POST', '/api/admin/guide', null, { cookie: owner.cookie, form: bad })).json.error, 'bad_docx');
+  const up = await call('POST', '/api/admin/guide', null, { cookie: owner.cookie, form: fd() });
+  assert.equal(up.status, 201); assert.equal(up.json.chapters, 8); assert.equal(up.json.extra, 1);
+  const cand = await emailLogin('future.fac@example.org', 'Будущий фасилитатор');
+  const app = (await call('GET', '/api/fac/application', null, { cookie: cand.cookie })).json;
+  assert.equal(app.guideMissing, false);
+  assert.equal(app.course[0], 'Глава 1. Тестовая глава');
+  assert.equal(app.chapters[2][1].text, 'Текст главы 3 & пример', 'текст главы доступен для чтения');
+  assert.equal(app.extra[0].title, 'Приложения');
+  await call('POST', '/api/fac/application', null, { cookie: cand.cookie });
+  assert.deepEqual((await call('GET', '/api/fac/application', null, { cookie: cand.cookie })).json.application.courseDone, [], 'открытие курса не отмечает прочтение');
+  await call('PUT', '/api/fac/application', { courseDone: [0, 1] }, { cookie: cand.cookie });
+  assert.deepEqual((await call('GET', '/api/fac/application', null, { cookie: cand.cookie })).json.application.courseDone, [0, 1], 'прогресс сохраняется');
 });
 
 // ---------- вход общим аккаунтом сайта ----------

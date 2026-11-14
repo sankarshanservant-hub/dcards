@@ -17,6 +17,7 @@ const community = require('./community');
 const demo = require('./demo');
 const choices = require('./choices');
 const places = require('./places');
+const guide = require('./guide');
 const { cityKey } = require('./places-key');
 
 cards.syncSeed();
@@ -392,10 +393,19 @@ r.patch('/api/fac/dates/:id', fac, (req, res) => {
 });
 
 // ---------- путь к роли фасилитатора ----------
-r.get('/api/fac/application', auth.requireUser, (req, res) => res.json({
-  application: community.application(req.user.id), isFacilitator: req.has('facilitator'),
-  course: community.COURSE, questions: community.QUESTIONS.map(({ id, text, options }) => ({ id, text, options })),
-}));
+r.get('/api/fac/application', auth.requireUser, (req, res) => {
+  const g = guide.load();
+  const chapters = g ? g.chapters.filter((c) => c.course) : null;
+  res.json({
+    application: community.application(req.user.id), isFacilitator: req.has('facilitator'),
+    // главы курса: из загруженного руководства (с текстом) или названия глав без текста, пока руководство не загружено
+    course: chapters && chapters.length === community.COURSE.length ? chapters.map((c) => c.title) : community.COURSE,
+    chapters: chapters && chapters.length === community.COURSE.length ? chapters.map((c) => c.blocks) : null,
+    extra: g ? g.chapters.filter((c) => !c.course) : [],
+    guideTitle: g ? g.title : '', guideMissing: !(chapters && chapters.length === community.COURSE.length),
+    questions: community.QUESTIONS.map(({ id, text, options }) => ({ id, text, options })), questionsPlaceholder: true,
+  });
+});
 r.post('/api/fac/application', auth.requireUser, (req, res) => res.json({ application: community.startApplication(req.user) }));
 r.put('/api/fac/application', auth.requireUser, (req, res) => out(res, community.saveApplication(req.user, req.body || {})));
 // Заявка на роль куратора (вошедший пользователь); решение — администратор.
@@ -484,6 +494,13 @@ admin.patch('/users/:id', (req, res) => {
   if (email && !auth.EMAIL_RE.test(email)) return bad(res, 'bad_email');
   try { db.prepare('UPDATE users SET email = COALESCE(?, email) WHERE id = ?').run(email, id); } catch { return bad(res, 'email_taken'); }
   res.json({ ok: true });
+});
+// Руководство фасилитатора (.docx) — текст глав вводного курса. Хранится в данных сервера, не в репозитории.
+const docUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
+admin.get('/guide', (req, res) => { const g = guide.load(); res.json({ uploadedAt: g ? g.uploadedAt : null, title: g ? g.title : '', chapters: g ? g.chapters.map((c) => ({ title: c.title, course: c.course, blocks: c.blocks.length })) : [] }); });
+admin.post('/guide', (req, res, next) => (req.user.is_demo ? bad(res, 'demo_readonly', 403) : next()), docUpload.single('file'), (req, res) => {
+  if (!req.file) return bad(res, 'file_required');
+  out(res, guide.save(req.file.buffer, req.user.id), 201);
 });
 admin.get('/print-requests', (req, res) => res.json({ requests: db.prepare(`SELECT p.*, COALESCE(NULLIF(u.public_name,''), u.name) AS name, u.email FROM print_requests p JOIN users u ON u.id = p.user_id WHERE ${req.showDemo ? '1=1' : 'p.is_demo = 0'} ORDER BY (p.status = 'new') DESC, p.id DESC LIMIT 100`).all()
   .map((p) => ({ id: p.id, name: p.name, email: p.email, note: p.note, status: p.status, createdAt: p.created_at, isDemo: !!p.is_demo })) }));

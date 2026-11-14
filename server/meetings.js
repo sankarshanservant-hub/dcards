@@ -31,12 +31,13 @@ const nowIso = () => new Date().toISOString();
 function dateOut(d, m) {
   const taken = seatsTaken.get(d.id).n;
   return { id: d.id, startsAt: d.starts_at, localTime: d.local_time, capacity: d.capacity, taken, left: Math.max(0, d.capacity - taken),
-    status: d.status, past: d.starts_at < nowIso(), meetingId: m ? m.id : d.meeting_id };
+    status: d.status, past: d.starts_at < nowIso(), meetingId: m ? m.id : d.meeting_id,
+    endsAt: m && m.duration_min ? new Date(new Date(d.starts_at).getTime() + m.duration_min * 60000).toISOString() : null };
 }
 function meetingOut(m, { withDates = false, includePast = false } = {}) {
   const out = {
     id: m.id, title: m.title, description: m.description, country: m.country, city: m.city, venue: m.venue,
-    language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, priceAmount: m.price_type === 'paid' ? m.price_amount : null, currency: m.price_type === 'paid' ? m.currency : '', capacity: m.capacity,
+    language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, durationMin: m.duration_min || null, priceAmount: m.price_type === 'paid' ? m.price_amount : null, currency: m.price_type === 'paid' ? m.currency : '', capacity: m.capacity,
     askContact: !!m.ask_contact, status: m.status, removedReason: m.removed_reason, isDemo: !!m.is_demo,
     facilitator: userName(m.facilitator_id), facilitatorId: m.facilitator_id, createdAt: m.created_at,
   };
@@ -108,7 +109,7 @@ async function register(dateId, { name, email, contact }, baseUrl, lang = 'ru') 
   const ics = `${baseUrl}${config.basePath}/api/registrations/${token}/ics`;
   const body = lang === 'en'
     ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
-    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} с человека. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
+    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} за участника. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
   // Демо-встреча: письмо не отправляется (честно сообщаем об этом на странице), настоящая почта не задействуется.
   const letter = m.is_demo ? { sent: false, demo: true, demoMeeting: true, subject, body } : await mail.send(e, subject, body);
   return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: [m.venue, m.city, m.country].filter(Boolean).join(', ') };
@@ -136,7 +137,7 @@ function icsByToken(token, baseUrl, lang = 'ru') {
     ? `Dialogue Flow meeting.\nLocal time: ${fmtLocal(d, m, 'en')}\nPlace: ${place}\nFacilitator: ${userName(m.facilitator_id)}\nCannot come? Cancel to free your seat: ${link}`
     : `Встреча Dialogue Flow.\nМестное время: ${fmtLocal(d, m, 'ru')}\nМесто: ${place}\nФасилитатор: ${userName(m.facilitator_id)}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`);
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dialogue Cards//Meetings//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
-    `UID:dcards-reg-${r.id}-${d.id}@dialogue-cards`, `DTSTAMP:${icsTime(new Date().toISOString())}`, `DTSTART:${icsTime(d.starts_at)}`,
+    `UID:dcards-reg-${r.id}-${d.id}@dialogue-cards`, `DTSTAMP:${icsTime(new Date().toISOString())}`, `DTSTART:${icsTime(d.starts_at)}`, ...(m.duration_min ? [`DTEND:${icsTime(new Date(new Date(d.starts_at).getTime() + m.duration_min * 60000).toISOString())}`] : []),
     `SUMMARY:${icsText(m.title)}`, `LOCATION:${icsText(place)}`, `DESCRIPTION:${icsText(desc)}`, `URL:${link}`,
     `STATUS:${r.status === 'cancelled' || d.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED'}`, 'END:VEVENT', 'END:VCALENDAR'];
   return lines.map(foldIcs).join('\r\n') + '\r\n';
@@ -164,12 +165,14 @@ function parseMeeting(body) {
     price_note: String(body.priceNote || '').trim().slice(0, 300),
     price_amount: body.priceType === 'paid' ? Number(String(body.priceAmount ?? '').replace(',', '.')) : null,
     currency: body.priceType === 'paid' ? String(body.currency || '').trim().toUpperCase().slice(0, 3) : '',
+    duration_min: body.durationMin === '' || body.durationMin == null ? null : Math.round(Number(body.durationMin)),
     capacity: Math.max(1, Math.min(500, Number(body.capacity) || 0)),
     ask_contact: body.askContact ? 1 : 0,
   };
   if (!m.title || !m.country || !m.city) return { error: 'required_fields' };
   if (!validTz(tz)) return { error: 'bad_timezone' };
   if (!Number(body.capacity)) return { error: 'capacity_required' };
+  if (m.duration_min !== null && !(m.duration_min >= 15 && m.duration_min <= 720)) return { error: 'bad_duration' };
   if (m.price_type === 'paid') {
     if (!(m.price_amount > 0) || m.price_amount > 1e9) return { error: 'price_required' };
     if (!/^[A-Z]{3}$/.test(m.currency)) return { error: 'currency_required' };
@@ -201,8 +204,8 @@ function create(user, body) {
   const p = parseMeeting(body); if (p.error) return p;
   const ds = expandDates(body, p.m.timezone); if (ds.error) return ds;
   const id = db.transaction(() => {
-    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, capacity, ask_contact, is_demo)
-      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @capacity, @ask_contact, @is_demo)`)
+    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, duration_min, capacity, ask_contact, is_demo)
+      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @duration_min, @capacity, @ask_contact, @is_demo)`)
       .run({ ...p.m, fid: user.id, is_demo: user.is_demo ? 1 : 0 });
     const ins = db.prepare('INSERT INTO meeting_dates (meeting_id, starts_at, local_time, capacity) VALUES (?, ?, ?, ?)');
     for (const d of ds.dates) ins.run(info.lastInsertRowid, d.utc, d.local, p.m.capacity);
@@ -219,7 +222,7 @@ function update(meetingId, body) {
     for (const d of fut) { const utc = zonedToUtc(d.local_time, p.m.timezone); if (utc) db.prepare('UPDATE meeting_dates SET starts_at = ? WHERE id = ?').run(utc, d.id); }
   }
   db.prepare(`UPDATE meetings SET title=@title, description=@description, country=@country, city=@city, venue=@venue, language=@language,
-    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
+    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, duration_min=@duration_min, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
   return { ok: true };
 }
 function addDates(meetingId, body) {

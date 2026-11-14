@@ -1,5 +1,5 @@
 import { monthLabel } from '../i18n.js';
-import { esc, tt, u, api, toast, errorText, fmtDate } from '../util.js';
+import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { session, ic, tileHtml, loading, failed } from '../ui.js';
 
@@ -20,7 +20,7 @@ const JOIN = [
 ];
 export async function home(ctx) {
   ctx.main.innerHTML = `
-    <section class="hero"><div class="wrap">
+    <section class="hero home"><div class="wrap">
       <div>
         <h1>Dialogue Cards</h1>
         <p class="lead">${esc(tt('Рады, что вы заглянули. Откройте любую карту и посмотрите, что в ней откликнется вам. Иногда одной иллюстрации достаточно, чтобы начать разговор.', 'Glad you stopped by. Open any card and see what speaks to you. Sometimes a single illustration is enough to start a conversation.'))}</p>
@@ -79,7 +79,7 @@ export async function cardPage(ctx, code) {
   let card; let comments;
   try { [card, { comments }] = await Promise.all([api(`/api/cards/${code}`), api(`/api/cards/${code}/comments`)]); } catch (e) {
     if (!ctx.alive()) return;
-    if (e.status === 404) { ctx.main.innerHTML = `<div class="wrap page narrow"><div class="empty">${esc(tt('Карта не найдена или снята с публикации. Её обсуждение недоступно.', 'Card not found or removed. Its discussion is not available.'))}</div></div>`; return; }
+    if (e.status === 404) { ctx.main.innerHTML = `<div class="wrap page narrow"><div class="empty">${esc(tt('Карта не найдена или снята с публикации. Её комментарии недоступны.', 'Card not found or removed. Its discussion is not available.'))}</div></div>`; return; }
     return failed(ctx.main, e, ctx.rerender);
   }
   if (!ctx.alive()) return;
@@ -88,13 +88,13 @@ export async function cardPage(ctx, code) {
       <div><button class="art" type="button" id="art" aria-label="${esc(tt('Рассмотреть', 'View'))}"><img src="${esc(card.full)}" alt="${esc(card.code)}" width="${card.width}" height="${card.height}"></button></div>
       <div class="stack">
         <a href="${u('/library')}" class="small">← ${esc(tt('Галерея', 'Gallery'))}</a>
-        <h1 style="font-size:clamp(2rem,5vw,3rem)">${esc(card.code)} ${card.isDemo ? '<span class="pill demo">демо</span>' : ''}</h1>
+        <h1>${esc(card.code)} ${card.isDemo ? '<span class="pill demo">демо</span>' : ''}</h1>
         <div class="card-ui flat"><dl class="sheet-list" style="margin:0">
           <div><dt>${esc(tt('Автор', 'Artist'))}</dt><dd>${esc(card.author || tt('будет указан', 'to be added'))}</dd></div>
           <div><dt>${esc(tt('В галерее с', 'In the gallery since'))}</dt><dd>${esc(fmtDate(card.publishedAt))}</dd></div>
-          <div><dt>${esc(tt('Выбрали для обсуждения', 'Chosen for discussion'))}</dt><dd>${card.selectedCount}</dd></div>
+          <div><dt>${esc(tt('Выбрали для разговора', 'Chosen for a conversation'))}</dt><dd>${esc(tt(`${card.selectedCount} ${ruPlural(card.selectedCount, 'раз', 'раза', 'раз')}`, `${card.selectedCount} ${card.selectedCount === 1 ? 'time' : 'times'}`))}</dd></div>
         </dl></div>
-        <h2>${esc(tt('Обсуждение', 'Discussion'))} <span class="muted" style="font-size:1rem">(${comments.length})</span></h2>
+        <h2>${esc(tt('Комментарии', 'Comments'))} <span class="muted" style="font-size:1rem">(${comments.length})</span></h2>
         <p class="small muted">${esc(tt('Читать может каждый. Писать — после входа, под выбранным именем.', 'Anyone can read. Sign in to write, under the name you choose.'))}
           ${esc(tt('Встроенный перевод сообщений пока не подключён — кнопка «Перевести» открывает внешний переводчик.', 'Built-in translation is not connected yet — “Translate” opens an external translator.'))}</p>
         <div class="list" id="comments">${comments.length ? comments.map((c) => `<article class="comment"><header><b>${esc(c.author)}</b><span>${esc(fmtDate(c.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>${c.isDemo ? '<span class="pill demo">демо</span>' : ''}

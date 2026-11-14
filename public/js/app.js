@@ -48,15 +48,10 @@ const routes = [
   [/^\/team\/(curators|facilitators)\/?$/, team.chat],
   [/^\/print\/?$/, team.print],
   [/^\/admin\/?$/, adm.overview],
-  [/^\/admin\/(users|applications|meetings|cards|comments|criteria|letters)\/?$/, adm.section],
+  [/^\/admin\/(users|applications|meetings|cards|comments|criteria|guide|letters)\/?$/, adm.section],
 ];
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
-
-// Поверхности: yellow — творческое (главная, знакомство, галерея, подборка), light — серьёзное (условия, критерии, подача и проверка работ, курс и заявки), иначе тёмная.
-const YELLOW = [/^\/$/, /^\/start\/?$/, /^\/library\/?$/, /^\/s\/[a-z0-9]+\/?$/];
-const LIGHT = [/^\/terms\/?$/, /^\/artist(\/|$)/, /^\/curator(\/|$)/, /^\/facilitator\/apply\/?$/, /^\/admin\/criteria\/?$/];
-const surfaceOf = (path) => (YELLOW.some((r) => r.test(path)) ? 'yellow' : LIGHT.some((r) => r.test(path)) ? 'light' : 'dark');
 
 async function render() {
   const token = ++renderToken;
@@ -64,7 +59,6 @@ async function render() {
   document.body.classList.remove('has-choice-bar');
   renderChrome();
   const path = appPath();
-  main.dataset.surface = surfaceOf(path);
   const ctx = {
     main, token, alive: () => token === renderToken, rerender: render, navigate,
     query: new URL(location.href).searchParams,
@@ -120,6 +114,8 @@ function renderChrome() {
   acct.innerHTML = session.user
     ? `<button class="acct" type="button" data-menu><span class="ava">${avatar(session.user.publicName)}</span><span class="nm">${esc(session.user.publicName)}</span></button>`
     : `<a class="signin" href="${u('/login')}">${esc(tt('Войти', 'Sign in'))}</a>`;
+  drawThemeBtn();
+  document.getElementById('burger').setAttribute('aria-label', tt('Меню', 'Menu'));
   const ls = document.getElementById('lang');
   ls.textContent = lang === 'ru' ? 'EN' : 'RU';
   ls.setAttribute('aria-label', lang === 'ru' ? 'Switch to English' : 'Переключить на русский');
@@ -132,6 +128,31 @@ function renderChrome() {
   pill.hidden = !demoOn;
   if (demoOn) pill.textContent = `${tt('ДЕМО', 'DEMO')} · ${session.user ? rolesText(session.user.roles) : tt('гость', 'guest')}`;
 }
+// ---------- тема: две глобальные, переключатель в шапке ----------
+const THEME_ICON = {
+  light: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
+};
+const currentTheme = () => document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+function drawThemeBtn() {
+  const b = document.getElementById('theme'); const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  const label = next === 'light' ? tt('Включить светлую тему', 'Switch to light theme') : tt('Включить тёмную тему', 'Switch to dark theme');
+  b.innerHTML = THEME_ICON[next]; b.setAttribute('aria-label', label); b.title = label;
+}
+document.getElementById('theme').addEventListener('click', () => {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('dc_theme', next); } catch { /* без сохранения — тема до перезагрузки */ }
+  drawThemeBtn();
+});
+// Пока человек не выбрал тему сам, она следует за системной.
+try {
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+    let saved = null; try { saved = localStorage.getItem('dc_theme'); } catch { /* */ }
+    if (saved) return;
+    document.documentElement.setAttribute('data-theme', e.matches ? 'light' : 'dark'); drawThemeBtn();
+  });
+} catch { /* старые браузеры */ }
 document.getElementById('lang').addEventListener('click', () => { setLang(lang === 'ru' ? 'en' : 'ru'); if (isViewerOpen()) history.back(); render(); });
 document.getElementById('burger').addEventListener('click', openMenu);
 document.getElementById('demo-pill').addEventListener('click', openMenu);
@@ -141,6 +162,7 @@ function mi(href, icon, ru, en, noteRu = '', noteEn = '', hl = false, badge = ''
   return `<a class="mi ${hl ? 'hl' : ''}" href="${u(href)}"><span class="ic">${icon}</span><span><b>${esc(tt(ru, en))}</b>${noteRu ? `<small>${esc(tt(noteRu, noteEn))}</small>` : ''}</span>${badge ? `<span class="badge">${esc(badge)}</span>` : ''}</a>`;
 }
 function openMenu() {
+  const opener = document.activeElement;
   closeMenu();
   const s = session.user;
   const el = document.createElement('div');
@@ -152,10 +174,9 @@ function openMenu() {
     if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет художника', 'Artist space', 'Мои работы и карты', 'My works and cards'));
     if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space', 'Подборки и встречи', 'Selections and meetings'), mi('/team/facilitators', ic.chat, 'Чат фасилитаторов', 'Facilitators’ chat'));
     if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space', 'Работы на рассмотрении', 'Works under review'), mi('/team/curators', ic.chat, 'Чат кураторов', 'Curators’ chat'));
-    if (hasRole('curator', 'artist')) cabinets.push(mi('/print', ic.print, 'Печатная колода', 'Printed deck', 'Будущий этап', 'Future stage'));
   }
   const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Художник', 'Artist'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
-  el.innerHTML = `<div class="panel">
+  el.innerHTML = `<div class="panel" aria-label="${esc(tt('Меню', 'Menu'))}">
     <div class="head">
       ${s ? `<span class="ava">${avatar(s.publicName)}</span><div class="who"><b>${esc(s.publicName)}</b><span>${esc(rolesText(s.roles))}${s.isDemo ? ' · ' + esc(tt('демо', 'demo')) : ''}</span></div>`
         : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Иллюстрации для живого разговора', 'Illustrations for real conversation'))}</span></div>`}
@@ -187,14 +208,26 @@ function openMenu() {
     }
     if (e.target.closest('[data-logout]')) { skipSiteAutoLogin(); await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); await refreshSession(); closeMenu(); navigate('/'); }
   });
-  const onKey = (e) => { if (e.key === 'Escape') closeMenu(); };
+  // Escape закрывает; Tab не уходит из меню на страницу под ним; после закрытия фокус возвращается к кнопке.
+  const onKey = (e) => {
+    if (e.key === 'Escape') { closeMenu(); return; }
+    if (e.key !== 'Tab') return;
+    const f = [...el.querySelectorAll('a[href], button:not([disabled])')]; if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  };
   document.addEventListener('keydown', onKey);
   el._off = () => document.removeEventListener('keydown', onKey);
+  el._opener = opener;
   el.querySelector('[data-close]').focus();
 }
 function closeMenu() {
   const el = document.getElementById('sheet-menu');
-  if (el) { el._off && el._off(); el.remove(); document.body.classList.remove('no-scroll'); }
+  if (el) {
+    el._off && el._off(); el.remove(); document.body.classList.remove('no-scroll');
+    const back = el._opener && document.contains(el._opener) ? el._opener : document.getElementById('burger');
+    if (back && getComputedStyle(back).display !== 'none') back.focus({ preventScroll: true });
+  }
 }
 /** Куда вести после входа: в основной кабинет роли. */
 export function homeFor() {

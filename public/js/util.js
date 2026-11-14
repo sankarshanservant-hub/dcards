@@ -53,6 +53,10 @@ const ERRORS = {
   question_required: ['Напишите вопрос для коллег.', 'Write a question for your colleagues.'],
   price_required: ['Укажите стоимость участия для платной встречи.', 'Enter the price for a paid meeting.'],
   currency_required: ['Выберите валюту.', 'Choose a currency.'],
+  bad_duration: ['Продолжительность — от 15 минут до 12 часов.', 'Duration must be between 15 minutes and 12 hours.'],
+  bad_docx: ['Не удалось прочитать файл: нужен документ Word (.docx).', 'Could not read the file: a Word document (.docx) is needed.'],
+  no_chapters: ['В документе не найдены главы «Глава 1…» (заголовки первого уровня).', 'No “Глава 1…” chapters (level-1 headings) found in the document.'],
+  file_required: ['Выберите файл.', 'Choose a file.'],
   name_required: ['Укажите имя.', 'Please enter your name.'],
   email_required: ['Укажите email.', 'Please enter your email.'],
   bad_email: ['Проверьте email.', 'Check the email address.'],
@@ -113,3 +117,50 @@ const loc = () => (lang === 'en' ? 'en-GB' : 'ru-RU');
 export const fmtDate = (iso, opts = { day: 'numeric', month: 'long', year: 'numeric' }) => new Intl.DateTimeFormat(loc(), opts).format(new Date(iso));
 export const fmtDateTime = (iso, tz) => new Intl.DateTimeFormat(loc(), { dateStyle: 'medium', timeStyle: 'short', ...(tz ? { timeZone: tz } : {}) }).format(new Date(iso));
 export const fmtTz = (iso, tz, opts) => new Intl.DateTimeFormat(loc(), { ...opts, timeZone: tz }).format(new Date(iso));
+
+/** Русское склонение после числа: ruPlural(2, 'место', 'места', 'мест') → «места». */
+export const ruPlural = (n, one, few, many) => { const a = Math.abs(n) % 100; const b = a % 10; return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many; };
+
+// ---------- падежи названий городов (для «по времени Чиангмая», «по Чиангмаю») ----------
+// Простые правила для одного русского слова (или «Санкт-Петербург», «Ростов-на-Дону»). Если правило не подходит —
+// возвращается null, и интерфейс использует нейтральную формулировку без падежа.
+const RU_WORD = /^[А-ЯЁ][а-яё]+$/;
+const INDECL = /[оеэиыуюё]$|[аоеиуыэюя]а$/i; // Сочи, Тбилиси, Баку, Гоа…
+function declineWord(w, kase) {
+  if (!RU_WORD.test(w) || INDECL.test(w)) return INDECL.test(w) && RU_WORD.test(w) ? w : null;
+  if (/(ий|ый|ой|ая|ое|ые)$/.test(w)) return null; // прилагательные (Нижний, Великий) — без правил
+  const gen = kase === 'gen';
+  if (/ь$/.test(w)) return w.slice(0, -1) + 'и';
+  if (/й$/.test(w)) return w.slice(0, -1) + (gen ? 'я' : 'ю');
+  if (/ия$/.test(w)) return w.slice(0, -1) + 'и';
+  if (/я$/.test(w)) return w.slice(0, -1) + (gen ? 'и' : 'е');
+  if (/а$/.test(w)) return w.slice(0, -1) + (gen ? (/[гкхжшщч]а$/.test(w) ? 'и' : 'ы') : 'е');
+  if (/[бвгджзклмнпрстфхцчшщ]$/.test(w)) return w + (gen ? 'а' : 'у');
+  return null;
+}
+export function cityCase(city, kase) {
+  const c = String(city || '').trim();
+  if (!c || /\s/.test(c)) return null;
+  const parts = c.split('-');
+  if (parts.length === 1) return declineWord(c, kase);
+  const naIdx = parts.indexOf('на');
+  if (naIdx === 1) { const w = declineWord(parts[0], kase); return w ? [w, ...parts.slice(1)].join('-') : null; }
+  if (parts.length === 2 && ['Санкт', 'Улан', 'Нью', 'Сан', 'Лос'].includes(parts[0])) { const w = declineWord(parts[1], kase); return w ? `${parts[0]}-${w}` : null; }
+  return null;
+}
+/** «18:30 по времени Чиангмая» / «18:30, местное время (Chiang Mai)» / «18:30 Chiang Mai time». */
+export function timeInCity(time, city) {
+  const g = cityCase(city, 'gen');
+  return tt(g ? `${time} по времени ${g}` : `${time}, местное время (${city})`, `${time} ${city} time`);
+}
+/** «Укажите время по Чиангмаю» / «… в городе Chiang Mai». */
+export function enterTimeHint(city) {
+  const d = cityCase(city, 'dat');
+  return tt(d ? `Укажите время по ${d} — так его увидят участники` : `Укажите местное время в городе ${city} — так его увидят участники`, `Enter the time in ${city}, as participants will see it`);
+}
+/** Продолжительность: 90 → «1 ч 30 мин». */
+export function durationText(min) {
+  if (!min) return '';
+  const h = Math.floor(min / 60); const m = min % 60;
+  return tt([h ? `${h} ч` : '', m ? `${m} мин` : ''].filter(Boolean).join(' '), [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' '));
+}

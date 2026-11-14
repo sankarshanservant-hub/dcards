@@ -306,6 +306,7 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_site_uid ON users(site_uid)
 addColumn('collections', 'owner_id', 'INTEGER REFERENCES users(id)');
 addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 // Единый счётчик «Выбрали для обсуждения»: выбор в подборке не идёт в счёт, если карту выбрал её автор или демо-роль.
+addColumn('meetings', 'duration_min', 'INTEGER');       // продолжительность (мин); у старых встреч — пусто, не выдумываем
 addColumn('meetings', 'price_amount', 'REAL');          // стоимость участия с человека (платная встреча)
 addColumn('meetings', 'currency', "TEXT NOT NULL DEFAULT ''"); // ISO 4217, например THB
 // Запросы фасилитаторов на готовую печатную колоду — для команды проекта.

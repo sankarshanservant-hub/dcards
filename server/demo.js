@@ -48,10 +48,10 @@ async function seed() {
   // Встречи демо-фасилитатора в двух городах, по несколько дат.
   const day = (offset, hh = '19:00') => { const d = new Date(Date.now() + offset * 86400000); return `${d.toISOString().slice(0, 10)}T${hh}`; };
   const m1 = meetings.create(fac, { title: 'Dialogue Flow в кафе (демо)', description: 'Демонстрационная встреча: два раунда разговора в парах, завершающий круг.',
-    country: 'Россия', city: 'Москва', venue: 'Кафе на Покровке (демо-адрес)', language: 'ru', timezone: 'Europe/Moscow', priceType: 'free', capacity: 12, askContact: true,
+    country: 'Россия', city: 'Москва', venue: 'Кафе на Покровке (демо-адрес)', language: 'ru', timezone: 'Europe/Moscow', priceType: 'free', durationMin: 120, capacity: 12, askContact: true,
     firstDate: day(5), repeatWeekly: 3 });
   meetings.create(fac, { title: 'Dialogue Flow evening (demo)', description: 'Demo meeting in English.', country: 'Таиланд', city: 'Чиангмай',
-    venue: 'Nimman, coworking (demo address)', language: 'en', timezone: 'Asia/Bangkok', priceType: 'paid', priceAmount: 300, currency: 'THB', priceNote: 'Оплата фасилитатору на месте (демо).', capacity: 2,
+    venue: 'Nimman, coworking (demo address)', language: 'en', timezone: 'Asia/Bangkok', priceType: 'paid', priceAmount: 300, currency: 'THB', durationMin: 90, priceNote: 'Оплата фасилитатору на месте (демо).', capacity: 2,
     firstDate: day(3, '18:30') });
   const firstDate = db.prepare('SELECT id FROM meeting_dates WHERE meeting_id = ? ORDER BY starts_at LIMIT 1').get(m1.id);
   await meetings.register(firstDate.id, { name: 'Иван (демо)', email: 'ivan.demo@example.org' }, 'http://localhost', 'ru');
@@ -79,6 +79,9 @@ async function ensure() {
     try {
       const r = await seed();
       if (!r.already) return r;
+      // Демо-примеры прежних версий: полный сценарий — длительность и цена платной встречи.
+      db.prepare('UPDATE meetings SET duration_min = 120 WHERE is_demo = 1 AND duration_min IS NULL').run();
+      db.prepare(`UPDATE meetings SET price_amount = 300, currency = 'THB' WHERE is_demo = 1 AND price_type = 'paid' AND (price_amount IS NULL OR currency = '')`).run();
       const now = new Date().toISOString();
       const ms = db.prepare('SELECT id, timezone FROM meetings WHERE is_demo = 1').all();
       let added = 0;

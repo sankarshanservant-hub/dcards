@@ -6,7 +6,7 @@ import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, roles
 import { langName } from './meetings.js';
 
 const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
-  ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['letters', 'Письма', 'Letters']];
+  ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters']];
 const tabs = (cur) => `<div class="chips" style="margin-bottom:18px">${TABS.map(([k, ru, en]) => `<a class="chip ${cur === k ? 'on' : ''}" href="${u('/admin' + (k ? '/' + k : ''))}">${esc(tt(ru, en))}</a>`).join('')}</div>`;
 const guard = (ctx) => {
   if (!session.user) { needLogin(ctx.main, tt('Раздел администратора.', 'Administrator section.')); return false; }
@@ -190,6 +190,23 @@ const SECTIONS = {
       <div class="list">${comments.map((c) => `<div class="comment"><header><b>${esc(c.author)}</b><a href="${u('/cards/' + c.code)}">${esc(c.code)}</a><span>${esc(fmtDate(c.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>${demoPill(c.isDemo)}
         <button class="linkbtn danger" type="button" data-del="${c.id}">${esc(tt('Удалить', 'Delete'))}</button></header><p>${esc(c.text)}</p></div>`).join('') || `<p class="empty">${esc(tt('Сообщений нет.', 'No messages.'))}</p>`}</div>`);
     sec.addEventListener('click', async (e) => { const d = e.target.closest('[data-del]'); if (!d) return; try { await api(`/api/comments/${d.dataset.del}`, { method: 'DELETE' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
+  },
+
+  async guide(ctx) {
+    const g = await api('/api/admin/guide');
+    if (!ctx.alive()) return;
+    const course = g.chapters.filter((c) => c.course);
+    const sec = shell(ctx, 'guide', tt('Руководство фасилитатора', 'Facilitator guide'), `
+      <p class="small muted">${esc(tt('Текст глав вводного курса берётся из документа Word (.docx): заголовки первого уровня «Глава 1…» — главы курса, остальные заголовки первого уровня (например, «Приложения») — дополнительное чтение. Файл хранится на сервере, не в открытом репозитории. Загрузка нового файла заменяет прежний; отметки «прочитано» у будущих фасилитаторов сохраняются.', 'Chapter texts come from a Word document (.docx): level-1 headings “Глава 1…” are course chapters, other level-1 headings (e.g. appendices) are extra reading. The file is stored on the server, not in the public repository. Uploading a new file replaces the old one; readers’ progress is kept.'))}</p>
+      <div class="card-ui flat stack">${g.uploadedAt ? `<b>${esc(g.title || tt('Руководство', 'Guide'))}</b><span class="small muted">${esc(tt('Загружено:', 'Uploaded:'))} ${esc(fmtDate(g.uploadedAt, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))} · ${esc(tt(`глав курса: ${course.length}`, `course chapters: ${course.length}`))}</span>
+        <ol class="small" style="margin:0;padding-left:1.3em">${g.chapters.map((c) => `<li>${esc(c.title)}${c.course ? '' : ` <span class="muted">(${esc(tt('дополнительно', 'extra'))})</span>`}</li>`).join('')}</ol>` : `<div class="notice">${esc(tt('Руководство ещё не загружено: будущие фасилитаторы видят только названия глав.', 'The guide is not uploaded yet: future facilitators only see chapter titles.'))}</div>`}
+        <form class="row" id="gf"><input type="file" name="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required aria-label="${esc(tt('Файл руководства', 'Guide file'))}" style="flex:1 1 240px"><button class="btn dark" type="submit">${esc(tt('Загрузить', 'Upload'))}</button></form>
+        <p class="form-error" id="gerr" role="alert"></p></div>`);
+    sec.querySelector('#gf').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try { const r = await api('/api/admin/guide', { method: 'POST', form: fd }); toast(tt(`Загружено глав: ${r.chapters}`, `Chapters loaded: ${r.chapters}`)); ctx.rerender(); } catch (x) { sec.querySelector('#gerr').textContent = errorText(x); }
+    });
   },
 
   async criteria(ctx) {

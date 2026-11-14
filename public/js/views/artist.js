@@ -29,24 +29,28 @@ export async function cabinet(ctx) {
   let data;
   try { data = await api('/api/artist/works'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const bySub = new Map();
-  for (const w of data.works) { if (!bySub.has(w.submissionId)) bySub.set(w.submissionId, []); bySub.get(w.submissionId).push(w); }
-  ctx.main.innerHTML = `<section class="hero"><div class="wrap" style="padding-block:30px">
-      <div><p class="eyebrow">${esc(tt('Кабинет художника', 'Artist space'))}</p><h1>${esc(session.user.publicName)}</h1>
-      <p class="lead">${esc(tt('Каждая работа рассматривается отдельно и получает свой статус. При возврате вы увидите номера и расшифровку критериев.', 'Each work is reviewed separately and gets its own status. If a work is returned, you see the criteria numbers and their text.'))}</p>
-      <a class="btn yellow" href="${u('/artist/submit')}">${ic.plus} ${esc(tt('Подать работы', 'Submit works'))}</a></div></div></section>
-    <div class="wrap page stack">
-      <h2>${esc(tt('Мои работы', 'My works'))}</h2>
-      ${data.works.length ? [...bySub.entries()].map(([sid, ws]) => `<div class="stack" style="gap:8px"><p class="small muted" style="margin:6px 0 0">${esc(tt('Отправка', 'Submission'))} №${sid} · ${esc(tt('работ', 'works'))}: ${ws.length}</p>${ws.map(workCard).join('')}</div>`).join('')
-        : `<p class="empty">${esc(tt('Вы ещё не подавали работ.', 'You have not submitted any works yet.'))}</p>`}
-      <h2 style="margin-top:20px">${esc(tt('Мои опубликованные карты', 'My published cards'))}</h2>
+  // Порядок по полезности: «Нужно доработать» → «На рассмотрении» (и на обсуждении) → «В галерее» (карточки карт); отклонённые — ниже, свёрнуто.
+  // Одобренные работы показываются как опубликованные карты, без повторного списка.
+  const need = data.works.filter((w) => w.status === 'needs_changes');
+  const review = data.works.filter((w) => ['submitted', 'discussion'].includes(w.status));
+  const other = data.works.filter((w) => !['needs_changes', 'submitted', 'discussion', 'approved'].includes(w.status));
+  const group = (title, list, open = true) => (list.length ? `<section class="stack" style="gap:8px"><h2 style="margin:10px 0 0">${esc(title)} <span class="muted" style="font-size:1rem">· ${list.length}</span></h2>${list.map(workCard).join('')}</section>` : '');
+  ctx.main.innerHTML = `<div class="wrap page stack">
+    <div class="page-head"><h1>${esc(tt('Мои работы', 'My works'))}</h1><p class="sub">${esc(session.user.publicName)} · ${esc(tt('кабинет художника', 'artist space'))}</p></div>
+    <div class="row"><a class="btn yellow" href="${u('/artist/submit')}">${ic.plus} ${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a>
+      <span class="small muted" style="max-width:34em">${esc(tt('Каждая работа рассматривается отдельно. При возврате видны номера и расшифровка критериев.', 'Each work is reviewed separately. If returned, you see the criteria numbers and their text.'))}</span></div>
+    ${!data.works.length && !data.cards.length ? `<p class="empty">${esc(tt('Вы ещё не предлагали иллюстраций.', 'You have not suggested any illustrations yet.'))}</p>` : ''}
+    ${group(tt('Нужно доработать', 'Needs changes'), need)}
+    ${group(tt('На рассмотрении', 'Under review'), review)}
+      ${data.cards.length ? `<h2 style="margin:10px 0 0">${esc(tt('В галерее', 'In the gallery'))} <span class="muted" style="font-size:1rem">· ${data.cards.filter((c) => c.status === 'published').length}</span></h2>` : ''}
       <div class="my-cards" id="mycards">${data.cards.length ? data.cards.map((c) => `<article class="my-card" data-card="${esc(c.code)}">
           <div class="mc-head"><b>${esc(c.code)}</b> · <span>${c.status === 'published' ? esc(tt('В галерее', 'In the gallery')) : esc(tt('Снята с сайта', 'Removed from the site'))}</span>${c.pendingReplacement ? `<span class="small muted"> · ${esc(tt('новая версия на рассмотрении', 'new version in review'))}</span>` : ''}</div>
           <div class="mc-img"><img src="${esc(c.thumb)}" alt="${esc(c.code)}" loading="lazy"></div>
           ${c.status === 'published' ? `<div class="mc-actions"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/*" data-replace="${esc(c.code)}" hidden></label>
             <button class="linkbtn mc-remove" type="button" data-withdraw="${esc(c.code)}">${esc(tt('Убрать', 'Remove'))}</button></div>` : ''}
           <div class="mc-ask"></div>
-        </article>`).join('') : `<p class="empty">${esc(tt('Опубликованных карт пока нет.', 'No published cards yet.'))}</p>`}</div>
+        </article>`).join('') : ''}</div>
+      ${other.length ? `<details class="more card-ui flat"><summary>${esc(tt(`Отклонённые и прочие работы · ${other.length}`, `Declined and other works · ${other.length}`))}</summary><div class="stack" style="gap:8px;margin-top:8px">${other.map(workCard).join('')}</div></details>` : ''}
       <div id="ask"></div>
     </div>`;
   const ask = ctx.main.querySelector('#ask');
@@ -98,6 +102,11 @@ export function submit(ctx) {
       <div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 3`, `Step ${step} of 3`))}</span></div>
       ${stepsBar(step, 3)}
       ${step === 1 ? `<h1>${esc(tt('Условия публикации', 'Publication terms'))}</h1>
+        <div class="card-ui flat stack" style="gap:6px"><b>${esc(tt('Что понадобится', 'What you will need'))}</b>
+          <ul style="margin:0;padding-left:1.2em" class="small">
+            <li>${esc(tt('Файлы изображений: JPG, PNG, WebP или TIFF — до 60 МБ каждый, до 20 файлов за одну отправку.', 'Image files: JPG, PNG, WebP or TIFF — up to 60 MB each, up to 20 files per submission.'))}</li>
+            <li>${esc(tt('Согласие с условиями публикации — до загрузки файлов.', 'Agreement to the publication terms — before uploading.'))}</li>
+            <li>${esc(tt('Имя автора под картами берётся из профиля — его можно изменить там.', 'The artist name under the cards comes from your profile — you can change it there.'))}</li></ul></div>
         <p>${esc(tt('Публикация добровольная. Прочитайте короткое условие и отметьте галочку.', 'Publishing is voluntary. Read the short condition and tick the box.'))}</p>
         <label class="check card-ui flat"><input type="checkbox" id="terms" ${accepted ? 'checked' : ''}>
           <span>${esc(tt('Я принимаю условия публикации и разрешаю бесплатно показывать эту работу в галерее Dialogue Cards и в подборках для встреч Dialogue Flow. Использование работы в печатной колоде согласуется со мной отдельно.', 'I accept the publication terms and allow this work to be shown free of charge in the Dialogue Cards gallery and in selections for Dialogue Flow meetings. Use of the work in a printed deck will be agreed with me separately.'))}

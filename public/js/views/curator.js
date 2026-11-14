@@ -47,14 +47,16 @@ export async function review(ctx, id) {
   const VOTE = { approve: tt('одобрить', 'approve'), return: tt('вернуть', 'return'), reject: tt('отклонить', 'decline') };
   ctx.main.innerHTML = `<div class="wrap page stack">
     <a href="${u('/curator')}" class="small">← ${esc(tt('Работы на рассмотрении', 'Works under review'))}</a>
+    <div class="page-head"><h1>${esc(tt('Работа', 'Work'))} №${w.id}</h1><p class="sub">${esc(w.artist)}</p></div>
     <div class="row" style="gap:8px">${statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}${w.kind === 'replacement' ? `<span class="pill navy">${esc(tt('Новая версия опубликованной карты', 'New version of a published card'))}</span>` : ''}</div>
-    <h1>${esc(w.artist)} · №${w.id}</h1>
+    <div class="review-layout"><div class="stack">
     ${compareA ? `<div class="seg ba-toggle" role="group" aria-label="${esc(tt('Сравнение версий', 'Compare versions'))}">
         <button type="button" class="on" data-ba="a" aria-pressed="true">${esc(tt('Было', 'Before'))}</button><button type="button" data-ba="b" aria-pressed="false">${esc(tt('Стало', 'After'))}</button></div>` : ''}
     <div class="compare same-scale ${compareA ? 'pair show-a' : ''}" id="cmp">
       ${compareA ? `<figure class="ba-a"><div class="frame"><img src="${esc(compareA.full)}" data-full="${esc(compareA.full)}" data-w="${compareA.width}" data-h="${compareA.height}" alt="${esc(compareA.label)}"></div><figcaption><b>${esc(tt('Было', 'Before'))}:</b> ${esc(compareA.label)}</figcaption></figure>` : ''}
       <figure class="ba-b"><div class="frame"><img src="${esc(cur.full)}" data-full="${esc(cur.full)}" data-w="${cur.width}" data-h="${cur.height}" alt=""></div><figcaption>${compareA ? `<b>${esc(tt('Стало', 'After'))}:</b> ` : ''}${esc(tt(`Новая версия (${cur.n})`, `New version (${cur.n})`))}${cur.note ? ' · ' + esc(cur.note) : ''}</figcaption></figure>
     </div>
+    </div><div class="decide stack">
     ${inReview ? `<form class="card-ui stack" id="df">
       <h2>${esc(tt('Решение', 'Decision'))}</h2>
       <div class="chips" id="acts">${[['approve', 'Одобрить и опубликовать', 'Approve and publish'], ['return', 'Вернуть на доработку', 'Return for changes'], ['reject', 'Отклонить', 'Decline']].map(([k, ru, en], i) => `<label class="chip ${i === 0 ? 'on' : ''}"><input type="radio" name="action" value="${k}" ${i === 0 ? 'checked' : ''} hidden>${esc(tt(ru, en))}</label>`).join('')}</div>
@@ -63,9 +65,9 @@ export async function review(ctx, id) {
         <label class="check"><input type="radio" name="rt" value="new"> <span><b>${esc(tt('Существенно новая карта', 'A substantially new card'))}</b> — ${esc(tt('новый номер и своё обсуждение, прежняя карта остаётся', 'new number and its own discussion; the old card stays'))}</span></label></fieldset>` : ''}
       <div id="crit-wrap" hidden><b>${esc(tt('Причины — критерии (обязательно хотя бы один)', 'Reasons — criteria (at least one is required)'))}</b>
         <div class="crit">${q.criteria.map((c) => `<label><input type="checkbox" name="crit" value="${c.number}"><span class="num">${c.number}</span><span>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временный текст', 'placeholder'))}</span>` : ''}</span></label>`).join('')}</div></div>
-      <label class="field">${esc(tt('Комментарий для художника', 'Comment for the artist'))} <span class="hint">${esc(tt('по желанию', 'optional'))}</span><textarea name="comment" maxlength="2000"></textarea></label>
+      <label class="field">${esc(tt('Комментарий для художника', 'Comment for the artist'))} <span class="hint" id="chint">${esc(tt('по желанию', 'optional'))}</span><textarea name="comment" maxlength="2000"></textarea></label>
       <p class="form-error" id="err" role="alert"></p>
-      <button class="btn dark" type="submit">${esc(tt('Принять решение', 'Make the decision'))}</button>
+      <button class="btn yellow" type="submit" id="dsubmit">${esc(tt('Опубликовать карту', 'Publish card'))}</button>
     </form>
     <div class="card-ui flat stack" id="disc"><h3>${esc(tt('Обсуждение с коллегами', 'Discussion with colleagues'))}</h3>
         ${w.status === 'submitted' ? `<p class="small muted" style="margin:0">${esc(tt('Сложную работу можно обсудить с коллегами: ваш вопрос появится в чате кураторов со ссылкой на эту работу.', 'A difficult work can be discussed with colleagues: your question appears in the curators’ chat with a link to this work.'))}</p>
@@ -77,6 +79,7 @@ export async function review(ctx, id) {
           <input type="text" id="vcomment" placeholder="${esc(tt('Комментарий к голосу', 'Comment on your vote'))}">`}
     </div>
 ` : `<div class="notice">${esc(tt('Решение по работе уже принято — см. историю.', 'A decision has been made — see the history.'))}${w.card ? ` <a href="${u('/cards/' + w.card.code)}">${esc(w.card.code)}</a>` : ''}</div>`}
+    </div></div>
     <h2>${esc(tt('История решений', 'Decision history'))}</h2>
     <div class="list">${w.history.map(historyRow).join('')}</div>
     ${w.targetCardOldVersions && w.targetCardOldVersions.length ? `<h3>${esc(tt('Прежние изображения карты', 'Previous images of the card'))}</h3><div class="cells">${w.targetCardOldVersions.map((v) => `<div class="cell"><div class="tile"><img src="${esc(v.thumb)}" alt=""></div><small>${esc(fmtDate(v.replacedAt))}</small></div>`).join('')}</div>` : ''}
@@ -94,6 +97,11 @@ export async function review(ctx, id) {
     df.querySelectorAll('#acts .chip').forEach((c) => c.classList.toggle('on', c.querySelector('input').checked));
     ctx.main.querySelector('#crit-wrap').hidden = a === 'approve';
     const rt = ctx.main.querySelector('#rtype'); if (rt) rt.hidden = a !== 'approve';
+    // Кнопка называет выбранное действие; решение применяется только по нажатию, не от смены переключателя.
+    const btn = ctx.main.querySelector('#dsubmit');
+    btn.textContent = a === 'approve' ? tt('Опубликовать карту', 'Publish card') : a === 'return' ? tt('Вернуть на доработку', 'Return for changes') : tt('Отклонить работу', 'Decline work');
+    btn.className = 'btn ' + (a === 'reject' ? 'danger' : 'yellow');
+    ctx.main.querySelector('#chint').textContent = a === 'approve' ? tt('по желанию', 'optional') : tt('Достаточно выбрать причины. Комментарий — по желанию.', 'Choosing the reasons is enough. A comment is optional.');
   };
   df.addEventListener('change', sync); sync();
   df.addEventListener('submit', async (e) => {

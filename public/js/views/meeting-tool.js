@@ -1,7 +1,7 @@
 // Инструмент встречи: подборка по QR/ссылке, без аккаунта. Выбор карты для обсуждения, раунды, случайная карта.
 import { t } from '../i18n.js';
 import { esc, tt, api, errorText, storage, visitorId, toast } from '../util.js';
-import { openViewer, refreshViewer, icons, notCountedText } from '../viewer.js';
+import { openViewer, refreshViewer, icons, notCountedText, demoSavedText } from '../viewer.js';
 import { ic, tileHtml, loading, failed } from '../ui.js';
 
 export async function collection(ctx, slug) {
@@ -64,21 +64,20 @@ export async function collection(ctx, slug) {
   }
   const redraw = () => { drawGrid(); drawBar(); refreshViewer(); };
   const collectionApi = {
-    isTest: col.isTest,
+    isTest: col.isTest, isDemo: col.isDemo,
     state: () => ({ choice: choiceIn(st.round), round: st.round }),
     countFor: (code) => st.counts[code],
     notCountedFor: (code) => (st.selections.find((x) => x.round === st.round && x.code === code) || {}).notCounted || null,
     async choose(code) {
+      // Ошибку отдаём просмотру карты: он покажет её у кнопки и даст повторить; успех объявляем только после ответа сервера.
       try {
         const r = await api(`/api/c/${slug}/select`, { method: 'POST', body: { visitorId: vid, code, round: st.round } });
         applyState(r);
-        toast(r.notCounted === 'own_card' ? notCountedText('own_card') : t('col.saved'));
-      } catch (e) { toast(errorText(e)); }
-      redraw();
+        toast(col.isDemo ? demoSavedText() : r.notCounted === 'own_card' ? notCountedText('own_card') : t('col.saved'));
+      } finally { redraw(); }
     },
     async cancel() {
-      try { applyState(await api(`/api/c/${slug}/unselect`, { method: 'POST', body: { visitorId: vid, round: st.round } })); toast(t('col.cancelled')); } catch (e) { toast(errorText(e)); }
-      redraw();
+      try { applyState(await api(`/api/c/${slug}/unselect`, { method: 'POST', body: { visitorId: vid, round: st.round } })); toast(t('col.cancelled')); } finally { redraw(); }
     },
   };
   const openAt = (i) => openViewer({ cards, index: i, mode: 'collection', collection: collectionApi, onClose: () => {} });
