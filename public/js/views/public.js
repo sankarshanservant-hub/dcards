@@ -157,6 +157,7 @@ export function facilitatorAbout(ctx) {
     <h2 style="margin:8px 0 0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
     <ol class="path">${steps.map(([t1, t2]) => `<li><b>${esc(t1)}</b><span>${esc(t2)}</span></li>`).join('')}</ol>
     <div><a class="btn yellow big" href="${u('/facilitator/apply')}">${esc(tt('Начать путь фасилитатора', 'Start the facilitator path'))}</a></div>
+    <p class="small" style="margin:0">${ic.book} <a href="${u('/guide/dialogue-flow-guide.docx')}" download>${esc(tt('Скачать руководство фасилитатора (Word)', 'Download the facilitator guide (Word)'))}</a> <span class="muted">${esc(tt('— можно прочитать заранее и поделиться.', '— read it in advance and share it.'))}</span></p>
     <p class="small muted" style="margin:6px 0 0">${esc(tt('Уже фасилитатор?', 'Already a facilitator?'))} <a href="${u('/facilitator')}">${esc(tt('Перейти в кабинет', 'Go to your space'))}</a></p>
   </div>`;
 }

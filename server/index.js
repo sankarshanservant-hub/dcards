@@ -328,6 +328,12 @@ const roomGuard = (req, res, next) => {
   if (!community.canRoom(room, req.has)) return bad(res, 'forbidden', 403);
   next();
 };
+// Руководство фасилитатора — открытое: скачать может любой.
+r.get('/guide/dialogue-flow-guide.docx', (req, res) => {
+  const f = guide.docxPath(); if (!f) return bad(res, 'not_found', 404);
+  res.set('Cache-Control', 'no-cache');
+  res.download(f, 'Dialogue Flow — руководство фасилитатора.docx');
+});
 r.get('/api/chats', auth.requireUser, (req, res) => res.json({ rooms: community.rooms(req.has, req.user.id, req.showDemo) }));
 r.get('/api/chats/:room', auth.requireUser, roomGuard, (req, res) => res.json({
   messages: community.chat(req.params.room, req.showDemo, { id: req.user.id, isAdmin: req.has('admin') }),
@@ -570,7 +576,7 @@ admin.patch('/users/:id', (req, res) => {
 });
 // Руководство фасилитатора (.docx) — текст глав вводного курса. Хранится в данных сервера, не в репозитории.
 const docUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
-admin.get('/guide', (req, res) => { const g = guide.load(); res.json({ uploadedAt: g ? g.uploadedAt : null, title: g ? g.title : '', chapters: g ? g.chapters.map((c) => ({ title: c.title, course: c.course, blocks: c.blocks.length })) : [] }); });
+admin.get('/guide', (req, res) => { const g = guide.load(); res.json({ uploadedAt: g ? g.uploadedAt : null, bundled: !!(g && g.bundled), title: g ? g.title : '', chapters: g ? g.chapters.map((c) => ({ title: c.title, course: c.course, blocks: c.blocks.length })) : [] }); });
 admin.post('/guide', (req, res, next) => (req.user.is_demo ? bad(res, 'demo_readonly', 403) : next()), docUpload.single('file'), (req, res) => {
   if (!req.file) return bad(res, 'file_required');
   out(res, guide.save(req.file.buffer, req.user.id), 201);

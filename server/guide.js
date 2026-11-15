@@ -1,4 +1,4 @@
-// «Руководство фасилитатора»: администратор загружает .docx, сервер извлекает главы и хранит их в DATA_DIR/guide.json.
+// «Руководство фасилитатора»: главы из .docx (исходный — в репозитории, новую версию загружает администратор → DATA_DIR/guide.json).
 // Текст руководства не хранится в открытом репозитории. Главы «Глава N…» — вводный курс; остальное (приложения) — дополнительное чтение.
 const fs = require('fs');
 const path = require('path');
@@ -54,12 +54,26 @@ function parseDocx(buf) {
   return out;
 }
 
-function load() { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return null; } }
+// Руководство открытое (решение владельца 15.11.2026): исходный .docx лежит в репозитории (server/data/guide.docx)
+// и подхватывается сам, пока администратор не загрузил новую версию. Загруженная версия хранится в DATA_DIR.
+const BUNDLED = path.join(__dirname, 'data', 'guide.docx');
+const UPLOADED = path.join(config.dataDir, 'guide.docx');
+let bundled;
+function load() {
+  try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { /* не загружали */ }
+  if (bundled === undefined) {
+    try { const g = parseDocx(fs.readFileSync(BUNDLED)); bundled = g.error ? null : { ...g, uploadedAt: null, bundled: true }; } catch { bundled = null; }
+  }
+  return bundled;
+}
+/** Файл для скачивания: загруженная администратором версия, иначе исходная из репозитория. */
+function docxPath() { return fs.existsSync(UPLOADED) ? UPLOADED : fs.existsSync(BUNDLED) ? BUNDLED : null; }
 function save(buf, byUserId) {
   const g = parseDocx(buf); if (g.error) return g;
   const data = { ...g, uploadedAt: new Date().toISOString(), uploadedBy: byUserId };
   fs.mkdirSync(path.dirname(FILE), { recursive: true });
   fs.writeFileSync(FILE, JSON.stringify(data));
+  fs.writeFileSync(UPLOADED, buf);
   return { ok: true, chapters: g.chapters.filter((c) => c.course).length, extra: g.chapters.filter((c) => !c.course).length };
 }
-module.exports = { parseDocx, load, save, readZipEntry };
+module.exports = { parseDocx, load, save, readZipEntry, docxPath };
