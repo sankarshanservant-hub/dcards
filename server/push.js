@@ -10,7 +10,7 @@ const community = require('./community');
 
 const config = require('./config');
 const DATA_DIR = config.dataDir;
-const SUBJECT = process.env.VAPID_SUBJECT || 'https://harekrishna.info/dialogue-cards/';
+const SUBJECT = process.env.VAPID_SUBJECT || (process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') + config.basePath + '/' : 'https://harekrishna.info/dialogue-cards/');
 const MODES = ['all', 'mentions', 'none'];
 const ROOM_TITLE = { general: 'Общий чат', curators: 'Чат кураторов', facilitators: 'Чат фасилитаторов' };
 
