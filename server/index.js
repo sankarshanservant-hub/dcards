@@ -342,7 +342,7 @@ r.get('/api/chats/:room/media', auth.requireUser, roomGuard, (req, res) => res.j
 r.get('/api/chats/:room/media/:kind(full|thumb)/:file', auth.requireUser, roomGuard, (req, res) => {
   const file = path.basename(req.params.file);
   if (!community.attachmentFile(req.params.room, file)) return bad(res, 'not_found', 404);
-  res.set('Cache-Control', 'private, max-age=86400');
+  res.set('Cache-Control', 'private, no-cache'); // всегда перепроверять: удалённое сообщение не должно оставаться видимым из кэша
   res.sendFile(path.join(CHAT_DIR, req.params.kind, file));
 });
 
