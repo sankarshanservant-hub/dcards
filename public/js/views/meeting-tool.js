@@ -2,7 +2,7 @@
 import { t } from '../i18n.js';
 import { esc, tt, api, errorText, storage, visitorId, toast } from '../util.js';
 import { openViewer, refreshViewer, icons, notCountedText, demoSavedText } from '../viewer.js';
-import { ic, tileHtml, loading, failed } from '../ui.js';
+import { tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
 export async function collection(ctx, slug) {
   loading(ctx.main);
@@ -32,7 +32,7 @@ export async function collection(ctx, slug) {
       <p class="eyebrow">${esc(t('col.badge'))}${col.isTest ? ` · <span class="pill demo">${esc(col.isDemo ? tt('демо', 'demo') : t('col.test'))}</span>` : ''}</p>
       <h1>${esc(col.title)}</h1>
       <div class="row between" style="margin-bottom:16px"><p class="muted" style="margin:0">${esc(t('col.hint'))}</p>
-        ${cards.length ? `<button class="btn dark sm" type="button" id="rnd">${ic.dice} ${esc(tt('Случайная карта', 'Random card'))}</button>` : ''}</div>
+        ${cards.length ? diceButtonHtml() : ''}</div>
       ${cards.length ? '<div class="grid" id="col-grid"></div>' : `<p class="empty">${esc(t('col.empty'))}</p>`}
       <p class="small muted" style="margin-top:22px;max-width:36em">${esc(t('col.saveNote'))}</p>
     </div>
@@ -82,8 +82,7 @@ export async function collection(ctx, slug) {
   };
   const openAt = (i) => openViewer({ cards, index: i, mode: 'collection', collection: collectionApi, onClose: () => {} });
   if (grid) grid.addEventListener('click', (e) => { const b = e.target.closest('.tile'); if (b) openAt(Number(b.dataset.i)); });
-  const rnd = ctx.main.querySelector('#rnd');
-  if (rnd) rnd.addEventListener('click', () => openAt(Math.floor(Math.random() * cards.length)));
+  wireDice(ctx.main.querySelector('#rnd'), () => openAt(Math.floor(Math.random() * cards.length)), ctx.alive);
   let asking = false;
   bar.addEventListener('click', (e) => {
     const open = e.target.closest('[data-open]');

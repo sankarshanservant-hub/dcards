@@ -1,14 +1,16 @@
 // Тексты под картой — в одном месте. Правьте здесь.
 //
 // QUESTION_FORMATS — панель «Вопросы» под открытой картой (галерея и подборка фасилитатора — один источник).
-//   Три формата предусмотрены; в меню показываются только те, у которых есть списки (lists).
-//   «Для себя» и «В группе» подключить, когда будут готовы вопросы: добавить lists — пункт появится сам.
-//   «В паре»: тексты владельца проекта (14.11.2026), порядок и формулировки — дословно, без нумерации.
+//   Три формата видны всегда. Пока у формата нет списков (lists: null), показывается честное состояние pending:
+//   «Для себя» — вопросы владелец ещё пришлёт; «Для группы» — групповой сценарий не утверждён.
+//   Когда тексты будут готовы — добавить lists (как у «Для двоих»), pending убрать.
+//   «Для двоих»: тексты владельца проекта (14.11.2026, подтверждены 15.11.2026), порядок и формулировки — дословно, без нумерации.
 export const QUESTION_FORMATS = [
-  { key: 'self', title: { ru: 'Для себя', en: 'On your own' }, lists: null },
+  { key: 'self', title: { ru: 'Для себя', en: 'For yourself' }, lists: null,
+    pending: { ru: 'Вопросы для самостоятельного размышления готовятся.', en: 'Questions for reflecting on your own are being prepared.' } },
   {
     key: 'pair',
-    title: { ru: 'В паре', en: 'In pairs' },
+    title: { ru: 'Для двоих', en: 'For two' },
     lists: [
       {
         key: 'partner',
@@ -52,26 +54,28 @@ export const QUESTION_FORMATS = [
       },
     ],
   },
-  { key: 'group', title: { ru: 'В группе', en: 'In a group' }, lists: null },
+  { key: 'group', title: { ru: 'Для группы', en: 'For a group' }, lists: null,
+    pending: { ru: 'Групповой сценарий готовится.', en: 'The group scenario is being prepared.' } },
 ];
 
 // START_GUIDES — «С чего начать?» (показывается под картой в общей галерее).
 // Тексты — из задания владельца (12.11.2026). hints — короткие подсказки внутри сценария.
+// {слово} в тексте — ссылка на вопросы этого сценария (15.11.2026: «воспользуйтесь списком вопросов»).
 export const START_GUIDES = [
   {
     key: 'self',
-    title: { ru: 'Для себя', en: 'On your own' },
+    title: { ru: 'Для себя', en: 'For yourself' },
     text: {
-      ru: 'Рассмотри карту. Заметь деталь, к которой возвращается взгляд. О чём она тебе напоминает? Можно просто подумать или записать пару слов для себя.',
-      en: 'Look at the card. Notice the detail your eyes keep coming back to. What does it remind you of? You can just think about it, or jot down a few words for yourself.',
+      ru: 'Рассмотри карту. Заметь деталь, к которой возвращается взгляд. О чём она тебе напоминает? Можно просто подумать, записать пару слов для себя или воспользоваться списком {вопросов}.',
+      en: 'Look at the card. Notice the detail your eyes keep coming back to. What does it remind you of? You can just think about it, jot down a few words for yourself or use the list of {questions}.',
     },
   },
   {
     key: 'pair',
-    title: { ru: 'Вдвоём', en: 'With someone' },
+    title: { ru: 'Для двоих', en: 'For two' },
     text: {
-      ru: 'Посмотрите на одну карту и по очереди расскажите, что каждый заметил.',
-      en: 'Look at one card together and take turns saying what each of you noticed.',
+      ru: 'Посмотрите на одну карту и по очереди расскажите, что каждый заметил. Чтобы начать разговор, воспользуйтесь списком {вопросов}.',
+      en: 'Look at one card together and take turns saying what each of you noticed. To get the conversation going, use the list of {questions}.',
     },
     choose: true, // в сценарии есть необязательное действие «Выбрать для обсуждения»
     hints: {
@@ -81,11 +85,11 @@ export const START_GUIDES = [
   },
   {
     key: 'group',
-    title: { ru: 'В группе', en: 'In a group' },
+    title: { ru: 'Для группы', en: 'For a group' },
     choose: true,
     text: {
-      ru: 'Покажите одну карту всем. Кто хочет, называет деталь или ассоциацию. Если чья-то мысль заинтересовала других, продолжите разговор с неё.',
-      en: 'Show one card to everyone. Whoever wants to names a detail or an association. If someone’s thought catches the others’ interest, carry the conversation on from there.',
+      ru: 'Покажите одну карту всем. Кто хочет, называет деталь или ассоциацию. Если чья-то мысль заинтересовала других, продолжите разговор с неё. Для разговора можно воспользоваться списком {вопросов}.',
+      en: 'Show one card to everyone. Whoever wants to names a detail or an association. If someone’s thought catches the others’ interest, carry the conversation on from there. You can also use the list of {questions}.',
     },
   },
 ];

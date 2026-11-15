@@ -1,5 +1,5 @@
-// Полноэкранный просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием,
-// листание свайпом и стрелками. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
+// Просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием, листание свайпом и стрелками.
+// «Карта / Вопросы» (переключатель и свайп), «На весь экран» (в том числе без Fullscreen API), экран разговора после выбора. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
 import { t, dateLabel, lang } from './i18n.js';
 import { esc, api, u, tt, toast, visitorId, errorText } from './util.js';
 import { QUESTION_FORMATS, START_GUIDES } from './content.js';
@@ -41,21 +41,29 @@ export function openViewer(opts) {
   const opener = document.activeElement;
   const root = document.getElementById('overlay-root');
   const el = document.createElement('div');
+  const withQ = opts.mode !== 'admin'; // вопросы — у карт галереи и подборки встречи
   el.className = `viewer viewer--${opts.mode}`;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', tt('Просмотр карты', 'Card view'));
   el.innerHTML = `
     <div class="viewer-stage" data-stage><img class="viewer-img" alt="" draggable="false" data-img></div>
-    <div class="viewer-top chrome">
+    <div class="viewer-top">
       <button class="icon-btn" type="button" data-close aria-label="${esc(t('viewer.close'))}">${icons.close}</button>
-      <span class="viewer-counter" data-counter></span>
-      <button class="icon-btn" type="button" data-info aria-label="${esc(t('viewer.info'))}" aria-expanded="false">${icons.info}</button>
+      <button class="icon-btn" type="button" data-unfull hidden aria-label="${esc(tt('Выйти из полноэкранного режима', 'Exit full screen'))}">${icons.collapse}</button>
+      ${withQ ? `<div class="vt-seg" role="tablist" aria-label="${esc(tt('Что показать', 'What to show'))}">
+        <button type="button" role="tab" data-view="card" aria-selected="true">${esc(tt('Карта', 'Card'))}</button>
+        <button type="button" role="tab" data-view="questions" aria-selected="false">${esc(tt('Вопросы', 'Questions'))}</button></div>` : '<span class="viewer-counter" data-counter></span>'}
+      <span class="vt-end">
+        <button class="full-btn" type="button" data-full><span aria-hidden="true">${icons.expand}</span><span class="fb-text">${esc(tt('На весь экран', 'Full screen'))}</span></button>
+        ${withQ ? '' : `<button class="icon-btn" type="button" data-info aria-label="${esc(t('viewer.info'))}" aria-expanded="false">${icons.info}</button>`}
+      </span>
     </div>
     <button class="viewer-nav viewer-nav--prev chrome" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
     <button class="viewer-nav viewer-nav--next chrome" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>
-    ${opts.mode !== 'admin' ? '<div class="viewer-bottom chrome" data-bottom></div>' : ''}
+    ${withQ ? '<div class="viewer-bottom chrome" data-bottom></div>' : ''}
     <div class="viewer-sheet" data-sheet hidden></div>
-    <section class="qpanel" data-qpanel hidden role="dialog" aria-modal="false" aria-labelledby="qp-title"></section>`;
+    ${withQ ? `<section class="qpanel" data-qpanel hidden aria-labelledby="qp-title" tabindex="-1"></section>` : ''}`;
   root.appendChild(el);
   document.body.classList.add('no-scroll');
 
@@ -68,11 +76,13 @@ export function openViewer(opts) {
 
   const z = { s: 1, x: 0, y: 0, fitW: 0, fitH: 0 };
   let index = opts.index;
-  let detailsCache = new Map();
-  // Сведения о карте с общим числом «Выбрали для обсуждения» (и выбран ли уже этот браузер/аккаунт в библиотеке).
+  const detailsCache = new Map();
+  // Сведения о карте с общим числом «Выбрали для разговора» (и выбрана ли уже карта этим браузером/аккаунтом в галерее).
   const fetchDetails = (code) => api(`/api/cards/${encodeURIComponent(code)}?visitor=${encodeURIComponent(visitorId())}`)
     .then((d) => { detailsCache.set(code, d); return d; });
 
+  // Режимы: view — 'card' | 'questions'; full — на весь экран; talk — экран выбранной карты (карты не листаются).
+  const mode = { view: 'card', full: false, nativeFull: false, talk: false };
   const state = {
     el, opts, opener,
     get code() { return opts.cards[index].code; },
@@ -88,6 +98,7 @@ export function openViewer(opts) {
   function layout() {
     const c = opts.cards[index];
     const W = stage.clientWidth; const H = stage.clientHeight;
+    if (!W || !H) return;
     const k = Math.min(W / c.width, H / c.height);
     z.fitW = Math.round(c.width * k); z.fitH = Math.round(c.height * k);
     img.style.width = `${z.fitW}px`; img.style.height = `${z.fitH}px`;
@@ -104,7 +115,6 @@ export function openViewer(opts) {
     img.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
     el.classList.toggle('is-zoomed', z.s > 1.01);
   }
-  // Увеличение вокруг точки (px, py) относительно центра сцены.
   function zoomTo(s, px, py, animate) {
     const ns = Math.min(5, Math.max(1, s));
     z.x = px - (px - z.x) * (ns / z.s); z.y = py - (py - z.y) * (ns / z.s); z.s = ns;
@@ -112,11 +122,14 @@ export function openViewer(opts) {
     clamp(); apply(animate);
   }
   const rel = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2]; };
+  // Листать карты можно только в обычном просмотре; на весь экран и в режиме разговора свайп переключает «Карта / Вопросы».
+  const canFlip = () => opts.cards.length > 1 && !mode.talk;
+  const swipeToQuestions = () => withQ && (mode.talk || mode.full || !canFlip());
 
   const pointers = new Map();
   let gesture = null; let lastTap = 0; let tapTimer = null;
   stage.addEventListener('pointerdown', (e) => {
-    stage.setPointerCapture(e.pointerId);
+    try { stage.setPointerCapture(e.pointerId); } catch { /* указатель уже отпущен */ }
     pointers.set(e.pointerId, [e.clientX, e.clientY]);
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -137,7 +150,7 @@ export function openViewer(opts) {
       const dx = e.clientX - gesture.sx; const dy = e.clientY - gesture.sy;
       if (Math.abs(dx) + Math.abs(dy) > 6) gesture.moved = true;
       if (z.s > 1.01) { z.x = gesture.x + dx; z.y = gesture.y + dy; clamp(); apply(false); }
-      else if (opts.cards.length > 1) { z.x = dx * 0.6; apply(false); } // лёгкий отклик на свайп
+      else if (swipeToQuestions() ? dx > 0 : canFlip()) { z.x = dx * 0.5; apply(false); } // лёгкий отклик на свайп
     }
   });
   const end = (e) => {
@@ -153,11 +166,13 @@ export function openViewer(opts) {
     const g = gesture; gesture = null;
     const dx = e.clientX - g.sx; const dy = e.clientY - g.sy;
     if (z.s <= 1.01 && g.moved) {
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2 && opts.cards.length > 1) { go(dx < 0 ? 1 : -1); return; }
+      const horiz = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2;
+      if (horiz && swipeToQuestions()) { z.x = 0; apply(true); if (dx > 0) setView('questions'); return; }
+      if (horiz && canFlip()) { go(dx < 0 ? 1 : -1); return; }
       z.x = 0; apply(true); return;
     }
     if (g.moved || e.type === 'pointercancel') return;
-    // касание: двойное — увеличить/уменьшить, одиночное — спрятать/показать элементы управления
+    // касание: двойное — увеличить/уменьшить, одиночное — спрятать/показать элементы управления (не на весь экран)
     const now = Date.now();
     if (now - lastTap < 300) {
       clearTimeout(tapTimer); lastTap = 0;
@@ -165,7 +180,7 @@ export function openViewer(opts) {
       zoomTo(z.s > 1.01 ? 1 : 2.5, px, py, true);
     } else {
       lastTap = now;
-      tapTimer = setTimeout(() => el.classList.toggle('chrome-hidden'), 280);
+      tapTimer = setTimeout(() => { if (!mode.full) el.classList.toggle('chrome-hidden'); }, 280);
     }
   };
   stage.addEventListener('pointerup', end);
@@ -179,37 +194,79 @@ export function openViewer(opts) {
   // ---------- содержимое ----------
   function show() {
     const c = opts.cards[index];
-    $('[data-counter]').textContent = opts.cards.length > 1 ? `${index + 1} / ${opts.cards.length}` : '';
-    $('[data-prev]').hidden = $('[data-next]').hidden = opts.cards.length < 2;
+    const counter = $('[data-counter]'); if (counter) counter.textContent = opts.cards.length > 1 ? `${index + 1} / ${opts.cards.length}` : '';
+    syncNav();
     img.src = c.thumb; // уже в кэше — показываем сразу, затем подменяем на полное изображение
     img.alt = c.code;
     const full = new Image();
     full.onload = () => { if (opts.cards[index] === c) img.src = c.full; };
     full.src = c.full;
-    // заранее загружаем соседние карты
     for (const d of [1, -1]) { const n = opts.cards[(index + d + opts.cards.length) % opts.cards.length]; if (n) new Image().src = n.full; }
     layout();
     renderBottom();
     if (!sheet.hidden) renderSheet();
     if (opts.onChange) opts.onChange(c.code);
   }
+  function syncNav() { $('[data-prev]').hidden = $('[data-next]').hidden = !canFlip(); }
   function go(d) {
+    if (!canFlip()) return;
     index = (index + d + opts.cards.length) % opts.cards.length;
     history.replaceState({ viewer: true }, '', cardUrl(opts.cards[index].code));
     show();
   }
 
-  // Блок под картой зависит от того, откуда её открыли: подборка встречи — выбор и «Вопросы для собеседника»;
-  // общая библиотека — «С чего начать?» и вход в обсуждение. Свёрнутые блоки не перекрывают картинку:
-  // высота панели освобождается под ней, и картинка подстраивается.
+  // ---------- режимы: «Карта / Вопросы», на весь экран, разговор ----------
+  const wide = () => window.matchMedia('(min-width: 980px)').matches;
+  function setView(v, focus = true) {
+    if (!withQ) return;
+    if (v === 'questions' && !qpanel.innerHTML) renderQ();
+    mode.view = v;
+    el.classList.toggle('view-questions', v === 'questions');
+    el.classList.toggle('q-side', v === 'questions' && wide());
+    qpanel.hidden = v !== 'questions';
+    el.querySelectorAll('.vt-seg [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+    if (v === 'questions') {
+      restoreScroll();
+      if (focus) qpanel.focus({ preventScroll: true });
+    } else if (focus) { const b = el.querySelector('.vt-seg [data-view="card"]'); if (b) b.focus({ preventScroll: true }); }
+    requestAnimationFrame(syncBottom);
+  }
+  async function setFull(on) {
+    mode.full = on;
+    el.classList.toggle('is-full', on);
+    el.classList.remove('chrome-hidden');
+    $('[data-full]').hidden = on; $('[data-unfull]').hidden = !on; $('[data-close]').hidden = false;
+    // Системный полноэкранный режим, где он есть; без него (iPhone) — тот же вид внутри приложения.
+    if (on && !document.fullscreenElement && el.requestFullscreen && document.fullscreenEnabled) {
+      try { await el.requestFullscreen({ navigationUI: 'hide' }); mode.nativeFull = true; } catch { mode.nativeFull = false; }
+    } else if (!on && document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* уже вышли */ }
+      mode.nativeFull = false;
+    }
+    syncNav();
+    requestAnimationFrame(syncBottom);
+    (on ? $('[data-unfull]') : $('[data-full]')).focus({ preventScroll: true });
+  }
+  const onFsChange = () => { if (!document.fullscreenElement && mode.full && mode.nativeFull) { mode.nativeFull = false; setFull(false); } };
+  document.addEventListener('fullscreenchange', onFsChange);
+  function setTalk(on) {
+    mode.talk = on;
+    el.classList.toggle('is-talk', on);
+    syncNav(); renderBottom();
+  }
+
+  // Блок под картой: подборка встречи — выбор и вопросы; общая галерея — «С чего начать?», вопросы, комментарии.
   const ui = { guide: false, guideKey: null, saving: false, err: '', share: '', note: '' };
   const L = (o) => (o && (o[lang] || o.ru)) || '';
   const chev = (open) => `<span class="chev ${open ? 'open' : ''}" aria-hidden="true">▾</span>`;
   const countLine = (info) => (info && typeof info.selectedCount === 'number'
     ? `<p class="choose-count">${esc(info.selectedCount ? t('viewer.selectedCount', { n: info.selectedCount }) : t('viewer.selectedNone'))}</p>` : '');
-  const shareRow = () => `<div class="vb-row"><button class="link-btn" type="button" data-copy>${esc(tt('Поделиться картой', 'Share card'))}</button>
-      ${ui.share ? '' : ''}</div>${ui.share ? `<label class="field small">${esc(tt('Скопируйте ссылку:', 'Copy the link:'))}<input type="text" readonly value="${esc(ui.share)}" data-share-url></label>` : ''}`;
-  const questionsBtn = (primary) => `<button class="btn ${primary ? 'yellow wide' : 'light sm'}" type="button" data-questions aria-haspopup="dialog">${icons.questions} ${esc(primary ? tt('Вопросы для собеседника', 'Questions for your partner') : tt('Вопросы', 'Questions'))}</button>`;
+  const shareField = () => (ui.share ? `<label class="field small">${esc(tt('Скопируйте ссылку:', 'Copy the link:'))}<input type="text" readonly value="${esc(ui.share)}" data-share-url></label>` : '');
+  const linkBtn = (attr, ru, en) => `<button class="link-btn" type="button" ${attr}>${esc(tt(ru, en))}</button>`;
+  const questionsBtn = (primary) => `<button class="btn ${primary ? 'yellow wide' : 'light sm'}" type="button" data-questions>${icons.questions}<span>${esc(primary && opts.mode === 'collection' ? tt('Вопросы для собеседника', 'Questions for your partner') : tt('Вопросы', 'Questions'))}</span></button>`;
+  const talkBadge = () => `<div class="talk-badge">${icons.check}<span>${esc(tt('Ваша карта для разговора', 'Your card for the conversation'))}</span></div>`;
+  // «вопросов» в инструкции сценария — ссылка на вопросы этого сценария.
+  const guideText = (g) => esc(L(g.text)).replace(/\{([^}]+)\}/g, (m, w) => `<a href="#questions" class="q-link" data-q-open="${g.key}">${w}</a>`);
   function renderBottom() {
     if (!bottom) return;
     const c = opts.cards[index];
@@ -218,94 +275,136 @@ export function openViewer(opts) {
     if (opts.mode === 'collection' && opts.collection) {
       const { choice } = opts.collection.state();
       const chosen = choice === c.code;
+      if (!chosen && mode.talk) { mode.talk = false; el.classList.remove('is-talk'); syncNav(); }
       const nc = opts.collection.notCountedFor ? opts.collection.notCountedFor(c.code) : null;
-      bottom.innerHTML = chosen ? `
-        <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>
-          <button class="link-btn" type="button" data-cancel>${esc(t('viewer.cancel'))}</button></div>
-        ${opts.collection.isTest ? `<p class="viewer-count">${esc(opts.collection.isDemo ? demoSavedText() : t('viewer.testNoCount'))}</p>` : nc ? `<p class="viewer-count">${esc(notCountedText(nc))}</p>` : ''}
+      const note = chosen ? (opts.collection.isTest ? (opts.collection.isDemo ? demoSavedText() : t('viewer.testNoCount')) : nc ? notCountedText(nc) : '') : '';
+      bottom.innerHTML = chosen && mode.talk ? `
+        ${talkBadge()}
         ${questionsBtn(true)}
-        ${shareRow()}${countLine(info)}`
+        <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}</div>
+        ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}`
+      : chosen ? `
+        <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>${linkBtn('data-talk', 'Открыть экран разговора', 'Open conversation view')}</div>
+        ${questionsBtn(true)}
+        <div class="vb-row">${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
+        ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}${countLine(info)}`
       : `
         <button class="btn yellow wide" type="button" data-choose ${ui.saving ? 'disabled aria-busy="true"' : ''}>${esc(ui.saving ? tt('Сохраняем…', 'Saving…') : t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}
-        <div class="vb-row">${questionsBtn(false)}<button class="link-btn" type="button" data-copy>${esc(tt('Поделиться картой', 'Share card'))}</button></div>
-        ${ui.share ? `<label class="field small">${esc(tt('Скопируйте ссылку:', 'Copy the link:'))}<input type="text" readonly value="${esc(ui.share)}" data-share-url></label>` : ''}
-        ${countLine(info)}`;
+        <div class="vb-row">${questionsBtn(false)}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
+        ${shareField()}${countLine(info)}`;
     } else if (opts.mode === 'library') {
-      const g = START_GUIDES.find((x) => x.key === ui.guideKey);
-      bottom.innerHTML = `
-        <div class="vb-panel">
-          <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('С чего начать?', 'Where to start?'))}<small>${esc(tt('Для себя, вдвоём или в группе — выберите подходящий вариант', 'On your own, with someone or in a group — pick what suits you'))}</small></span>${chev(ui.guide)}</button>
-          ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>
-            ${g ? `<div class="vb-guide"><p>${esc(L(g.text))}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}
-              ${g.choose ? libChoiceHtml(info) : ''}</div>` : ''}</div>` : ''}
-        </div>
-        <div class="vb-actions">${questionsBtn(false).replace('light sm', 'light sm')}<a class="btn light sm" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Комментарии', 'Comments'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a></div>
-        <div class="vb-row"><button class="link-btn" type="button" data-copy>${esc(tt('Поделиться картой', 'Share card'))}</button>${countLine(info).replace('<p class="choose-count">', '<p class="choose-count" style="text-align:right">')}</div>
-        ${ui.share ? `<label class="field small">${esc(tt('Скопируйте ссылку:', 'Copy the link:'))}<input type="text" readonly value="${esc(ui.share)}" data-share-url></label>` : ''}`;
+      if (mode.talk && info && !info.chosenByMe) { mode.talk = false; el.classList.remove('is-talk'); syncNav(); }
+      if (mode.talk) {
+        bottom.innerHTML = `${talkBadge()}${questionsBtn(true)}
+          <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-lib-unchoose', t('viewer.cancel'), t('viewer.cancel'))}<a class="link-btn" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Комментарии', 'Comments'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a></div>
+          ${ui.note ? `<p class="vb-note">${esc(ui.note)}</p>` : ''}`;
+      } else {
+        const g = START_GUIDES.find((x) => x.key === ui.guideKey);
+        bottom.innerHTML = `
+          <div class="vb-panel">
+            <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('С чего начать?', 'Where to start?'))}</span>${chev(ui.guide)}</button>
+            ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>
+              ${g ? `<div class="vb-guide"><p>${guideText(g)}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}
+                ${g.choose ? libChoiceHtml(info) : ''}</div>` : ''}</div>` : ''}
+          </div>
+          <div class="vb-actions">${questionsBtn(false)}<a class="btn light sm" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Комментарии', 'Comments'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a></div>
+          <div class="vb-row">${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}${countLine(info).replace('<p class="choose-count">', '<p class="choose-count" style="text-align:right">')}</div>
+          ${shareField()}`;
+      }
     }
     syncBottom();
   }
-  // Необязательный выбор для обсуждения в галерее (внутри «Вдвоём» и «В группе»): сохранение → «Выбрано для обсуждения».
+  // Необязательный выбор для обсуждения в галерее (внутри «Для двоих» и «Для группы»).
   function libChoiceHtml(info) {
     if (!info) return '';
-    if (info.chosenByMe) return `<div class="vb-choice"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div><button class="link-btn" type="button" data-lib-unchoose>${esc(t('viewer.cancel'))}</button></div>${ui.note ? `<p class="vb-note">${esc(ui.note)}</p>` : ''}`;
+    if (info.chosenByMe) return `<div class="vb-choice"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>${linkBtn('data-talk', 'Открыть экран разговора', 'Open conversation view')}<button class="link-btn" type="button" data-lib-unchoose>${esc(t('viewer.cancel'))}</button></div>${ui.note ? `<p class="vb-note">${esc(ui.note)}</p>` : ''}`;
     return `<div class="vb-choice"><button class="btn yellow sm" type="button" data-lib-choose ${ui.saving ? 'disabled aria-busy="true"' : ''}>${esc(ui.saving ? tt('Сохраняем…', 'Saving…') : t('viewer.choose'))}</button><span class="vb-note">${esc(tt('по желанию', 'optional'))}</span></div>${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : ''}`;
   }
 
-  // ---------- панель «Вопросы»: формат → (в паре) два списка с переключателем ----------
-  const qs = { open: false, format: null, list: 'partner', returnTo: null };
-  const formats = () => QUESTION_FORMATS.filter((f) => f.lists && f.lists.length);
+  // ---------- «Вопросы»: три сценария, у «Для двоих» два списка; выбор, списки и прокрутка сохраняются ----------
+  const QKEY = 'dc_questions';
+  const saved = (() => { try { return JSON.parse(sessionStorage.getItem(QKEY) || '{}'); } catch { return {}; } })();
+  const qs = {
+    format: QUESTION_FORMATS.some((f) => f.key === saved.format) ? saved.format : (opts.mode === 'collection' ? 'pair' : null),
+    list: saved.list || 'partner',
+    scroll: {},
+  };
+  const persistQ = () => { try { sessionStorage.setItem(QKEY, JSON.stringify({ format: qs.format, list: qs.list })); } catch { /* без сохранения */ } };
   const FORMAT_ICON = { self: icons.user, pair: icons.pair, group: icons.group };
+  const scrollKey = () => `${qs.format}:${qs.list}`;
+  const qBody = () => qpanel && qpanel.querySelector('.qpanel-body');
+  function saveScroll() { const b = qBody(); if (b && qs.format && !qpanel.hidden) qs.scroll[scrollKey()] = b.scrollTop; }
+  function restoreScroll() { const b = qBody(); if (b) b.scrollTop = qs.scroll[scrollKey()] || 0; }
   function renderQ() {
-    const f = formats().find((x) => x.key === qs.format);
-    const head = (title, back) => `<div class="qpanel-head">${back ? `<button class="btn light sm" type="button" data-q-back>${icons.prev} ${esc(tt('Назад', 'Back'))}</button>` : ''}
-        <h2 id="qp-title">${esc(title)}</h2><button class="icon-btn" type="button" data-q-close aria-label="${esc(tt('Закрыть вопросы', 'Close questions'))}">${icons.close}</button></div>`;
-    if (!f) {
-      qpanel.innerHTML = head(tt('Вопросы', 'Questions'), false) + `<div class="qpanel-body"><p class="vb-note" style="margin:0">${esc(tt('Выберите формат разговора', 'Choose how you are talking'))}</p>
-        <div class="qformats">${formats().map((x) => `<button class="qformat" type="button" data-q-format="${x.key}"><span class="ic">${FORMAT_ICON[x.key] || ''}</span>${esc(L(x.title))}</button>`).join('')}</div></div>`;
-      return;
+    if (!qpanel) return;
+    const f = QUESTION_FORMATS.find((x) => x.key === qs.format);
+    let body;
+    if (!f) body = `<p class="vb-note">${esc(tt('Выберите, как вы разговариваете: для себя, вдвоём или в группе.', 'Choose how you are talking: on your own, as two or in a group.'))}</p>`;
+    else if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}</p>`;
+    else {
+      const cur = f.lists.find((x) => x.key === qs.list) || f.lists[0];
+      qs.list = cur.key;
+      body = `<div class="qtabs" role="tablist" aria-label="${esc(tt('Кто задаёт вопросы', 'Who asks'))}">${f.lists.map((x) => `<button type="button" role="tab" id="qt-${x.key}" aria-controls="ql" aria-selected="${x.key === cur.key}" tabindex="${x.key === cur.key ? 0 : -1}" data-q-list="${x.key}">${x.key === 'partner' ? icons.user : icons.cardHand}<span>${esc(L(x.title))}</span></button>`).join('')}</div>
+        <ul class="qlist" id="ql" role="tabpanel" aria-labelledby="qt-${cur.key}">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>`;
     }
-    const cur = f.lists.find((x) => x.key === qs.list) || f.lists[0];
-    qpanel.innerHTML = head(L(f.title), true) + `<div class="qpanel-body">
-      <div class="qtabs" role="tablist" aria-label="${esc(tt('Кто задаёт вопросы', 'Who asks'))}">${f.lists.map((x) => `<button type="button" role="tab" id="qt-${x.key}" aria-controls="ql" aria-selected="${x.key === cur.key}" tabindex="${x.key === cur.key ? 0 : -1}" data-q-list="${x.key}">${x.key === 'partner' ? icons.user : icons.cardHand}<span>${esc(L(x.title))}</span></button>`).join('')}</div>
-      <ul class="qlist" id="ql" role="tabpanel" aria-labelledby="qt-${cur.key}">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div>`;
+    qpanel.innerHTML = `<div class="qpanel-head"><h2 id="qp-title">${esc(tt('Вопросы', 'Questions'))}</h2>
+        <button class="btn light sm q-back" type="button" data-q-card>${icons.prev}<span>${esc(tt('К карте', 'Back to card'))}</span></button></div>
+      <div class="qpanel-body">
+        <div class="seg qfmt" role="radiogroup" aria-label="${esc(tt('Сценарий', 'Scenario'))}">${QUESTION_FORMATS.map((x) => `<button type="button" role="radio" data-q-format="${x.key}" aria-checked="${x.key === qs.format}" tabindex="${x.key === (qs.format || 'pair') ? 0 : -1}"><span class="ic">${FORMAT_ICON[x.key] || ''}</span>${esc(L(x.title))}</button>`).join('')}</div>
+        ${body}
+      </div>`;
   }
-  function openQ(format = null, from = null) {
-    qs.open = true; qs.format = format; qs.returnTo = from;
-    if (format && !formats().some((x) => x.key === format)) qs.format = null;
-    if (!qs.list) qs.list = 'partner';
-    qpanel.hidden = false; renderQ();
-    (qpanel.querySelector('[data-q-format], [role="tab"][aria-selected="true"], [data-q-close]') || qpanel).focus();
+  function openQ(format) {
+    if (!withQ) return;
+    saveScroll();
+    if (format && format !== qs.format) { qs.format = format; persistQ(); renderQ(); }
+    else if (!qpanel.innerHTML) renderQ();
+    setView('questions');
   }
-  function closeQ() {
-    qs.open = false; qpanel.hidden = true; qpanel.innerHTML = '';
-    const back = qs.returnTo && document.contains(qs.returnTo) ? qs.returnTo : bottom && bottom.querySelector('[data-questions]');
-    if (back) back.focus({ preventScroll: true });
+  if (qpanel) {
+    qpanel.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.hasAttribute('data-q-card')) return setView('card');
+      if (b.dataset.qFormat) { saveScroll(); qs.format = b.dataset.qFormat; persistQ(); renderQ(); restoreScroll(); qpanel.querySelector(`[data-q-format="${qs.format}"]`).focus(); return; }
+      if (b.dataset.qList) { saveScroll(); qs.list = b.dataset.qList; persistQ(); renderQ(); restoreScroll(); qpanel.querySelector(`#qt-${qs.list}`).focus(); }
+    });
+    qpanel.addEventListener('keydown', (e) => {
+      const tab = e.target.closest('[role="tab"], [role="radio"]');
+      if (tab && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        e.preventDefault(); e.stopPropagation();
+        const group = [...tab.parentElement.querySelectorAll('button')]; const i = group.indexOf(tab);
+        group[(i + (e.key === 'ArrowRight' ? 1 : -1) + group.length) % group.length].click();
+      }
+    });
+    // Свайп влево по вопросам — обратно к карте; вертикальный жест прокручивает список (touch-action: pan-y).
+    let qsw = null;
+    qpanel.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') qsw = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+    qpanel.addEventListener('pointercancel', () => { qsw = null; });
+    qpanel.addEventListener('pointerup', (e) => {
+      if (!qsw || qsw.id !== e.pointerId) return;
+      const dx = e.clientX - qsw.x; const dy = e.clientY - qsw.y; qsw = null;
+      if (dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.2 && !el.classList.contains('q-side')) setView('card');
+    });
+    qpanel.addEventListener('scroll', () => saveScroll(), true);
   }
-  qpanel.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    if (b.hasAttribute('data-q-close')) return closeQ();
-    if (b.hasAttribute('data-q-back')) { qs.format = null; renderQ(); (qpanel.querySelector('[data-q-format]') || qpanel).focus(); return; }
-    if (b.dataset.qFormat) { qs.format = b.dataset.qFormat; qs.list = 'partner'; renderQ(); (qpanel.querySelector('[role="tab"][aria-selected="true"]') || qpanel).focus(); return; }
-    if (b.dataset.qList) { qs.list = b.dataset.qList; renderQ(); qpanel.querySelector(`#qt-${qs.list}`).focus(); }
+  el.querySelectorAll('.vt-seg [data-view]').forEach((b) => b.addEventListener('click', () => (b.dataset.view === 'questions' ? openQ() : setView('card'))));
+  const seg = el.querySelector('.vt-seg');
+  if (seg) seg.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault(); e.stopPropagation();
+    const v = mode.view === 'card' ? 'questions' : 'card';
+    if (v === 'questions') openQ(); else setView('card', false);
+    seg.querySelector(`[data-view="${v}"]`).focus();
   });
-  qpanel.addEventListener('keydown', (e) => {
-    const tab = e.target.closest('[role="tab"]');
-    if (tab && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-      e.preventDefault(); e.stopPropagation();
-      const tabs = [...qpanel.querySelectorAll('[role="tab"]')]; const i = tabs.indexOf(tab);
-      const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
-      qs.list = n.dataset.qList; renderQ(); qpanel.querySelector(`#qt-${qs.list}`).focus();
-    }
-  });
+
   // Высота панели снизу → место для картинки (картинка всегда целиком и не под панелью).
   function syncBottom() {
-    if (!bottom) return;
-    el.style.setProperty('--bottom', `${bottom.offsetHeight + 4}px`);
+    const hideBottom = !bottom || mode.full || (mode.view === 'questions' && !el.classList.contains('q-side'));
+    el.style.setProperty('--bottom', hideBottom ? '0px' : `${bottom.offsetHeight + 4}px`);
     layout();
   }
-  // «Поделиться картой»: системное меню, где оно есть; иначе копирование. Отмена — без сообщений; не вышло — показываем саму ссылку.
+  // «Поделиться картой»: системное меню, где оно есть; иначе копирование. Отмена — без сообщений; не вышло — показываем ссылку.
   async function copyLink() {
     const url = location.href;
     if (navigator.share) {
@@ -314,35 +413,54 @@ export function openViewer(opts) {
     try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
     catch { ui.share = url; renderBottom(); const inp = bottom.querySelector('[data-share-url]'); if (inp) { inp.focus(); inp.select(); } }
   }
+  const focusIn = (sel) => { const n = bottom && bottom.querySelector(sel); if (n) n.focus({ preventScroll: true }); };
   if (bottom) {
     bottom.addEventListener('click', async (e) => {
+      const ql = e.target.closest('a[data-q-open]');
+      if (ql) { e.preventDefault(); openQ(ql.dataset.qOpen); return; }
       const a = e.target.closest('a[data-discuss]');
       if (a) { e.preventDefault(); const href = a.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
       const btn = e.target.closest('button'); if (!btn) return;
-      if (btn.hasAttribute('data-questions')) { const chosenHere = opts.mode === 'collection' && opts.collection && opts.collection.state().choice === opts.cards[index].code; openQ(chosenHere ? 'pair' : null, btn); return; }
-      if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); return; }
-      if (btn.dataset.g) { ui.guideKey = btn.dataset.g; ui.err = ''; renderBottom(); const r = bottom.querySelector(`[data-g="${ui.guideKey}"]`); if (r) r.focus(); return; }
+      if (btn.hasAttribute('data-questions')) { openQ(qs.format || (opts.mode === 'collection' ? 'pair' : ui.guideKey)); return; }
+      if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); focusIn('[data-guide]'); return; }
+      if (btn.dataset.g) { ui.guideKey = btn.dataset.g; ui.err = ''; renderBottom(); focusIn(`[data-g="${ui.guideKey}"]`); return; }
       if (btn.hasAttribute('data-copy')) { copyLink(); return; }
+      if (btn.hasAttribute('data-info')) { toggleSheet(); return; }
+      if (btn.hasAttribute('data-other')) { setTalk(false); focusIn('[data-choose], [data-guide]'); return; }
+      if (btn.hasAttribute('data-talk')) { setTalk(true); focusIn('[data-questions]'); return; }
       if (btn.hasAttribute('data-lib-choose') || btn.hasAttribute('data-lib-unchoose')) {
         const code = opts.cards[index].code; const on = btn.hasAttribute('data-lib-choose');
+        if (ui.saving) return;
         ui.saving = on; ui.err = ''; ui.note = ''; renderBottom();
+        let ok = false;
         try {
           const r = await api(`/api/cards/${encodeURIComponent(code)}/${on ? 'choose' : 'unchoose'}`, { method: 'POST', body: { visitorId: visitorId() } });
           detailsCache.set(code, { ...(detailsCache.get(code) || {}), chosenByMe: r.chosen, selectedCount: r.selectedCount });
           ui.note = on && r.notCounted ? (r.notCounted === 'demo' ? demoSavedText() : notCountedText(r.notCounted)) : '';
           if (!on) toast(t('col.cancelled'));
+          ok = true;
         } catch (x) { ui.err = `${errorText(x)} ${tt('Попробуйте ещё раз.', 'Please try again.')}`; }
-        ui.saving = false; renderBottom(); if (!sheet.hidden) renderSheet();
+        ui.saving = false;
+        if (ok && on) setTalk(true); else if (ok) setTalk(false); else renderBottom();
+        if (!sheet.hidden) renderSheet();
+        focusIn(ok && on ? '[data-questions]' : '[data-lib-choose], [data-guide]');
         return;
       }
-      if (btn.hasAttribute('data-choose')) { ui.saving = true; ui.err = ''; renderBottom(); }
+      if (btn.hasAttribute('data-choose')) { if (ui.saving) return; ui.saving = true; ui.err = ''; renderBottom(); }
       btn.disabled = true;
+      let ok = false;
       try {
         if (btn.hasAttribute('data-choose')) await opts.collection.choose(opts.cards[index].code);
         if (btn.hasAttribute('data-cancel')) await opts.collection.cancel();
         detailsCache.delete(opts.cards[index].code); // общее число изменилось — сведения перечитаем
+        ok = true;
       } catch (x) { ui.err = `${errorText(x)} ${tt('Выбор не сохранён — попробуйте ещё раз.', 'The choice was not saved — please try again.')}`; }
-      finally { ui.saving = false; renderBottom(); if (!sheet.hidden) renderSheet(); }
+      ui.saving = false;
+      // Успех выбора — экран разговора; отмена — обычный просмотр.
+      if (ok && btn.hasAttribute('data-choose')) setTalk(true);
+      else if (ok) setTalk(false); else renderBottom();
+      if (!sheet.hidden) renderSheet();
+      focusIn(ok && btn.hasAttribute('data-choose') ? '[data-questions]' : '[data-choose]');
     });
   }
 
@@ -376,14 +494,16 @@ export function openViewer(opts) {
   function toggleSheet(force) {
     const open = force ?? sheet.hidden;
     sheet.hidden = !open;
-    $('[data-info]').setAttribute('aria-expanded', String(open));
+    const ib = $('[data-info]'); if (ib && ib.closest('.viewer-top')) ib.setAttribute('aria-expanded', String(open));
     el.classList.toggle('sheet-open', open);
     if (open) renderSheet();
   }
 
   // ---------- кнопки и клавиатура ----------
   $('[data-close]').addEventListener('click', () => history.back());
-  $('[data-info]').addEventListener('click', () => toggleSheet());
+  $('[data-full]').addEventListener('click', () => setFull(true));
+  $('[data-unfull]').addEventListener('click', () => setFull(false));
+  const topInfo = el.querySelector('.viewer-top [data-info]'); if (topInfo) topInfo.addEventListener('click', () => toggleSheet());
   $('[data-prev]').addEventListener('click', () => go(-1));
   $('[data-next]').addEventListener('click', () => go(1));
   sheet.addEventListener('click', (e) => {
@@ -392,21 +512,34 @@ export function openViewer(opts) {
     toggleSheet(false);
   });
   const onKey = (e) => {
-    if (qs.open) { if (e.key === 'Escape') { e.preventDefault(); closeQ(); } return; }
-    if (e.key === 'Escape') { if (!sheet.hidden) toggleSheet(false); else history.back(); }
-    else if (e.key === 'ArrowRight') go(1);
+    const inQ = mode.view === 'questions' && qpanel && qpanel.contains(document.activeElement);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (!sheet.hidden) toggleSheet(false);
+      else if (mode.view === 'questions') setView('card');
+      else if (mode.full) setFull(false);
+      else history.back();
+      return;
+    }
+    if (inQ || e.target.closest('.vt-seg') || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.key === 'ArrowRight') go(1);
     else if (e.key === 'ArrowLeft') go(-1);
     else if (e.key === 'i') toggleSheet();
+    else if (e.key === 'f') setFull(!mode.full);
   };
-  const onResize = () => (bottom ? syncBottom() : layout());
+  const onResize = () => { if (mode.view === 'questions') el.classList.toggle('q-side', wide()); syncBottom(); };
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
   state.cleanup = () => {
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('fullscreenchange', onFsChange);
     window.removeEventListener('resize', onResize);
     clearTimeout(tapTimer);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   };
 
+  // Открыли выбранную карту подборки («К выбранной карте») — сразу экран разговора.
+  if (opts.mode === 'collection' && opts.collection && opts.collection.state().choice === opts.cards[index].code) { mode.talk = true; el.classList.add('is-talk'); }
   requestAnimationFrame(() => { el.classList.add('is-open'); show(); $('[data-close]').focus({ preventScroll: true }); });
   return state;
 }
@@ -432,7 +565,8 @@ export const icons = {
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
   x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>',
-  questions: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M9.8 8.6a2.3 2.3 0 1 1 3 2.2c-.6.2-.8.6-.8 1.2M12 13.9v.01"/></svg>',
+  questions: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.4a2.8 2.8 0 1 1 3.9 2.6c-.8.3-1.2.9-1.2 1.7v.6"/><path d="M12 17.1v.01"/></svg>',
+  collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h6V4M20 14h-6v6M10 10L4 4M14 14l6 6"/></svg>',
   user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
   pair: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 20c0-3 2.6-5 5.5-5s5.5 2 5.5 5M13.5 15.3c.9-.4 1.9-.6 3-.6 2.6 0 5 1.8 5 4.6"/></svg>',
   group: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.3"/><circle cx="19" cy="10" r="2.3"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5M1.5 19c0-2.2 1.6-3.8 3.6-3.8M22.5 19c0-2.2-1.6-3.8-3.6-3.8"/></svg>',

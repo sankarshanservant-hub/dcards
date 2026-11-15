@@ -1,7 +1,7 @@
 import { monthLabel } from '../i18n.js';
 import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js';
 import { openViewer } from '../viewer.js';
-import { session, ic, tileHtml, loading, failed } from '../ui.js';
+import { session, ic, tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
 const openFromQuery = (cards, openAt) => {
   const code = new URL(location.href).searchParams.get('card');
@@ -61,12 +61,13 @@ export async function library(ctx) {
   ctx.main.innerHTML = `<div class="wrap page">
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted">${esc(tt(`${cards.length} карт · новые сверху · нажмите на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
-      <button class="btn dark sm" type="button" id="rnd">${ic.dice} ${esc(tt('Случайная карта', 'Random card'))}</button></div>
+      ${diceButtonHtml()}</div>
     ${cards.length ? groups.map((g) => `<h2 class="month-title">${esc(g.label)}</h2><div class="grid">${g.items.map(([c, i]) => tileHtml(c, i)).join('')}</div>`).join('') : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
   </div>`;
   const openAt = (i) => openViewer({ cards, index: i, mode: 'library' });
   ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => openAt(Number(b.dataset.i))));
-  ctx.main.querySelector('#rnd').addEventListener('click', () => cards.length && openAt(Math.floor(Math.random() * cards.length)));
+  // Случайное открытие — только просмотр: счётчик выборов не меняется.
+  wireDice(ctx.main.querySelector('#rnd'), () => cards.length && openAt(Math.floor(Math.random() * cards.length)), ctx.alive);
   openFromQuery(cards, openAt);
 }
 
@@ -121,12 +122,12 @@ export async function cardPage(ctx, code) {
 // Просмотр галереи и поиск встреч — без входа и без профиля; имя и email просят только при записи на встречу.
 export function start(ctx) {
   const big = [
-    ['/library', ic.cards, 'Смотреть карты', 'View cards', 'Откройте галерею и рассмотрите любую карту', 'Open the gallery and look at any card', 'yellow'],
+    ['/library', ic.cards, 'Смотреть карты', 'View cards', 'Выбери карту, начни диалог.', 'Pick a card, start a dialogue.', 'yellow'],
     ['/meetings', ic.calendar, 'Найти встречу', 'Find a meeting', 'Посмотрите, где проходят ближайшие встречи Dialogue Flow', 'See where the next Dialogue Flow meetings are held', 'navy'],
   ];
   const more = [
     ['/artist/submit', ic.picPlus, 'Предложить иллюстрацию', 'Suggest an illustration', 'Отправьте свою работу кураторам', 'Send your work to the curators'],
-    ['/facilitator/about', ic.people, 'Стать фасилитатором', 'Become a facilitator', 'Узнайте, как проводить встречи Dialogue Flow', 'Find out how to host Dialogue Flow meetings'],
+    ['/facilitator/about', ic.people, 'Провести встречу', 'Host a meeting', 'Узнайте, как проводить встречи Dialogue Flow', 'Find out how to host Dialogue Flow meetings'],
     ['/curator/apply', ic.picCheck, 'Стать куратором', 'Become a curator', 'Подайте заявку, чтобы помогать отбирать работы для галереи', 'Apply to help choose works for the gallery'],
   ];
   ctx.main.innerHTML = `<div class="wrap page stack">
@@ -152,6 +153,7 @@ export function facilitatorAbout(ctx) {
     <div class="page-head"><h1>${esc(tt('Проводите встречи Dialogue Flow в своём городе', 'Host Dialogue Flow meetings in your city'))}</h1></div>
     <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого разговора. Вы познакомите участников с форматом и предложите им выбрать карту. С неё начнётся разговор, а дальше участники смогут говорить о том, что им интересно.', 'Bring people together for a real conversation. You introduce the format and invite everyone to choose a card. The conversation starts from it, and then participants can talk about whatever interests them.'))}</p>
     <p class="callout">${esc(tt('Предварительная подготовка не требуется.', 'No prior training is needed.'))}</p>
+    <p class="muted" style="margin:0">${esc(tt('Фасилитатор — человек, который проводит встречу и помогает участникам начать диалог.', 'A facilitator is the person who hosts the meeting and helps participants start a dialogue.'))}</p>
     <h2 style="margin:8px 0 0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
     <ol class="path">${steps.map(([t1, t2]) => `<li><b>${esc(t1)}</b><span>${esc(t2)}</span></li>`).join('')}</ol>
     <div><a class="btn yellow big" href="${u('/facilitator/apply')}">${esc(tt('Начать путь фасилитатора', 'Start the facilitator path'))}</a></div>

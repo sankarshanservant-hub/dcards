@@ -94,7 +94,7 @@ window.dcNavigate = navigate;
 
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
-  if (!a || a.target || a.hasAttribute('download') || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  if (e.defaultPrevented || !a || a.target || a.hasAttribute('download') || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
   const url = new URL(a.href, location.href);
   if (url.origin !== location.origin || !url.pathname.startsWith(BASE + '/') && url.pathname !== BASE) return;
   const p = url.pathname.slice(BASE.length);
@@ -156,14 +156,6 @@ document.getElementById('theme').addEventListener('click', () => {
   try { localStorage.setItem('dc_theme', next); } catch { /* без сохранения — тема до перезагрузки */ }
   drawThemeBtn();
 });
-// Пока человек не выбрал тему сам, она следует за системной.
-try {
-  matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
-    let saved = null; try { saved = localStorage.getItem('dc_theme'); } catch { /* */ }
-    if (saved) return;
-    document.documentElement.setAttribute('data-theme', e.matches ? 'light' : 'dark'); drawThemeBtn();
-  });
-} catch { /* старые браузеры */ }
 document.getElementById('lang').addEventListener('click', () => { setLang(lang === 'ru' ? 'en' : 'ru'); if (isViewerOpen()) history.back(); render(); });
 document.getElementById('burger').addEventListener('click', openMenu);
 document.getElementById('demo-pill').addEventListener('click', openMenu);

@@ -6,10 +6,11 @@ export const hasRole = (...roles) => !!session.user && (session.user.roles.inclu
 
 const P = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 export const ic = {
+  question: P('<circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.4a2.8 2.8 0 1 1 3.9 2.6c-.8.3-1.2.9-1.2 1.7v.6"/><circle cx="12" cy="17" r=".6"/>'),
   cards: P('<rect x="4" y="3" width="11" height="16" rx="2"/><path d="M17 6l3 1-4 14-7-2"/>'),
   calendar: P('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
   brush: P('<path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h4"/>'),
-  people: P('<circle cx="7.5" cy="7.5" r="2.8"/><circle cx="16.5" cy="7.5" r="2.8"/><path d="M2.5 19c0-3 2.2-5.2 5-5.2s5 2.2 5 5.2"/><path d="M14 14.1c.8-.2 1.6-.3 2.5-.3 2.8 0 5 2.2 5 5.2"/>'),
+  people: P('<circle cx="7" cy="7" r="3.2"/><circle cx="17" cy="7" r="3.2"/><path d="M1.5 20.5c0-3.4 2.4-6 5.5-6s5.5 2.6 5.5 6"/><path d="M11.5 20.5c0-3.4 2.4-6 5.5-6s5.5 2.6 5.5 6"/>'),
   check: P('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   shield: P('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>'),
   chat: P('<path d="M4 5h16v11H9l-5 4z"/>'),
@@ -20,14 +21,14 @@ export const ic = {
   menu: P('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   close: P('<path d="M6 6l12 12M18 6L6 18"/>'),
   plus: P('<path d="M12 5v14M5 12h14"/>'),
-  dice: P('<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r="1.2"/><circle cx="15" cy="15" r="1.2"/><circle cx="15" cy="9" r="1.2"/><circle cx="9" cy="15" r="1.2"/>'),
+  dice: P('<rect x="3.5" y="3.5" width="17" height="17" rx="4.2" class="die-body"/><circle cx="8.6" cy="8.6" r="1.5" class="pip"/><circle cx="15.4" cy="15.4" r="1.5" class="pip"/><circle cx="15.4" cy="8.6" r="1.5" class="pip"/><circle cx="8.6" cy="15.4" r="1.5" class="pip"/><circle cx="12" cy="12" r="1.5" class="pip"/>'),
   expand: P('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   x: P('<path d="M7 7l10 10M17 7L7 17"/>'),
   sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'),
   globe: P('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>'),
   book: P('<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-6M20 4v14h-6"/>'),
-  picPlus: P('<rect x="2.5" y="7" width="12.5" height="14.5" rx="2"/><path d="M2.5 18l3.5-3.5 3 3 2-2 4 4"/><circle cx="10.5" cy="11.5" r="1.3"/><path d="M19.5 2.5v6M16.5 5.5h6"/>'),
-  picCheck: P('<rect x="2.5" y="7" width="12.5" height="14.5" rx="2"/><path d="M2.5 18l3.5-3.5 3 3 2-2 4 4"/><circle cx="10.5" cy="11.5" r="1.3"/><path d="M16.5 5.2l2.1 2.1 3.9-4.3"/>'),
+  picPlus: P('<rect x="1.8" y="6" width="12.4" height="15.5" rx="2"/><path d="M1.8 18l3.6-3.6 3 3 2-2 3.8 3.8"/><circle cx="9.8" cy="10.8" r="1.4"/><path d="M19.4 2.2v8M15.4 6.2h8"/>'),
+  picCheck: P('<rect x="1.8" y="6" width="12.4" height="15.5" rx="2"/><path d="M1.8 18l3.6-3.6 3 3 2-2 3.8 3.8"/><circle cx="9.8" cy="10.8" r="1.4"/><path d="M16 6.3l2.4 2.5 4.6-5.3"/>'),
   chats: P('<path d="M3 4h12v8H8l-4 3z"/><path d="M9 15v1h8l4 3v-11h-3"/>'),
   arrow: P('<path d="M5 12h14M13 6l6 6-6 6"/>'),
 };
@@ -148,4 +149,17 @@ export function showQr(slug, title, url) {
     try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); } catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), url); }
   });
   el.querySelector('.qr-close').focus();
+}
+
+// «Случайная карта»: одна кнопка с жёлтым кубиком. Кубик коротко поворачивается только по нажатию (без вращения в ожидании),
+// затем вызывается fn. Повторные нажатия во время поворота игнорируются; при reduced motion — сразу.
+export const diceButtonHtml = (id = 'rnd') => `<button class="btn dark sm dice-btn" type="button" id="${id}"><span class="die">${ic.dice}</span>${esc(tt('Случайная карта', 'Random card'))}</button>`;
+export function wireDice(btn, fn, alive = () => true) {
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (btn.dataset.rolling) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { fn(); return; }
+    btn.dataset.rolling = '1'; btn.classList.add('rolling');
+    setTimeout(() => { btn.classList.remove('rolling'); delete btn.dataset.rolling; if (alive()) fn(); }, 420);
+  });
 }

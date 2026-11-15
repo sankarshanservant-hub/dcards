@@ -1,10 +1,9 @@
-// Тема до первой отрисовки (без вспышки другой темы). Явный выбор человека — в localStorage 'dc_theme';
-// пока его нет — системная тема устройства; если её не определить — тёмная.
+// Тема до первой отрисовки (без вспышки другой темы). По умолчанию — всегда тёмная, независимо от системной.
+// Светлую человек включает сам; явный выбор хранится в localStorage 'dc_theme'. Прежние версии сохраняли туда
+// только нажатие на переключатель (системная тема не записывалась), поэтому сохранённое значение — осознанный выбор.
 (function () {
   var t = null;
   try { t = localStorage.getItem('dc_theme'); } catch (e) { /* хранилище недоступно */ }
-  if (t !== 'light' && t !== 'dark') {
-    t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
-  }
+  if (t !== 'light' && t !== 'dark') t = 'dark';
   document.documentElement.setAttribute('data-theme', t);
 })();
