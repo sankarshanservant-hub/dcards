@@ -308,7 +308,8 @@ addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 // Единый счётчик «Выбрали для обсуждения»: выбор в подборке не идёт в счёт, если карту выбрал её автор или демо-роль.
 addColumn('meetings', 'lat', 'REAL');                   // точка места на карте (подтверждена фасилитатором)
 addColumn('meetings', 'lng', 'REAL');
-addColumn('meetings', 'duration_min', 'INTEGER');       // продолжительность (мин); у старых встреч — пусто, не выдумываем
+addColumn('meetings', 'duration_min', 'INTEGER');
+addColumn('meetings', 'df_format', "TEXT NOT NULL DEFAULT 'standalone'"); // 'standalone' — встреча Dialogue Flow; 'part' — Dialogue Flow в программе другого события       // продолжительность (мин); у старых встреч — пусто, не выдумываем
 addColumn('meetings', 'price_amount', 'REAL');          // стоимость участия с человека (платная встреча)
 addColumn('meetings', 'currency', "TEXT NOT NULL DEFAULT ''"); // ISO 4217, например THB
 // Запросы фасилитаторов на готовую печатную колоду — для команды проекта.

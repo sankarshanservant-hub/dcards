@@ -37,7 +37,7 @@ function dateOut(d, m) {
 function meetingOut(m, { withDates = false, includePast = false } = {}) {
   const out = {
     id: m.id, title: m.title, description: m.description, country: m.country, city: m.city, venue: m.venue,
-    language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, durationMin: m.duration_min || null, lat: m.lat ?? null, lng: m.lng ?? null, priceAmount: m.price_type === 'paid' ? m.price_amount : null, currency: m.price_type === 'paid' ? m.currency : '', capacity: m.capacity,
+    language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, durationMin: m.duration_min || null, format: m.df_format === 'part' ? 'part' : 'standalone', lat: m.lat ?? null, lng: m.lng ?? null, priceAmount: m.price_type === 'paid' ? m.price_amount : null, currency: m.price_type === 'paid' ? m.currency : '', capacity: m.capacity,
     askContact: !!m.ask_contact, status: m.status, removedReason: m.removed_reason, isDemo: !!m.is_demo,
     facilitator: userName(m.facilitator_id), facilitatorId: m.facilitator_id, createdAt: m.created_at,
   };
@@ -168,6 +168,7 @@ function parseMeeting(body) {
     price_note: String(body.priceNote || '').trim().slice(0, 300),
     price_amount: body.priceType === 'paid' ? Number(String(body.priceAmount ?? '').replace(',', '.')) : null,
     currency: body.priceType === 'paid' ? String(body.currency || '').trim().toUpperCase().slice(0, 3) : '',
+    df_format: body.format === 'part' ? 'part' : 'standalone',
     duration_min: body.durationMin === '' || body.durationMin == null ? null : Math.round(Number(body.durationMin)),
     lat: body.lat === '' || body.lat == null ? null : Number(body.lat),
     lng: body.lng === '' || body.lng == null ? null : Number(body.lng),
@@ -210,8 +211,8 @@ function create(user, body) {
   const p = parseMeeting(body); if (p.error) return p;
   const ds = expandDates(body, p.m.timezone); if (ds.error) return ds;
   const id = db.transaction(() => {
-    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, duration_min, lat, lng, capacity, ask_contact, is_demo)
-      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @duration_min, @lat, @lng, @capacity, @ask_contact, @is_demo)`)
+    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, duration_min, df_format, lat, lng, capacity, ask_contact, is_demo)
+      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @duration_min, @df_format, @lat, @lng, @capacity, @ask_contact, @is_demo)`)
       .run({ ...p.m, fid: user.id, is_demo: user.is_demo ? 1 : 0 });
     const ins = db.prepare('INSERT INTO meeting_dates (meeting_id, starts_at, local_time, capacity) VALUES (?, ?, ?, ?)');
     for (const d of ds.dates) ins.run(info.lastInsertRowid, d.utc, d.local, p.m.capacity);
@@ -228,7 +229,7 @@ function update(meetingId, body) {
     for (const d of fut) { const utc = zonedToUtc(d.local_time, p.m.timezone); if (utc) db.prepare('UPDATE meeting_dates SET starts_at = ? WHERE id = ?').run(utc, d.id); }
   }
   db.prepare(`UPDATE meetings SET title=@title, description=@description, country=@country, city=@city, venue=@venue, language=@language,
-    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, duration_min=@duration_min, lat=@lat, lng=@lng, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
+    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, duration_min=@duration_min, df_format=@df_format, lat=@lat, lng=@lng, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
   return { ok: true };
 }
 function addDates(meetingId, body) {

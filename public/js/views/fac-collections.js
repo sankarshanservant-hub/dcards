@@ -1,3 +1,4 @@
+import { lang } from '../i18n.js';
 // Подборки фасилитатора: «Мои подборки» → редактор одной подборки → окно выбора карт → «Готово» → ссылка и QR.
 import { esc, tt, u, api, errorText, toast, ruPlural } from '../util.js';
 import { openViewer, icons } from '../viewer.js';
@@ -9,6 +10,13 @@ const cardsWord = (n) => tt(`${n} ${ruPlural(n, 'карта', 'карты', 'к�
 const stack = (covers) => `<span class="cstack" aria-hidden="true">${covers.length ? covers.map((t) => `<img src="${esc(t)}" alt="" loading="lazy">`).join('') : `<span class="cstack-empty">${ic.plus}</span>`}</span>`;
 
 // ---------- Мои подборки ----------
+// Статистика подборки: «Открывали подборку» — уникальные сохранённые идентификаторы браузера (повторное открытие не прибавляет),
+// «Выборов карт для обсуждения» — число выборов (одну карту могли выбрать несколько участников).
+const num = (n) => Number(n || 0).toLocaleString(lang === 'en' ? 'en' : 'ru');
+const colStats = (c) => [tt(`Карт в подборке: ${num(c.cardCount)}`, `Cards in the selection: ${num(c.cardCount)}`),
+  tt(`Открывали подборку: ${num(c.visitors)}`, `Selection opened: ${num(c.visitors)}`),
+  tt(`Выборов карт для обсуждения: ${num(c.selections)}`, `Cards chosen for discussion: ${num(c.selections)}`)].join(' · ');
+
 export async function list(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Подборки фасилитатора.', 'Facilitator selections.'));
   if (!hasRole('facilitator')) return noRole(ctx.main, tt('фасилитатор', 'facilitator'));
@@ -19,14 +27,14 @@ export async function list(ctx) {
   ctx.main.innerHTML = `<div class="wrap page stack">
     <a class="small" href="${u('/facilitator')}">← ${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</a>
     <div class="page-head"><h1>${esc(tt('Мои подборки', 'My selections'))}</h1>
-      <p class="sub">${esc(tt('До 40 карт из галереи. Участники открывают подборку по ссылке или QR-коду без регистрации; ссылка показывает актуальный состав.', 'Up to 40 cards from the gallery. Participants open a selection via link or QR code without signing up; the link always shows the current cards.'))}</p></div>
+      <p class="sub">${esc(tt('До 40 карт из галереи. Участники открывают подборку по ссылке или QR-коду без регистрации; по этой ссылке участники всегда увидят актуальный состав подборки.', 'Up to 40 cards from the gallery. Participants open a selection via link or QR code without signing up; the link always shows the current cards.'))}</p></div>
     <form class="card-ui flat form" id="newcol" style="padding:14px"><label class="field" for="newcol-title">${esc(tt('Название новой подборки', 'New selection title'))}</label>
       <div class="row"><input id="newcol-title" type="text" name="title" class="grow" maxlength="120" placeholder="${esc(tt('например, «Встреча 20 ноября»', 'e.g. “Meeting on 20 November”'))}" style="flex:1 1 220px"><button class="btn yellow" type="submit">${ic.plus} ${esc(tt('Создать подборку', 'Create selection'))}</button></div>
       <p class="field-error" id="newcol-err"></p></form>
     ${cols.collections.length ? `<div class="col-grid">${cols.collections.map((c) => `<article class="col-card">
         <a class="col-open" href="${u('/facilitator/c/' + c.id)}">${stack(c.covers || [])}<span class="col-meta"><b>${esc(c.title)} ${demoPill(c.isDemo)}</b>
           <span class="small muted">${c.cardCount ? esc(cardsWord(c.cardCount)) : esc(tt('Пока без карт — черновик', 'No cards yet — draft'))}${c.unavailableCount ? ` · <span class="warn">${esc(tt('недоступно: ', 'unavailable: '))}${c.unavailableCount}</span>` : ''}</span>
-          ${c.cardCount ? `<span class="small muted">${esc(tt(`Открывали подборку: ${c.visitors} · выборов в этой подборке: ${c.selections}`, `Opened: ${c.visitors} · choices in this selection: ${c.selections}`))}</span>` : ''}</span></a>
+          ${c.cardCount ? `<span class="small muted col-stats">${esc(colStats(c))}</span>` : ''}</span></a>
         ${c.cardCount ? `<button class="btn sm light" type="button" data-share="${esc(c.slug)}" data-title="${esc(c.title)}">${ic.qr} ${esc(tt('Поделиться', 'Share'))}</button>` : ''}
       </article>`).join('')}</div>` : `<p class="empty">${esc(tt('Подборок пока нет. Создайте первую — название можно изменить позже.', 'No selections yet. Create the first one — you can rename it later.'))}</p>`}
   </div>`;
@@ -71,7 +79,8 @@ export async function editor(ctx, id) {
         <button class="btn sm" type="button" id="qr">${ic.qr} ${esc(tt('QR на весь экран', 'Full-screen QR'))}</button>
         <a class="btn light sm" href="${u('/api/c/' + detail.slug + '/qr.png?size=1600&download=1')}" download>${esc(tt('Скачать QR', 'Download QR'))}</a>
         <a class="btn light sm" href="${u('/s/' + detail.slug)}" target="_blank" rel="noopener">${esc(tt('Открыть как участник', 'Open as participant'))} ↗</a></div>
-      <p class="small muted" style="margin:0">${esc(tt('Ссылка постоянная и показывает актуальный состав подборки. Срока действия у QR нет.', 'The link is permanent and shows the current cards. The QR code does not expire.'))} ${esc(tt(`Открывали подборку: ${detail.visitors}.`, `Opened: ${detail.visitors}.`))}</p>
+      <p class="small muted" style="margin:0">${esc(tt('По этой ссылке участники всегда увидят актуальный состав подборки', 'With this link participants will always see the current cards of the selection'))}. ${esc(tt('Срока действия у QR нет.', 'The QR code does not expire.'))}</p>
+      <p class="small col-stats" style="margin:0">${esc(colStats({ cardCount: codes.length, visitors: detail.visitors, selections: detail.selections }))}</p>
     </div>`;
   }
   function draw() {

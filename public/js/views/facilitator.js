@@ -38,8 +38,9 @@ function occurrences(meetings) {
   const now = new Date().toISOString();
   const all = meetings.filter((m) => m.status !== 'removed').flatMap((m) => m.dates.map((d) => ({ ...d, m })));
   return {
-    upcoming: all.filter((d) => d.status === 'active' && d.startsAt >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
-    past: all.filter((d) => d.startsAt < now && d.status !== 'cancelled').sort((a, b) => b.startsAt.localeCompare(a.startsAt)),
+    // Прошедшей считается встреча, которая закончилась (по окончанию, если продолжительность указана); идущая — ещё предстоящая.
+    upcoming: all.filter((d) => d.status === 'active' && (d.endsAt || d.startsAt) >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    past: all.filter((d) => (d.endsAt || d.startsAt) < now && d.status !== 'cancelled').sort((a, b) => b.startsAt.localeCompare(a.startsAt)),
   };
 }
 
@@ -56,7 +57,7 @@ export async function cabinet(ctx) {
     <div class="page-head"><h1>${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</h1><p class="sub">${esc(session.user.publicName)}</p></div>
     <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
       <a class="btn" href="${u('/facilitator/collections?new=1')}">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</a></div>
-    <div><a class="btn sm light" href="${u('/chats')}">${ic.chat} ${esc(tt('Написать в чат', 'Write in a chat'))}</a></div>
+    <div><a class="chat-link" href="${u('/chats')}">${ic.chat}<span>${esc(tt('Написать в чат', 'Write in a chat'))}</span></a></div>
     <div class="kpis three">
       ${kpi('/facilitator/collections', cols.collections.length, tt('Подборки', 'Selections'))}
       ${kpi('/facilitator/meetings?when=upcoming', occ.upcoming.length, tt('Предстоящие встречи', 'Upcoming meetings'))}
@@ -116,7 +117,7 @@ export async function meetingEditor(ctx, id) {
   } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   // Часовой пояс вручную не выбирается: его определяет сервер по городу встречи. Время вводится местное для этого города.
-  const blank = { title: '', description: '', country: '', city: '', venue: '', lat: null, lng: null, language: 'ru', timezone: '', priceType: 'free', priceAmount: null, currency: '', priceNote: '', durationMin: null, capacity: 12, askContact: false };
+  const blank = { title: '', description: '', country: '', city: '', venue: '', lat: null, lng: null, language: 'ru', timezone: '', priceType: 'free', priceAmount: null, currency: '', priceNote: '', durationMin: null, capacity: 12, askContact: false, format: 'standalone' };
   const v = m || (src ? { ...blank, ...pick(src, Object.keys(blank)) } : blank);
   const whenBlock = `<fieldset class="fs"><legend>${esc(tt('Когда', 'When'))}</legend>
       ${m ? '' : `${datePickerHtml('mf')}<span class="hint small muted" id="datehint"></span>
@@ -125,7 +126,14 @@ export async function meetingEditor(ctx, id) {
   const form = `<form class="card-ui form" id="mf" novalidate>
     ${m ? `<h2 style="margin:0">${esc(tt('Настройки встречи', 'Meeting settings'))}</h2><p class="small muted" style="margin:0">${esc(tt('Общие для всех дат. Записи и места считаются отдельно на каждой дате.', 'Shared by all dates. Sign-ups and seats are counted per date.'))}</p>` : ''}
     ${whenBlock}
-    <label class="field">${esc(tt('Название встречи', 'Meeting title'))} *<input type="text" name="title" required maxlength="140" value="${esc(v.title)}"></label>
+    <fieldset class="fs"><legend>${esc(tt('Формат', 'Format'))}</legend>
+      <div class="radio-list">
+        <label class="radio"><input type="radio" name="format" value="standalone" ${v.format !== 'part' ? 'checked' : ''}><span>${esc(tt('Встреча Dialogue Flow', 'A Dialogue Flow meeting'))}</span></label>
+        <label class="radio"><input type="radio" name="format" value="part" ${v.format === 'part' ? 'checked' : ''}><span>${esc(tt('Dialogue Flow — часть другого события', 'Dialogue Flow as part of another event'))} <span class="small muted">${esc(tt('на странице будет пометка «В программе — Dialogue Flow»', 'the page will say “Dialogue Flow is part of the programme”'))}</span></span></label>
+      </div></fieldset>
+    <label class="field" for="mf-title">${esc(tt('Название события', 'Event title'))} *</label>
+    <input id="mf-title" type="text" name="title" required maxlength="140" value="${esc(v.title)}" aria-describedby="mf-title-hint" style="margin-top:-6px">
+    <span class="small muted" id="mf-title-hint" style="margin-top:-6px">${esc(tt('Укажите название вашего события. Если Dialogue Flow — часть программы, расскажите об этом в описании', 'Enter the name of your event. If Dialogue Flow is part of the programme, say so in the description'))}</span>
     <label class="field">${esc(tt('Описание', 'Description'))} <span class="hint">${esc(tt('необязательно', 'optional'))}</span><textarea name="description" maxlength="3000">${esc(v.description)}</textarea></label>
     <fieldset class="fs"><legend>${esc(tt('Где', 'Where'))}</legend>
       <div class="cols-2"><label class="field">${esc(tt('Город встречи', 'Meeting city'))} *<input type="text" name="city" required maxlength="80" autocomplete="off" value="${esc(v.city)}"></label>
@@ -260,7 +268,7 @@ export async function meetingEditor(ctx, id) {
     const fd = Object.fromEntries(new FormData(mf).entries());
     const errEl = ctx.main.querySelector('#err');
     if (!m && !mf.firstDate.value) { errEl.textContent = tt('Выберите дату и время встречи.', 'Choose the meeting date and time.'); mf.querySelector('[data-pick-date]').focus(); return; }
-    if (!mf.title.value.trim()) { errEl.textContent = tt('Укажите название встречи.', 'Enter the meeting title.'); mf.title.focus(); return; }
+    if (!mf.title.value.trim()) { errEl.textContent = tt('Укажите название события.', 'Enter the event title.'); mf.title.focus(); return; }
     if (!(Number(mf.capacity.value) >= 1)) { errEl.textContent = tt('Укажите количество мест.', 'Enter the number of seats.'); mf.capacity.focus(); return; }
     if (!place) { ctx.main.querySelector('#err').textContent = tt('Уточните город встречи: по нему определяется местное время.', 'Specify the meeting city: the local time depends on it.'); placeBox.scrollIntoView({ block: 'center' }); return; }
     const body = { ...fd, priceAmount: mf.priceAmount.value, currency: mf.currency.value, city: place.city, country: place.country, placeId: place.placeId || '', sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: repeatCount(mf) };

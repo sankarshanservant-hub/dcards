@@ -22,20 +22,21 @@ const timeRange = (d, m) => timeInCity(d.endsAt ? `${hm(d.startsAt, m.timezone)}
 const yourTime = (d, m) => (myTz() !== m.timezone ? tt(`У вас в это время: ${fmtTz(d.startsAt, myTz(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`, `Your time: ${fmtTz(d.startsAt, myTz(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`) : '');
 const mapLink = (m) => (m.lat != null && m.lng != null ? `https://www.openstreetmap.org/?mlat=${m.lat}&mlon=${m.lng}#map=17/${m.lat}/${m.lng}` : m.venue ? `https://www.openstreetmap.org/search?query=${encodeURIComponent([m.venue, m.city, m.country].filter(Boolean).join(', '))}` : '');
 
+// Компактное превью: название; дата и время — отдельными строками; площадка и город; внизу язык и цена.
+// Фасилитатор, адрес, описание и число мест — на странице события; закрытую запись видно сразу.
+const row = (icon, text, cls = '') => `<div class="ev-line ${cls}"><span class="ev-ic">${icon}</span><span>${text}</span></div>`;
 export function eventRow(d) {
   const m = d.meeting;
-  const day = fmtTz(d.startsAt, m.timezone, { day: 'numeric' });
-  const mon = fmtTz(d.startsAt, m.timezone, { month: 'short' });
-  const wd = fmtTz(d.startsAt, m.timezone, { weekday: 'long' });
-  return `<a class="event" href="${u('/m/' + d.id)}"><div class="cal"><b>${esc(day)}</b><span>${esc(mon)}</span></div>
-    <div style="min-width:0"><b style="font:700 1.08rem/1.25 var(--font-head);display:block;overflow-wrap:anywhere">${esc(m.title)} ${demoPill(m.isDemo)}</b>
-      <dl>
-        <div><dt class="sr-only">${esc(tt('Когда', 'When'))}</dt><dd>${esc(wd)}, ${esc(timeRange(d, m))}</dd></div>
-        <div><dt class="sr-only">${esc(tt('Где', 'Where'))}</dt><dd>${esc([m.venue, m.city].filter(Boolean).join(', '))}</dd></div>
-        <div><dt>${esc(tt('Язык:', 'Language:'))}</dt><dd>${esc(langName(m.language))}</dd> · <dt class="sr-only">${esc(tt('Стоимость', 'Price'))}</dt><dd>${esc(priceText(m))}</dd></div>
-        <div><dt class="sr-only">${esc(tt('Места', 'Seats'))}</dt><dd class="${d.left ? '' : 'warn'}"><b>${esc(seatsText(d.left))}</b></dd></div>
-        <div><dt>${esc(tt('Фасилитатор:', 'Facilitator:'))}</dt><dd>${esc(m.facilitator)}</dd></div>
-      </dl></div></a>`;
+  const date = fmtTz(d.startsAt, m.timezone, { weekday: 'long', day: 'numeric', month: 'long' });
+  const closed = d.open === false || !d.left;
+  return `<a class="event ev" href="${u('/m/' + d.id)}">
+    <b class="ev-title">${esc(m.title)} ${demoPill(m.isDemo)}</b>
+    ${m.format === 'part' ? `<span class="ev-df">${esc(tt('В программе — Dialogue Flow', 'Dialogue Flow is part of the programme'))}</span>` : ''}
+    ${row(ic.calendar, esc(date))}
+    ${row(ic.clock, esc(timeRange(d, m)))}
+    ${row(ic.pin, esc([m.venue, m.city].filter(Boolean).join(', ')))}
+    <div class="ev-foot"><span>${esc(langName(m.language))}</span><span aria-hidden="true">·</span><span>${esc(priceText(m))}</span>${closed ? `<span class="pill red ev-closed">${esc(tt('Запись закрыта', 'Registration closed'))}</span>` : ''}</div>
+  </a>`;
 }
 
 // Поиск: сразу ближайшие опубликованные встречи по дате; над списком — фильтры страны и города (адреса /meetings/Страна/Город сохранены).
@@ -53,7 +54,7 @@ export async function search(ctx, country, city) {
   const filtered = !!country;
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><p class="eyebrow" style="margin:0">Dialogue Flow</p><h1>${esc(tt('Найти встречу', 'Find a meeting'))}</h1>
-      <p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))} <a href="${u('/library')}">${esc(tt('Смотреть карты', 'View cards'))}</a></p></div>
+      <p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))}</p></div>
     <details class="about-df card-ui flat"><summary><span class="grow">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="about-body">
         <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече. Начать просто: выберите иллюстрацию и расскажите, что вас в ней зацепило. Дальше можно говорить о том, что вам интересно.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet. It is easy to start: choose an illustration and say what caught your eye in it. From there you can talk about whatever interests you.'))}</p>
@@ -103,18 +104,18 @@ export async function datePage(ctx, id) {
     ctx.main.innerHTML = `<div class="wrap page"><div class="cols-2" style="align-items:start;gap:22px">
       <div class="stack">
         <a class="small" href="${u('/meetings/' + encodeURIComponent(m.country) + '/' + encodeURIComponent(m.city))}">← ${esc(tt('Встречи', 'Meetings'))}: ${esc(m.city)}</a>
-        <div class="page-head"><h1>${esc(m.title)} ${demoPill(m.isDemo)}</h1></div>
+        <div class="page-head"><h1>${esc(m.title)} ${demoPill(m.isDemo)}</h1>${m.format === 'part' ? `<span class="ev-df">${esc(tt('В программе — Dialogue Flow', 'Dialogue Flow is part of the programme'))}</span>` : ''}</div>
         ${m.status === 'unpublished' ? `<div class="notice">${esc(tt('Встреча скрыта: участники видят «Встреча недоступна». Эту страницу видите только вы.', 'The meeting is hidden: participants see “The meeting is unavailable”. Only you can see this page.'))}</div>` : ''}
         ${m.status === 'removed' ? `<div class="notice red">${esc(tt('Встреча снята с публикации администратором.', 'The meeting was taken down by an administrator.'))}</div>` : ''}
-        <div class="card-ui flat"><dl class="meeting-facts">
-          <div><dt>${esc(tt('Дата', 'Date'))}</dt><dd>${esc(dateStr)}</dd></div>
-          <div><dt>${esc(tt('Время', 'Time'))}</dt><dd>${esc(timeRange(d, m))}${d.endsAt ? ` <span class="small muted">(${esc(durationText(m.durationMin))})</span>` : ''}${yourTime(d, m) ? `<br><span class="small muted">${esc(yourTime(d, m))}</span>` : ''}</dd></div>
-          <div><dt>${esc(tt('Место', 'Place'))}</dt><dd>${esc([m.venue, m.city, m.country].filter(Boolean).join(', '))}
+        <div class="card-ui flat"><dl class="meeting-facts icons">
+          <div><dt>${ic.calendar}<span>${esc(tt('Дата', 'Date'))}</span></dt><dd>${esc(dateStr)}</dd></div>
+          <div><dt>${ic.clock}<span>${esc(tt('Время', 'Time'))}</span></dt><dd>${esc(timeRange(d, m))}${d.endsAt ? ` <span class="small muted">(${esc(durationText(m.durationMin))})</span>` : ''}${yourTime(d, m) ? `<br><span class="small muted">${esc(yourTime(d, m))}</span>` : ''}</dd></div>
+          <div><dt>${ic.pin}<span>${esc(tt('Место', 'Place'))}</span></dt><dd>${esc([m.venue, m.city, m.country].filter(Boolean).join(', '))}
             <br>${map ? `<a class="small" href="${esc(map)}" target="_blank" rel="noopener">${esc(tt('Открыть на карте', 'Open in map'))} ↗</a>` : `<span class="small muted">${esc(tt('Точный адрес уточняется — его сообщит фасилитатор.', 'The exact address is to be confirmed by the facilitator.'))}</span>`}</dd></div>
-          <div><dt>${esc(tt('Язык', 'Language'))}</dt><dd>${esc(langName(m.language))}</dd></div>
-          <div><dt>${esc(tt('Стоимость', 'Price'))}</dt><dd>${esc(priceText(m))}${m.priceType === 'paid' ? `<br><span class="small muted">${esc(m.priceNote ? m.priceNote + ' · ' : '')}${esc(tt('Сайт не принимает оплату: её организует фасилитатор.', 'The site does not take payments: the facilitator arranges them.'))}</span>` : ''}</dd></div>
-          <div><dt>${esc(tt('Места', 'Seats'))}</dt><dd class="${d.left ? '' : 'warn'}">${esc(seatsText(d.left))}</dd></div>
-          <div><dt>${esc(tt('Фасилитатор', 'Facilitator'))}</dt><dd>${esc(m.facilitator)}</dd></div>
+          <div><dt>${ic.globe}<span>${esc(tt('Язык', 'Language'))}</span></dt><dd>${esc(langName(m.language))}</dd></div>
+          <div><dt>${ic.ticket}<span>${esc(tt('Стоимость', 'Price'))}</span></dt><dd>${esc(priceText(m))}${m.priceType === 'paid' ? `<br><span class="small muted">${esc(m.priceNote ? m.priceNote + ' · ' : '')}${esc(tt('Сайт не принимает оплату: её организует фасилитатор.', 'The site does not take payments: the facilitator arranges them.'))}</span>` : ''}</dd></div>
+          <div><dt>${ic.user}<span>${esc(tt('Фасилитатор', 'Facilitator'))}</span></dt><dd>${esc(m.facilitator)}</dd></div>
+          <div><dt>${ic.people}<span>${esc(tt('Места', 'Seats'))}</span></dt><dd class="${d.left ? '' : 'warn'}">${esc(seatsText(d.left))}</dd></div>
         </dl></div>
         ${m.description ? `<div class="card-ui flat"><h3>${esc(tt('О встрече', 'About'))}</h3><p style="white-space:pre-wrap;margin:0">${esc(m.description)}</p></div>` : ''}
         ${d.otherDates.length ? `<div><h3>${esc(tt('Другие даты этой встречи', 'Other dates of this meeting'))}</h3><div class="chips">${d.otherDates.map((o) => `<a class="chip" href="${u('/m/' + o.id)}">${esc(fmtTz(o.startsAt, m.timezone, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} · ${esc(seatsText(o.left))}</a>`).join('')}</div></div>` : ''}
@@ -140,7 +141,9 @@ export async function datePage(ctx, id) {
     const mailHint = session.config.mailConnected && !m.isDemo
       ? tt('Пришлём подтверждение и ссылку для отмены записи. Адрес видит только фасилитатор.', 'We will send a confirmation and a cancel link. Only the facilitator sees your address.')
       : tt('Нужен фасилитатору, чтобы связаться с вами. Ссылку для отмены вы получите на этой странице.', 'The facilitator needs it to reach you. You will get the cancel link on this page.');
-    reg.innerHTML = `<h2 style="margin:0 0 4px">${esc(tt('Записаться', 'Sign up'))}</h2><p class="small muted" style="margin:0 0 12px">${esc(tt('Аккаунт не нужен.', 'No account needed.'))}</p>
+    reg.innerHTML = `<h2 style="margin:0 0 4px">${esc(tt('Записаться', 'Sign up'))}</h2>
+      <p class="reg-sum"><span>${ic.ticket}${esc(priceText(m))}</span><span>${ic.people}${esc(seatsText(d.left))}</span></p>
+      <p class="small muted" style="margin:0 0 12px">${esc(tt('Аккаунт не нужен.', 'No account needed.'))}</p>
       <form class="form" id="rf" novalidate>
         <div class="stack" style="gap:6px"><label class="field" for="rf-name">${esc(tt('Имя', 'Name'))} *</label>
           <input id="rf-name" type="text" name="name" maxlength="100" autocomplete="name" placeholder="${esc(tt('Как к вам обращаться', 'What should we call you'))}" value="${esc(draft.name)}" aria-describedby="e-name"><p class="field-error" id="e-name"></p></div>

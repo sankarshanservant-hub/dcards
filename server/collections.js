@@ -132,7 +132,8 @@ function adminDetail(id) {
     selectedCount: stats.get(r.id)?.total || 0,
   }));
   const visitors = db.prepare('SELECT COUNT(DISTINCT visitor_id) AS n FROM card_offers WHERE collection_id = ?').get(id).n;
-  return { id: col.id, slug: col.slug, title: col.title, isTest: !!col.is_test, isDemo: !!col.is_demo, ownerId: col.owner_id, updatedAt: col.updated_at, visitors, cards };
+  const selections = db.prepare('SELECT COUNT(*) AS n FROM selections WHERE collection_id = ? AND cancelled_at IS NULL').get(id).n;
+  return { id: col.id, slug: col.slug, title: col.title, isTest: !!col.is_test, isDemo: !!col.is_demo, ownerId: col.owner_id, updatedAt: col.updated_at, visitors, selections, cards };
 }
 
 function update(id, { title, isTest }) {
