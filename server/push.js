@@ -15,10 +15,14 @@ const MODES = ['all', 'mentions', 'none'];
 const ROOM_TITLE = { general: 'Общий чат', curators: 'Чат кураторов', facilitators: 'Чат фасилитаторов' };
 
 let keys = null;
+// Порядок: ключи из окружения (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY, например в /etc/dcards.env — там их можно хранить
+// вместе с паролем владельца), затем DATA_DIR/vapid.json, иначе создаются новые. Потеря ключей не опасна: браузеры
+// с разрешением сами переподпишутся на новый ключ при следующем открытии сайта (public/js/push.js, syncPush).
 function vapid() {
   if (keys) return keys;
   const file = path.join(DATA_DIR, 'vapid.json');
-  try { keys = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* ещё нет */ }
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) keys = { publicKey: process.env.VAPID_PUBLIC_KEY.trim(), privateKey: process.env.VAPID_PRIVATE_KEY.trim() };
+  else try { keys = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* ещё нет */ }
   if (!keys || !keys.publicKey || !keys.privateKey) {
     keys = webpush.generateVAPIDKeys();
     fs.mkdirSync(DATA_DIR, { recursive: true });

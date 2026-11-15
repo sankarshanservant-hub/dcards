@@ -5,6 +5,7 @@ import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } fr
 import * as pub from './views/public.js';
 import * as tool from './views/meeting-tool.js';
 import * as notif from './views/notify.js';
+import { syncPush } from './push.js';
 import * as meet from './views/meetings.js';
 import * as acc from './views/account.js';
 import * as artist from './views/artist.js';
@@ -264,4 +265,4 @@ export function homeFor() {
 window.dcHomeFor = homeFor;
 window.dcRenderChrome = renderChrome;
 
-(async () => { await refreshSession(); render(); })();
+(async () => { await refreshSession(); render(); if (session.user) setTimeout(syncPush, 1500); })();

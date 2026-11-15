@@ -44,3 +44,21 @@ export async function disablePush() {
   if (!sub) return;
   try { await api('/api/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }); } finally { await sub.unsubscribe(); }
 }
+
+/**
+ * Тихая проверка при открытии сайта (без запроса разрешения): если разрешение уже дано, а подписка сделана
+ * на старый ключ сервера или сервер её не знает (ключи или база восстановлены) — переподписываемся сами.
+ */
+export async function syncPush() {
+  try {
+    if (pushSupport() !== 'granted') return;
+    const reg = await registration(); if (!reg) return;
+    let sub = await reg.pushManager.getSubscription(); if (!sub) return;
+    const st = await api('/api/push'); if (st.demo) return;
+    const want = keyBytes(st.publicKey);
+    const have = sub.options && sub.options.applicationServerKey ? new Uint8Array(sub.options.applicationServerKey) : null;
+    const sameKey = have && have.length === want.length && have.every((b, i) => b === want[i]);
+    if (!sameKey) { await sub.unsubscribe(); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want }); }
+    if (!sameKey || !st.subscriptions.some((x) => x.endpoint === sub.endpoint)) await api('/api/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
+  } catch { /* не вышло — человек может включить заново на странице «Уведомления» */ }
+}
