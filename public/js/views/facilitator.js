@@ -1,5 +1,6 @@
 // Фасилитатор: кабинет (подборки, встречи, записи), редактор подборки, редактор встречи, путь получения роли.
 import { esc, tt, u, api, errorText, toast, fmtTz, fmtDate, ruPlural, enterTimeHint, durationText } from '../util.js';
+import { lang } from '../i18n.js';
 import { openViewer, icons } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, demoPill, timeline, stepsBar, ic, showQr, refreshSession } from '../ui.js';
 import { langName, LANG_NAMES, priceText } from './meetings.js';
@@ -31,6 +32,17 @@ function nextDateLine(m, nowIso) {
   return `<span class="small">${esc(m.city)}, ${esc(m.country)} · ${esc(langName(m.language))} · ${esc(priceText(m))}</span><span class="small">${esc(tt('Ближайшая:', 'Next:'))} ${esc(when)}</span>`;
 }
 
+// Проведения (отдельные даты) фасилитатора: предстоящие — будущие действующие даты не снятых встреч (скрытые помечены);
+// прошедшие — даты, время которых прошло, без отменённых. Серии встреч отдельно не считаются.
+function occurrences(meetings) {
+  const now = new Date().toISOString();
+  const all = meetings.filter((m) => m.status !== 'removed').flatMap((m) => m.dates.map((d) => ({ ...d, m })));
+  return {
+    upcoming: all.filter((d) => d.status === 'active' && d.startsAt >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    past: all.filter((d) => d.startsAt < now && d.status !== 'cancelled').sort((a, b) => b.startsAt.localeCompare(a.startsAt)),
+  };
+}
+
 export async function cabinet(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Кабинет фасилитатора.', 'Facilitator space.'));
   if (!hasRole('facilitator')) { ctx.navigate('/facilitator/apply', { replace: true }); return; }
@@ -38,39 +50,21 @@ export async function cabinet(ctx) {
   let cols; let mts;
   try { [cols, mts] = await Promise.all([api('/api/collections'), api('/api/fac/meetings')]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const nowIso = new Date().toISOString();
-  // Показатели: запланированные = будущие даты опубликованных встреч (каждая дата — отдельно); прошедшие = даты, время которых прошло, без отменённых.
-  const allDates = mts.meetings.filter((m) => m.status !== 'removed').flatMap((m) => m.dates.map((d) => ({ ...d, mStatus: m.status })));
-  const planned = allDates.filter((d) => d.mStatus === 'published' && d.status === 'active' && d.startsAt >= nowIso).length;
-  const series = mts.meetings.filter((m) => m.status === 'published' && m.dates.some((d) => d.status === 'active' && d.startsAt >= nowIso)).length;
-  const pastCount = allDates.filter((d) => d.startsAt < nowIso && d.status !== 'cancelled').length;
-  const datesWord = (n) => tt(`${n} ${ruPlural(n, 'предстоящая дата', 'предстоящие даты', 'предстоящих дат')}`, `${n} upcoming ${n === 1 ? 'date' : 'dates'}`);
-  const seriesWord = (n) => tt(`${n} ${ruPlural(n, 'серия встреч', 'серии встреч', 'серий встреч')}`, `${n} meeting ${n === 1 ? 'series' : 'series'}`);
+  const occ = occurrences(mts.meetings);
+  const kpi = (href, n, label) => `<a class="kpi kpi-link" href="${u(href)}"><b>${n}</b><span>${esc(label)}</span></a>`;
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><h1>${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</h1><p class="sub">${esc(session.user.publicName)}</p></div>
     <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
-      <button class="btn" type="button" id="newcol-go">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</button>
-      <a class="btn sm light" href="${u('/team/facilitators')}">${ic.chat} ${esc(tt('Чат фасилитаторов', 'Facilitators’ chat'))}</a></div>
-    <div class="kpis"><div class="kpi"><b>${cols.collections.length}</b><span>${esc(tt(ruPlural(cols.collections.length, 'подборка', 'подборки', 'подборок'), cols.collections.length === 1 ? 'selection' : 'selections'))}</span></div>
-      <div class="kpi"><b>${planned}</b><span>${esc(datesWord(planned).replace(/^\d+ /, ''))}${planned ? ` · ${esc(seriesWord(series))}` : ''}</span></div>
-      <div class="kpi"><b>${pastCount}</b><span>${esc(tt(ruPlural(pastCount, 'прошедшая дата', 'прошедшие даты', 'прошедших дат'), pastCount === 1 ? 'past date' : 'past dates'))}</span></div></div>
-  </div>
-    <div class="wrap stack" style="padding-bottom:56px">
-      <div class="row between"><h2 style="margin:0">${esc(tt('Подборки карт для встреч', 'Card selections for meetings'))}</h2></div>
-      <p class="muted" style="margin:0">${esc(tt('До 40 карт из галереи. Участники открывают подборку по ссылке или QR-коду без регистрации. Ссылка всегда показывает текущий состав.', 'Up to 40 cards from the gallery. Participants open the selection via link or QR code without signing up. The link always shows the current cards.'))}</p>
-      <form class="card-ui flat form" id="newcol" style="padding:14px"><label class="field" for="newcol-title">${esc(tt('Название подборки', 'Selection title'))}</label>
-        <div class="row"><input id="newcol-title" type="text" name="title" class="grow" maxlength="120" required placeholder="${esc(tt('например, «Встреча 20 ноября»', 'e.g. “Meeting on 20 November”'))}" style="flex:1 1 240px"><button class="btn dark" type="submit">${esc(tt('Создать подборку', 'Create selection'))}</button></div>
-        <p class="field-error" id="newcol-err"></p></form>
-      <div class="list" id="cols">${cols.collections.map((c) => `<div class="item" style="flex-wrap:wrap"><a class="body" href="${u('/facilitator/c/' + c.id)}" style="text-decoration:none;color:inherit"><b>${esc(c.title)} ${demoPill(c.isDemo)}</b>
-          <span class="small">${esc(tt(`карт: ${c.cardCount} · открывали: ${c.visitors} · выборов в этой подборке: ${c.selections}`, `cards: ${c.cardCount} · opened: ${c.visitors} · choices in this selection: ${c.selections}`))}${c.unavailableCount ? ` · <span class="warn">${esc(tt('недоступно: ', 'unavailable: '))}${c.unavailableCount}</span>` : ''}${hasRole('admin') && c.ownerName ? ' · ' + esc(c.ownerName) : ''}</span></a><div class="row" style="flex:1 1 100%;gap:8px"><button class="btn yellow sm" type="button" data-qr="${esc(c.slug)}" data-title="${esc(c.title)}">${ic.qr} ${esc(tt('Показать QR', 'Show QR'))}</button><a class="btn sm" href="${u('/facilitator/c/' + c.id)}">${esc(tt('Редактировать подборку', 'Edit selection'))}</a></div></div>`).join('') || `<p class="empty">${esc(tt('Подборок пока нет.', 'No selections yet.'))}</p>`}</div>
-      <h2 style="margin-top:20px">${esc(tt('Мои встречи', 'My meetings'))}</h2>
-      <div class="list">${mts.meetings.map((m) => `<a class="item" href="${u('/facilitator/m/' + m.id)}"><span class="ic">${ic.calendar}</span><span class="body"><b>${esc(m.title)} ${demoPill(m.isDemo)}</b>
-          ${nextDateLine(m, nowIso)}</span>${mPill(m.status)}</a>`).join('') || `<p class="empty">${esc(tt('Встреч пока нет.', 'No meetings yet.'))}</p>`}</div>
-      <div class="card-ui flat stack" id="print-box"><b>${esc(tt('Нужна печатная колода?', 'Need a printed deck?'))}</b>
-        <span class="small muted">${esc(tt('Если вам нужна печатная колода для встреч Dialogue Flow, отправьте запрос команде проекта.', 'If you need a printed deck for Dialogue Flow meetings, send a request to the project team.'))}</span>
-        <div id="print-ui"><button class="linkbtn" type="button" id="print-open">${esc(tt('Запросить печатную колоду', 'Request a printed deck'))}</button></div></div>
-    </div>`;
-  ctx.main.querySelector('#newcol-go').addEventListener('click', () => { const f = ctx.main.querySelector('#newcol'); f.scrollIntoView({ behavior: 'smooth', block: 'center' }); f.title.focus({ preventScroll: true }); });
+      <a class="btn" href="${u('/facilitator/collections?new=1')}">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</a></div>
+    <div><a class="btn sm light" href="${u('/chats')}">${ic.chat} ${esc(tt('Написать в чат', 'Write in a chat'))}</a></div>
+    <div class="kpis three">
+      ${kpi('/facilitator/collections', cols.collections.length, tt('Подборки', 'Selections'))}
+      ${kpi('/facilitator/meetings?when=upcoming', occ.upcoming.length, tt('Предстоящие встречи', 'Upcoming meetings'))}
+      ${kpi('/facilitator/meetings?when=past', occ.past.length, tt('Прошедшие встречи', 'Past meetings'))}</div>
+    <div class="card-ui flat stack" id="print-box"><b>${esc(tt('Нужна печатная колода?', 'Need a printed deck?'))}</b>
+      <span class="small muted">${esc(tt('Если вам нужна печатная колода для встреч Dialogue Flow, отправьте запрос команде проекта.', 'If you need a printed deck for Dialogue Flow meetings, send a request to the project team.'))}</span>
+      <div id="print-ui"><button class="linkbtn" type="button" id="print-open">${esc(tt('Запросить печатную колоду', 'Request a printed deck'))}</button></div></div>
+  </div>`;
   ctx.main.querySelector('#print-open').addEventListener('click', () => {
     const box = ctx.main.querySelector('#print-ui');
     box.innerHTML = `<form class="form" id="pf"><label class="field">${esc(tt('Комментарий', 'Note'))} <span class="hint">${esc(tt('по желанию: сколько колод, для какой встречи, как с вами связаться', 'optional: how many decks, for which meeting, how to reach you'))}</span><textarea name="note" maxlength="1000" rows="3"></textarea></label>
@@ -81,102 +75,32 @@ export async function cabinet(ctx) {
       try { const r = await api('/api/fac/print-request', { method: 'POST', body: { note: e.target.note.value } }); box.innerHTML = `<p class="small" style="margin:0"><b>${esc(r.already ? tt('Ваш запрос уже у команды проекта.', 'Your request is already with the project team.') : tt('Запрос отправлен команде проекта.', 'Request sent to the project team.'))}</b></p>`; } catch (x) { toast(errorText(x)); }
     });
   });
-  ctx.main.querySelector('#cols').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-qr]'); if (!b) return;
-    showQr(b.dataset.qr, b.dataset.title, `${cols.baseUrl}/s/${b.dataset.qr}`);
-  });
-  ctx.main.querySelector('#newcol').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const err = ctx.main.querySelector('#newcol-err');
-    if (!e.target.title.value.trim()) { err.textContent = tt('Введите название подборки.', 'Enter a selection title.'); e.target.title.focus(); return; }
-    try { const { id } = await api('/api/collections', { method: 'POST', body: { title: e.target.title.value } }); ctx.navigate('/facilitator/c/' + id); } catch (x) { err.textContent = errorText(x); }
-  });
 }
 
-// ---------- редактор подборки ----------
-export async function collectionEditor(ctx, id) {
+// ---------- Мои встречи: предстоящие и прошедшие проведения ----------
+export async function meetingsList(ctx) {
   if (!session.user) return needLogin(ctx.main, '');
   if (!hasRole('facilitator')) return noRole(ctx.main, tt('фасилитатор', 'facilitator'));
   loading(ctx.main);
-  let detail; let library;
-  try { [detail, { cards: library }] = await Promise.all([api(`/api/collections/${id}`), api('/api/cards')]); } catch (e) {
-    if (!ctx.alive()) return;
-    if (e.status === 404) { ctx.main.innerHTML = `<div class="wrap page narrow"><p class="empty">${esc(tt('Подборка не найдена или принадлежит другому фасилитатору.', 'Selection not found or belongs to another facilitator.'))}</p></div>`; return; }
-    return failed(ctx.main, e, ctx.rerender);
-  }
+  let mts;
+  try { mts = await api('/api/fac/meetings'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const MAX = 40;
-  const known = new Map(detail.cards.map((c) => [c.code, c]));
-  for (const c of library) if (!known.has(c.code)) known.set(c.code, { ...c, status: 'published', selections: 0 });
-  let codes = detail.cards.map((c) => c.code);
-  const isAvailable = (code) => known.get(code)?.status === 'published';
-  ctx.main.innerHTML = `<div class="wrap page stack" id="ed">
-    <a class="small" href="${u('/facilitator')}">← ${esc(tt('Кабинет', 'Back'))}</a>
-    <div class="page-head"><p class="eyebrow" style="margin:0">${esc(tt('Редактор подборки', 'Selection editor'))}</p>
-      <label class="field" for="ed-title">${esc(tt('Название подборки', 'Selection title'))}</label>
-      <input type="text" id="ed-title" value="${esc(detail.title)}" maxlength="120" style="font:700 1.2rem var(--font-head);max-width:640px"></div>
-    <div class="card-ui navy stack">
-      <span class="small muted">${esc(tt('Ссылка для участников', 'Link for participants'))}</span>
-      <input type="text" id="ed-url" readonly value="${esc(detail.url)}" style="font-family:ui-monospace,monospace">
-      <div class="row"><button class="btn yellow sm" type="button" id="qr">${ic.qr} ${esc(tt('QR на весь экран', 'Full-screen QR'))}</button>
-        <button class="btn light sm" type="button" id="copy">${esc(tt('Копировать', 'Copy'))}</button>
-        <a class="btn light sm" href="${u('/api/c/' + detail.slug + '/qr.png?size=1600&download=1')}" download>${esc(tt('Скачать QR', 'Download QR'))}</a>
-        <a class="btn light sm" href="${u('/s/' + detail.slug)}" target="_blank" rel="noopener">${esc(tt('Открыть как участник', 'Open as participant'))}</a></div>
-      <p class="small muted" style="margin:0">${esc(tt('Ссылка всегда показывает текущий состав подборки. Срок действия у QR нет.', 'The link always shows the current cards. The QR code does not expire.'))} ${esc(tt(`Открывали на ${detail.visitors} устройствах.`, `Opened on ${detail.visitors} devices.`))}</p>
-    </div>
-    <label class="check"><input type="checkbox" id="ed-test" ${detail.isTest ? 'checked' : ''}><span><b>${esc(tt('Тестовая подборка', 'Test selection'))}</b> — ${esc(tt('выборы не попадают в общую статистику карт', 'choices do not count in card statistics'))}</span></label>
-    <div class="sticky-count"><b id="cnt" aria-live="polite"></b><span class="save-state" id="st" aria-live="polite"></span></div>
-    <div id="unav"></div><div class="cells" id="sel"></div>
-    <h2>${esc(tt('Галерея карт', 'Card gallery'))}</h2><p class="small muted" id="hint"></p><div class="cells" id="lib"></div>
-    <div id="delwrap"><button class="btn danger" type="button" id="del">${esc(tt('Удалить подборку', 'Delete selection'))}</button></div>
+  const when = ctx.query.get('when') === 'past' ? 'past' : 'upcoming';
+  const occ = occurrences(mts.meetings);
+  const list = occ[when];
+  const row = (d) => `<a class="item" href="${u('/facilitator/m/' + d.m.id)}"><span class="cal" style="min-width:58px"><b>${esc(fmtTz(d.startsAt, d.m.timezone, { day: 'numeric' }))}</b><span>${esc(fmtTz(d.startsAt, d.m.timezone, { month: 'short' }))}</span></span>
+    <span class="body"><b>${esc(d.m.title)} ${demoPill(d.m.isDemo)}${d.m.status === 'unpublished' ? ` <span class="pill">${esc(tt('Скрыта', 'Hidden'))}</span>` : ''}</b>
+      <span class="small">${esc(fmtTz(d.startsAt, d.m.timezone, { weekday: 'long', hour: '2-digit', minute: '2-digit' }))} · ${esc(d.m.city)}</span>
+      <span class="small">${esc(tt(`${d.taken} из ${d.capacity} мест занято`, `${d.taken} of ${d.capacity} seats taken`))}</span></span><span aria-hidden="true">→</span></a>`;
+  ctx.main.innerHTML = `<div class="wrap page stack">
+    <a class="small" href="${u('/facilitator')}">← ${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</a>
+    <div class="page-head"><h1>${esc(tt('Мои встречи', 'My meetings'))}</h1></div>
+    <div class="row between"><div class="seg" role="tablist">${[['upcoming', tt(`Предстоящие · ${occ.upcoming.length}`, `Upcoming · ${occ.upcoming.length}`)], ['past', tt(`Прошедшие · ${occ.past.length}`, `Past · ${occ.past.length}`)]].map(([k, lab]) => `<a role="tab" aria-selected="${k === when}" href="${u('/facilitator/meetings?when=' + k)}" style="text-decoration:none;padding:8px 14px;border-radius:999px;font-weight:600;font-size:.9rem;${k === when ? 'background:var(--accent);color:var(--on-accent)' : ''}">${esc(lab)}</a>`).join('')}</div>
+      <a class="btn yellow sm" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a></div>
+    ${list.length ? `<div class="list">${list.map(row).join('')}</div>` : `<div class="empty stack" style="justify-items:center"><span>${esc(when === 'upcoming' ? tt('Предстоящих встреч нет.', 'No upcoming meetings.') : tt('Прошедших встреч пока нет.', 'No past meetings yet.'))}</span>${when === 'upcoming' ? `<a class="btn sm" href="${u('/facilitator/m/new')}">${esc(tt('Создать встречу', 'Create a meeting'))}</a>` : ''}</div>`}
+    ${mts.meetings.length ? `<details class="more card-ui flat"><summary>${esc(tt(`Все мои встречи (с датами) · ${mts.meetings.length}`, `All my meetings (with dates) · ${mts.meetings.length}`))}</summary>
+      <div class="list" style="margin-top:8px">${mts.meetings.map((m) => `<a class="item" href="${u('/facilitator/m/' + m.id)}"><span class="ic">${ic.calendar}</span><span class="body"><b>${esc(m.title)} ${demoPill(m.isDemo)}</b>${nextDateLine(m, new Date().toISOString())}</span>${mPill(m.status)}</a>`).join('')}</div></details>` : ''}
   </div>`;
-  const $ = (s) => ctx.main.querySelector(s);
-  const st = $('#st');
-  // Автосохранение: «Сохраняем…» → «Все изменения сохранены» только после ответа сервера и если новых правок нет; ошибка — с «Повторить».
-  let timer; let ver = 0; let inflight = false;
-  const status = (txt, cls = '', retry = false) => { st.className = 'save-state ' + cls; st.innerHTML = esc(txt) + (retry ? ` <button class="linkbtn" type="button" id="retry">${esc(tt('Повторить', 'Retry'))}</button>` : ''); };
-  const view = (code) => `<button class="tile" type="button" data-view="${esc(code)}" aria-label="${esc(tt(`Рассмотреть карту ${code}`, `View card ${code}`))}"><img src="${esc(known.get(code).thumb)}" alt="" loading="lazy">${codes.includes(code) ? `<span class="tile-check">${icons.check}</span>` : ''}</button>`;
-  function draw() {
-    const av = codes.filter(isAvailable); const un = codes.filter((c) => !isAvailable(c));
-    const full = codes.length >= MAX;
-    $('#cnt').textContent = tt(`${av.length} из ${MAX} карт`, `${av.length} of ${MAX} cards`);
-    $('#unav').innerHTML = un.length ? `<div class="notice red stack"><b>${esc(tt('Недоступные карты:', 'Unavailable cards:'))} ${un.map(esc).join(', ')}</b><span>${esc(tt('Карты сняты с публикации, участники их не видят.', 'These cards were removed; participants do not see them.'))}</span><div><button class="btn sm" type="button" id="dropun">${esc(tt('Убрать их из подборки', 'Remove them from the selection'))}</button></div></div>` : '';
-    $('#sel').innerHTML = av.length ? av.map((code) => { const c = known.get(code); return `<div class="cell">${view(code)}
-      <div class="cell-actions"><small>${esc(code)}${c.selectedCount ? ' · ' + esc(tt('всего выбрали ', 'chosen ')) + c.selectedCount : ''}</small></div>
-      <button class="pick-btn" type="button" data-toggle="${esc(code)}" aria-pressed="true" aria-label="${esc(tt(`Убрать из подборки ${code}`, `Remove ${code} from the selection`))}">${ic.x} ${esc(tt('Убрать из подборки', 'Remove'))}</button></div>`; }).join('') : `<p class="empty">${esc(tt('Добавьте карты из галереи ниже.', 'Add cards from the gallery below.'))}</p>`;
-    $('#hint').textContent = full ? tt(`В подборке уже ${MAX} карт — это предел. Уберите одну, чтобы добавить другую.`, `The selection already has ${MAX} cards — the limit. Remove one to add another.`) : tt('Нажмите на изображение, чтобы рассмотреть карту. Кнопка под картой добавляет её в подборку.', 'Tap an image to view the card. The button below adds it to the selection.');
-    $('#lib').innerHTML = library.map((c) => { const inC = codes.includes(c.code); return `<div class="cell ${inC ? 'in' : ''}">${view(c.code)}
-      <small>${esc(c.code)}</small>
-      <button class="pick-btn" type="button" data-toggle="${esc(c.code)}" aria-pressed="${inC}" ${!inC && full ? `disabled title="${esc(tt('Предел — 40 карт', 'Limit is 40 cards'))}"` : ''} aria-label="${esc(inC ? tt(`Убрать из подборки ${c.code}`, `Remove ${c.code} from the selection`) : tt(`Добавить в подборку ${c.code}`, `Add ${c.code} to the selection`))}">${inC ? icons.check + ' ' + esc(tt('В подборке', 'In selection')) : ic.plus + ' ' + esc(tt('Добавить в подборку', 'Add'))}</button></div>`; }).join('');
-    const d = $('#dropun'); if (d) d.onclick = () => { codes = codes.filter(isAvailable); draw(); save(); };
-  }
-  async function flush() {
-    if (inflight) return; inflight = true;
-    const myVer = ver; const body = { codes: [...codes] };
-    try {
-      await api(`/api/collections/${id}/cards`, { method: 'PUT', body });
-      inflight = false;
-      if (myVer === ver) status(tt('Все изменения сохранены', 'All changes saved'), 'ok'); else flush();
-    } catch (x) { inflight = false; status(`${tt('Не сохранено:', 'Not saved:')} ${errorText(x)}`, 'err', true); }
-  }
-  function save() { ver++; status(tt('Сохраняем…', 'Saving…')); clearTimeout(timer); timer = setTimeout(flush, 300); }
-  st.addEventListener('click', (e) => { if (e.target.closest('#retry')) { status(tt('Сохраняем…', 'Saving…')); flush(); } });
-  $('#ed').addEventListener('click', (e) => {
-    const tg = e.target.closest('[data-toggle]'); const rm = e.target.closest('[data-remove]'); const vw = e.target.closest('[data-view]');
-    if (tg) { const c = tg.dataset.toggle; if (codes.includes(c)) codes = codes.filter((x) => x !== c); else if (codes.length < MAX) codes.push(c); draw(); save(); }
-    else if (rm) { codes = codes.filter((x) => x !== rm.dataset.remove); draw(); save(); }
-    else if (vw) { const inSel = !!vw.closest('#sel'); const list = inSel ? codes.filter(isAvailable).map((c) => known.get(c)) : library; openViewer({ cards: list, index: Math.max(0, list.findIndex((c) => c.code === vw.dataset.view)), mode: 'admin' }); }
-  });
-  $('#ed-title').addEventListener('change', async (e) => { status(tt('Сохраняем…', 'Saving…')); try { await api(`/api/collections/${id}`, { method: 'PATCH', body: { title: e.target.value } }); status(tt('Все изменения сохранены', 'All changes saved'), 'ok'); } catch (x) { status(`${tt('Не сохранено:', 'Not saved:')} ${errorText(x)}`, 'err'); } });
-  $('#ed-test').addEventListener('change', async (e) => { status(tt('Сохраняем…', 'Saving…')); try { await api(`/api/collections/${id}`, { method: 'PATCH', body: { isTest: e.target.checked } }); status(tt('Все изменения сохранены', 'All changes saved'), 'ok'); } catch (x) { status(`${tt('Не сохранено:', 'Not saved:')} ${errorText(x)}`, 'err'); } });
-  $('#copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(detail.url); toast(tt('Ссылка скопирована', 'Link copied')); } catch { const i = $('#ed-url'); i.focus(); i.select(); toast(tt('Скопируйте выделенную ссылку', 'Copy the selected link')); } });
-  $('#qr').addEventListener('click', () => showQr(detail.slug, $('#ed-title').value, detail.url));
-  $('#del').addEventListener('click', () => {
-    $('#delwrap').innerHTML = `<div class="notice red row"><span class="grow">${esc(tt('Удалить подборку? Ссылка и QR перестанут работать, статистика этой подборки удалится.', 'Delete the selection? Its link and QR stop working and its statistics are deleted.'))}</span>
-      <button class="btn danger sm" type="button" id="yes">${esc(tt('Удалить', 'Delete'))}</button></div>`;
-    $('#yes').onclick = async () => { try { await api(`/api/collections/${id}`, { method: 'DELETE' }); ctx.navigate('/facilitator'); } catch (x) { toast(errorText(x)); } };
-  });
-  draw();
 }
 
 // ---------- редактор встречи ----------
@@ -192,52 +116,65 @@ export async function meetingEditor(ctx, id) {
   } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   // Часовой пояс вручную не выбирается: его определяет сервер по городу встречи. Время вводится местное для этого города.
-  const blank = { title: '', description: '', country: '', city: '', venue: '', language: 'ru', timezone: '', priceType: 'free', priceAmount: null, currency: '', priceNote: '', durationMin: null, capacity: 12, askContact: false };
+  const blank = { title: '', description: '', country: '', city: '', venue: '', lat: null, lng: null, language: 'ru', timezone: '', priceType: 'free', priceAmount: null, currency: '', priceNote: '', durationMin: null, capacity: 12, askContact: false };
   const v = m || (src ? { ...blank, ...pick(src, Object.keys(blank)) } : blank);
-  const form = `<form class="card-ui form" id="mf">
+  const whenBlock = `<fieldset class="fs"><legend>${esc(tt('Когда', 'When'))}</legend>
+      ${m ? '' : `${datePickerHtml('mf')}<span class="hint small muted" id="datehint"></span>
+      ${repeatBlock('mf')}<p class="small muted" style="margin:0">${esc(tt('Нерегулярные даты можно добавить после публикации.', 'Irregular dates can be added after publishing.'))}</p>`}
+      <label class="field">${esc(tt('Продолжительность', 'Duration'))} <span class="hint">${esc(tt('участник увидит время окончания', 'participants will see the end time'))}</span><select name="durationMin">${[['', tt('Не указывать', 'Not set')], ...[60, 90, 120, 150, 180, 240].map((n) => [n, durationText(n)])].map(([val, lab]) => `<option value="${val}" ${String(v.durationMin ?? '') === String(val) ? 'selected' : ''}>${esc(lab)}</option>`).join('')}</select></label></fieldset>`;
+  const form = `<form class="card-ui form" id="mf" novalidate>
+    ${m ? `<h2 style="margin:0">${esc(tt('Настройки встречи', 'Meeting settings'))}</h2><p class="small muted" style="margin:0">${esc(tt('Общие для всех дат. Записи и места считаются отдельно на каждой дате.', 'Shared by all dates. Sign-ups and seats are counted per date.'))}</p>` : ''}
+    ${whenBlock}
     <label class="field">${esc(tt('Название встречи', 'Meeting title'))} *<input type="text" name="title" required maxlength="140" value="${esc(v.title)}"></label>
-    <label class="field">${esc(tt('Описание', 'Description'))}<textarea name="description" maxlength="3000">${esc(v.description)}</textarea></label>
-    <div class="cols-2"><label class="field">${esc(tt('Город встречи', 'Meeting city'))} *<input type="text" name="city" required maxlength="80" autocomplete="off" value="${esc(v.city)}"></label>
-      <label class="field">${esc(tt('Страна', 'Country'))} <span class="hint">${esc(tt('подставится по городу', 'filled in from the city'))}</span><input type="text" name="country" maxlength="80" autocomplete="off" value="${esc(v.country)}"></label></div>
-    <div class="place-status" id="place" aria-live="polite"></div>
-    <label class="field">${esc(tt('Место', 'Venue'))}<input type="text" name="venue" maxlength="300" value="${esc(v.venue)}"></label>
+    <label class="field">${esc(tt('Описание', 'Description'))} <span class="hint">${esc(tt('необязательно', 'optional'))}</span><textarea name="description" maxlength="3000">${esc(v.description)}</textarea></label>
+    <fieldset class="fs"><legend>${esc(tt('Где', 'Where'))}</legend>
+      <div class="cols-2"><label class="field">${esc(tt('Город встречи', 'Meeting city'))} *<input type="text" name="city" required maxlength="80" autocomplete="off" value="${esc(v.city)}"></label>
+        <label class="field">${esc(tt('Страна', 'Country'))} <span class="hint">${esc(tt('подставится по городу', 'filled in from the city'))}</span><input type="text" name="country" maxlength="80" autocomplete="off" value="${esc(v.country)}"></label></div>
+      <div class="place-status" id="place" aria-live="polite"></div>
+      <label class="field">${esc(tt('Место и адрес', 'Venue and address'))}<input type="text" name="venue" maxlength="300" value="${esc(v.venue)}" placeholder="${esc(tt('например, кафе «Ромашка», ул. Ленина, 5', 'e.g. Café Daisy, 5 Main St'))}"></label>
+      <input type="hidden" name="lat" value="${v.lat ?? ''}"><input type="hidden" name="lng" value="${v.lng ?? ''}">
+      <div class="stack" style="gap:6px" id="pt"></div>
+      <div id="geo" class="stack" style="gap:6px"></div></fieldset>
     <label class="field">${esc(tt('Язык встречи', 'Meeting language'))}<select name="language">${Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === v.language ? 'selected' : ''}>${esc(langName(k))}</option>`).join('')}</select></label>
-    <div class="cols-2"><label class="field">${esc(tt('Оплата', 'Payment'))}<select name="priceType"><option value="free" ${v.priceType === 'free' ? 'selected' : ''}>${esc(tt('Бесплатно', 'Free'))}</option><option value="paid" ${v.priceType === 'paid' ? 'selected' : ''}>${esc(tt('Платно', 'Paid'))}</option></select></label>
-      <label class="field">${esc(tt('Мест на каждую дату', 'Seats per date'))} *<input type="number" name="capacity" min="1" max="500" required value="${v.capacity}"></label></div>
-    <div id="paid-fields" ${v.priceType === 'paid' ? '' : 'hidden'}>
+    <label class="field">${esc(tt('Оплата', 'Payment'))}<select name="priceType"><option value="free" ${v.priceType === 'free' ? 'selected' : ''}>${esc(tt('Бесплатно', 'Free'))}</option><option value="paid" ${v.priceType === 'paid' ? 'selected' : ''}>${esc(tt('Платно', 'Paid'))}</option></select></label>
+    <div id="paid-fields" ${v.priceType === 'paid' ? '' : 'hidden'} class="stack" style="gap:10px">
       <div class="cols-2"><label class="field">${esc(tt('Стоимость участия', 'Price per person'))} *<input type="number" name="priceAmount" min="0" step="any" inputmode="decimal" value="${v.priceAmount ?? ''}"></label>
         <label class="field">${esc(tt('Валюта', 'Currency'))} *<select name="currency"><option value="">—</option>${CURRENCIES.map((c) => `<option ${c === v.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></label></div>
-      <p class="small muted" style="margin:6px 0 0">${esc(tt('Цена показывается участнику до записи. Сайт не принимает оплату — её принимает фасилитатор вне сайта.', 'The price is shown before sign-up. The site does not take payments — the facilitator collects them outside the site.'))}</p>
-      <label class="field" style="margin-top:8px">${esc(tt('Как оплатить', 'How to pay'))} <span class="hint">${esc(tt('по желанию: например, наличными на месте', 'optional: e.g. cash on site'))}</span><input type="text" name="priceNote" maxlength="300" value="${esc(v.priceNote)}"></label></div>
+      <p class="small muted" style="margin:0">${esc(tt('Цена показывается участнику до записи. Сайт не принимает оплату — её принимает фасилитатор вне сайта.', 'The price is shown before sign-up. The site does not take payments — the facilitator collects them outside the site.'))}</p>
+      <label class="field">${esc(tt('Как оплатить', 'How to pay'))} <span class="hint">${esc(tt('по желанию: например, наличными на месте', 'optional: e.g. cash on site'))}</span><input type="text" name="priceNote" maxlength="300" value="${esc(v.priceNote)}"></label></div>
     ${m && m.priceType === 'paid' && !m.priceAmount ? `<div class="notice">${esc(tt('Укажите стоимость участия и валюту: сейчас участники видят «Стоимость уточняется».', 'Enter the price and currency: participants currently see “Price to be confirmed”.'))}</div>` : ''}
-    <label class="field">${esc(tt('Продолжительность', 'Duration'))} <span class="hint">${esc(tt('участник увидит время окончания', 'participants will see the end time'))}</span><select name="durationMin">${[['', tt('Не указывать', 'Not set')], ...[60, 90, 120, 150, 180, 240].map((n) => [n, durationText(n)])].map(([val, lab]) => `<option value="${val}" ${String(v.durationMin ?? '') === String(val) ? 'selected' : ''}>${esc(lab)}</option>`).join('')}</select></label>
-    <label class="check"><input type="checkbox" name="askContact" ${v.askContact ? 'checked' : ''}><span>${esc(tt('Добавить в запись необязательное поле «телефон или мессенджер»', 'Add an optional “phone or messenger” field to sign-up'))}</span></label>
-    ${m ? '' : `<label class="field">${esc(tt('Дата и время встречи', 'Meeting date and time'))} *<input type="datetime-local" name="firstDate" required><span class="hint" id="datehint"></span></label>
-      ${repeatBlock('mf')}
-    <div class="tz-preview" id="tzprev" aria-live="polite"></div>`}
+    <label class="field" style="max-width:220px">${esc(tt('Количество мест', 'Number of seats'))} *<input type="number" name="capacity" min="1" max="500" required value="${v.capacity}" inputmode="numeric"></label>
+    <div class="stack" style="gap:2px"><label class="switch"><input type="checkbox" name="askContact" role="switch" ${v.askContact ? 'checked' : ''}> ${esc(tt('Попросить участника указать телефон или мессенджер', 'Ask participants for a phone number or messenger'))}</label>
+      <span class="small muted" style="padding-left:58px">${esc(tt('Это поле будет необязательным.', 'This field will be optional.'))}</span></div>
+    ${m ? '' : `<div class="tz-preview" id="tzprev" aria-live="polite"></div>`}
     <p class="form-error" id="err" role="alert"></p>
-    <button class="btn dark" type="submit">${esc(m ? tt('Сохранить', 'Save') : tt('Опубликовать встречу', 'Publish meeting'))}</button></form>`;
+    <button class="btn ${m ? 'dark' : 'yellow'}" type="submit">${esc(m ? tt('Сохранить настройки', 'Save settings') : tt('Опубликовать встречу', 'Publish meeting'))}</button></form>`;
   const nowIso = new Date().toISOString();
+  const pubDate = m && (m.dates.find((d) => !d.past && d.status === 'active') || m.dates[0]);
+  const dateCard = (d) => `<div class="card-ui flat stack date-card" style="gap:8px" data-dcard="${d.id}"><div class="row between"><b>${esc(fmtTz(d.startsAt, m.timezone, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</b>
+      <span class="pill ${d.status === 'cancelled' ? 'red' : d.left ? 'mint' : 'red'}" data-dstate>${esc(d.status === 'cancelled' ? tt('Отменена', 'Cancelled') : tt(`${d.taken} из ${d.capacity} мест занято`, `${d.taken} of ${d.capacity} seats taken`))}</span></div>
+    ${d.registrations.length ? `<div class="scroll-x"><table class="tbl"><tr><th>${esc(tt('Имя', 'Name'))}</th><th>Email</th><th>${esc(tt('Контакт', 'Contact'))}</th><th></th></tr>${d.registrations.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.contact || '—')}</td><td>${r.status === 'active' ? '' : `<span class="pill red">${esc(tt('отменил', 'cancelled'))}</span>`}</td></tr>`).join('')}</table></div>` : `<span class="small muted">${esc(tt('Записей пока нет', 'No sign-ups yet'))}</span>`}
+    ${d.startsAt >= nowIso ? `<div class="row" data-dact><button class="linkbtn ${d.status === 'cancelled' ? '' : 'danger'}" type="button" data-date="${d.id}" data-set="${d.status === 'cancelled' ? 'active' : 'cancelled'}" data-when="${esc(fmtTz(d.startsAt, m.timezone, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))}">${esc(d.status === 'cancelled' ? tt('Вернуть дату', 'Restore date') : tt('Отменить эту дату', 'Cancel this date'))}</button></div>` : ''}
+    </div>`;
+  const hidden = m && m.status === 'unpublished';
   ctx.main.innerHTML = `<div class="wrap page stack">
-    <a class="small" href="${u('/facilitator')}">← ${esc(tt('Кабинет', 'Back'))}</a>
-    <div class="row between"><h1 style="margin:0">${esc(m ? m.title : src ? tt('Повтор встречи', 'Repeat of a meeting') : tt('Новая встреча', 'New meeting'))}</h1>${m ? mPill(m.status) : ''}</div>
-    ${src ? `<div class="notice">${esc(tt(`Скопировано из «${src.title}»: город, место, описание, язык, формат, число мест и настройка контакта. Записи не переносятся. Задайте новую дату и время — местное для города ${src.city}.`, `Copied from “${src.title}”: city, venue, description, language, format, seats and the contact setting. Sign-ups are not copied. Set a new date and time — local to ${src.city}.`))}</div>` : ''}
+    <a class="small" href="${u(m ? '/facilitator/meetings' : '/facilitator')}">← ${esc(m ? tt('К встречам', 'To meetings') : tt('Кабинет фасилитатора', 'Facilitator space'))}</a>
+    <div class="page-head"><h1>${esc(m ? m.title : src ? tt('Повтор встречи', 'Repeat of a meeting') : tt('Новая встреча', 'New meeting'))}</h1>
+      ${m ? `<div class="row" style="gap:8px">${mPill(m.status)}${hidden ? `<span class="small muted">${esc(tt('Все даты скрыты от участников', 'All dates are hidden from participants'))}</span>` : ''}
+        ${pubDate ? `<a class="small" href="${u('/m/' + pubDate.id)}" target="_blank" rel="noopener">${esc(tt('Посмотреть страницу встречи', 'View the meeting page'))} ↗<span class="sr-only"> ${esc(tt('(откроется в новой вкладке)', '(opens in a new tab)'))}</span></a><span class="tiny muted">${esc(tt('в новой вкладке', 'new tab'))}</span>` : ''}</div>` : ''}</div>
+    ${src ? `<div class="notice">${esc(tt(`Скопировано из «${src.title}»: город, место, описание, язык, оплата, число мест и настройка контакта — всё можно изменить. Записи и отмены не переносятся. Задайте дату и время — местное для города встречи.`, `Copied from “${src.title}”: city, venue, description, language, payment, seats and the contact setting — all editable. Sign-ups and cancellations are not copied. Set a date and time — local to the meeting city.`))}</div>` : ''}
     ${m && m.status === 'removed' ? `<div class="notice red">${esc(tt('Администратор снял встречу с публикации:', 'An administrator took the meeting down:'))} ${esc(m.removedReason || '—')}</div>` : ''}
-    ${m ? `<div class="row">${m.status !== 'removed' ? `<button class="btn sm" type="button" id="pub">${esc(m.status === 'published' ? tt('Скрыть встречу', 'Hide meeting') : tt('Опубликовать снова', 'Publish again'))}</button>` : ''}
-      ${m.dates[0] ? `<a class="btn sm" href="${u('/m/' + (m.dates.find((d) => !d.past) || m.dates[0]).id)}" target="_blank">${esc(tt('Посмотреть страницу встречи', 'View the meeting page'))}</a>` : ''}
-      <a class="btn sm yellow" href="${u('/facilitator/m/new?from=' + m.id)}">${ic.plus} ${esc(tt('Повторить встречу', 'Repeat meeting'))}</a></div>` : ''}
-    <div class="cols-2" style="align-items:start">${form}
-      ${m ? `<div class="stack"><h2>${esc(tt('Даты и записи', 'Dates and sign-ups'))}</h2>
-        ${m.dates.map((d) => `<div class="card-ui flat stack" style="gap:8px"><div class="row between"><b>${esc(fmtTz(d.startsAt, m.timezone, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</b>
-            <span class="pill ${d.status === 'cancelled' ? 'red' : d.left ? 'mint' : 'red'}">${esc(d.status === 'cancelled' ? tt('Отменена', 'Cancelled') : tt(`${d.taken} из ${d.capacity} мест занято`, `${d.taken} of ${d.capacity} seats taken`))}</span></div>
-          ${d.registrations.length ? `<div class="scroll-x"><table class="tbl"><tr><th>${esc(tt('Имя', 'Name'))}</th><th>Email</th><th>${esc(tt('Контакт', 'Contact'))}</th><th></th></tr>${d.registrations.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.contact || '—')}</td><td>${r.status === 'active' ? '' : `<span class="pill red">${esc(tt('отменил', 'cancelled'))}</span>`}</td></tr>`).join('')}</table></div>` : `<span class="small muted">${esc(tt('Записей пока нет', 'No sign-ups yet'))}</span>`}
-          ${d.startsAt >= nowIso ? `<div class="row"><button class="linkbtn ${d.status === 'cancelled' ? '' : 'danger'}" type="button" data-date="${d.id}" data-set="${d.status === 'cancelled' ? 'active' : 'cancelled'}">${esc(d.status === 'cancelled' ? tt('Вернуть дату', 'Restore date') : tt('Отменить эту дату', 'Cancel this date'))}</button></div>` : ''}
-          </div>`).join('')}
-        <form class="card-ui flat form" id="addd"><b>${esc(tt('Добавить даты', 'Add dates'))}</b><span class="small muted">${esc(enterTimeHint(m.city))}</span><input type="datetime-local" name="firstDate" required aria-label="${esc(tt('Дата и время', 'Date and time'))}">
-          ${repeatBlock('ad')}
-          <div class="tz-preview" id="addprev" aria-live="polite"></div>
-          <button class="btn sm dark" type="submit">${esc(tt('Добавить', 'Add'))}</button></form>
-        <p class="small muted">${esc(tt('Уведомления участникам при отмене или переносе и лист ожидания ещё не согласованы.', 'Notifications on cancel/reschedule and a waiting list are not agreed yet.'))}</p></div>` : ''}</div>
+    ${m && m.status !== 'removed' ? `<div class="row">
+        <button class="btn yellow" type="button" id="add-date-go">${ic.plus} ${esc(tt('Добавить дату', 'Add a date'))}</button>
+        <a class="btn" href="${u('/facilitator/m/new?from=' + m.id)}">${esc(tt('Повторить встречу', 'Repeat meeting'))}</a>
+        ${hidden ? `<button class="btn" type="button" id="republish">${esc(tt('Опубликовать снова', 'Publish again'))}</button>` : `<details class="more-menu"><summary class="btn sm light">${esc(tt('Ещё', 'More'))}</summary><div class="menu-pop"><button class="linkbtn danger" type="button" id="hide-ask">${esc(tt('Скрыть встречу', 'Hide meeting'))}</button></div></details>`}</div>
+      <div id="hide-slot"></div>
+      <form class="card-ui stack" id="addd" hidden novalidate><h2 style="margin:0">${esc(tt('Новая дата', 'New date'))}</h2><span class="small muted">${esc(enterTimeHint(m.city))}</span>
+        ${datePickerHtml('ad')}${repeatBlock('ad')}
+        <div class="tz-preview" id="addprev" aria-live="polite"></div><p class="form-error" id="aderr" role="alert"></p>
+        <div class="row"><button class="btn yellow" type="submit">${esc(tt('Добавить дату', 'Add date'))}</button><button class="linkbtn" type="button" id="addd-cancel">${esc(tt('Отмена', 'Cancel'))}</button></div></form>` : ''}
+    ${m ? `<div class="cols-2" style="align-items:start"><section class="stack" aria-labelledby="dz"><h2 id="dz" style="margin:0">${esc(tt('Даты и записи', 'Dates and sign-ups'))}</h2>
+        ${m.dates.length ? m.dates.map(dateCard).join('') : `<p class="empty">${esc(tt('Дат пока нет.', 'No dates yet.'))}</p>`}</section>${form}</div>` : form}
   </div>`;
   const mf = ctx.main.querySelector('#mf');
   const placeBox = ctx.main.querySelector('#place'); const dateHint = ctx.main.querySelector('#datehint');
@@ -314,13 +251,17 @@ export async function meetingEditor(ctx, id) {
   const syncPaid = () => { paidBox.hidden = mf.priceType.value !== 'paid'; };
   mf.priceType.addEventListener('change', () => { syncPaid(); if (!paidBox.hidden && !mf.currency.value && place && CC_CURRENCY[place.cc]) mf.currency.value = CC_CURRENCY[place.cc]; });
   mf.city.addEventListener('input', lookup); mf.country.addEventListener('input', lookup);
-  if (mf.firstDate) { mf.firstDate.addEventListener('input', preview); wireRepeat(mf, preview); }
+  if (mf.firstDate) wireRepeat(mf, preview);
   mf.durationMin.addEventListener('change', preview);
   drawPlace(place ? 'ok' : 'empty');
   if (!place && mf.city.value.trim()) lookup();
   mf.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(mf).entries());
+    const errEl = ctx.main.querySelector('#err');
+    if (!m && !mf.firstDate.value) { errEl.textContent = tt('Выберите дату и время встречи.', 'Choose the meeting date and time.'); mf.querySelector('[data-pick-date]').focus(); return; }
+    if (!mf.title.value.trim()) { errEl.textContent = tt('Укажите название встречи.', 'Enter the meeting title.'); mf.title.focus(); return; }
+    if (!(Number(mf.capacity.value) >= 1)) { errEl.textContent = tt('Укажите количество мест.', 'Enter the number of seats.'); mf.capacity.focus(); return; }
     if (!place) { ctx.main.querySelector('#err').textContent = tt('Уточните город встречи: по нему определяется местное время.', 'Specify the meeting city: the local time depends on it.'); placeBox.scrollIntoView({ block: 'center' }); return; }
     const body = { ...fd, priceAmount: mf.priceAmount.value, currency: mf.currency.value, city: place.city, country: place.country, placeId: place.placeId || '', sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: repeatCount(mf) };
     try {
@@ -331,12 +272,156 @@ export async function meetingEditor(ctx, id) {
       ctx.main.querySelector('#err').textContent = errorText(x);
     }
   });
-  const pub = ctx.main.querySelector('#pub');
-  if (pub) pub.addEventListener('click', async () => { try { await api(`/api/fac/meetings/${id}/publish`, { method: 'POST', body: { published: m.status !== 'published' } }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
-  ctx.main.querySelectorAll('[data-date]').forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/fac/dates/${b.dataset.date}`, { method: 'PATCH', body: { status: b.dataset.set } }); ctx.rerender(); } catch (x) { toast(errorText(x)); } }));
-  const addd = ctx.main.querySelector('#addd');
-  if (addd) { const pv = () => previewFor(ctx.main.querySelector('#addprev'), addd.firstDate.value, m.city, repeatCount(addd)); addd.firstDate.addEventListener('input', pv); wireRepeat(addd, pv); }
-  if (addd) addd.addEventListener('submit', async (e) => { e.preventDefault(); try { await api(`/api/fac/meetings/${id}/dates`, { method: 'POST', body: { firstDate: addd.firstDate.value, repeatWeekly: repeatCount(addd) } }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
+  // ---------- скрытие всей встречи: подтверждение; скрытие не отменяет дат ----------
+  const hideAsk = ctx.main.querySelector('#hide-ask');
+  if (hideAsk) hideAsk.addEventListener('click', () => {
+    ctx.main.querySelector('.more-menu').open = false;
+    const slot = ctx.main.querySelector('#hide-slot');
+    slot.innerHTML = `<div class="notice stack" role="alertdialog" aria-labelledby="hide-t"><b id="hide-t">${esc(tt('Скрыть встречу?', 'Hide the meeting?'))}</b>
+      <span>${esc(tt('Все даты станут недоступны участникам. Даты и записи сохранятся в вашем кабинете.', 'All dates become unavailable to participants. Dates and sign-ups stay in your space.'))}</span>
+      <span class="small">${esc(tt('Скрытие не отменяет встречи.', 'Hiding does not cancel the meetings.'))}</span>
+      <div class="row"><button class="btn danger sm" type="button" id="hide-yes">${esc(tt('Скрыть встречу', 'Hide meeting'))}</button><button class="linkbtn" type="button" id="hide-no">${esc(tt('Назад', 'Back'))}</button></div></div>`;
+    slot.querySelector('#hide-yes').focus();
+    slot.querySelector('#hide-no').onclick = () => { slot.innerHTML = ''; hideAsk.focus(); };
+    slot.querySelector('#hide-yes').onclick = async (e) => { e.target.disabled = true; try { await api(`/api/fac/meetings/${id}/publish`, { method: 'POST', body: { published: false } }); toast(tt('Встреча скрыта', 'Meeting hidden')); ctx.rerender(); } catch (x) { e.target.disabled = false; toast(errorText(x)); } };
+  });
+  const rp = ctx.main.querySelector('#republish');
+  if (rp) rp.addEventListener('click', async () => { rp.disabled = true; try { await api(`/api/fac/meetings/${id}/publish`, { method: 'POST', body: { published: true } }); toast(tt('Встреча снова опубликована', 'Meeting published again')); ctx.rerender(); } catch (x) { rp.disabled = false; toast(errorText(x)); } });
+  // ---------- отмена одной даты: подтверждение с датой, обновление только этой карточки, без прокрутки наверх ----------
+  ctx.main.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-date]'); if (!b) return;
+    const card = b.closest('[data-dcard]'); const act = card.querySelector('[data-dact]');
+    const doIt = async (btn) => {
+      btn.disabled = true;
+      try {
+        await api(`/api/fac/dates/${b.dataset.date}`, { method: 'PATCH', body: { status: b.dataset.set } });
+        const fresh = await api(`/api/fac/meetings/${id}`); const dd = fresh.dates.find((x) => String(x.id) === b.dataset.date);
+        card.outerHTML = dateCard(dd);
+        const nc = ctx.main.querySelector(`[data-dcard="${b.dataset.date}"]`); nc.querySelector('[data-dstate]').setAttribute('tabindex', '-1'); nc.querySelector('[data-dstate]').focus({ preventScroll: true });
+        toast(b.dataset.set === 'cancelled' ? tt('Дата отменена', 'Date cancelled') : tt('Дата восстановлена', 'Date restored'));
+      } catch (x) { btn.disabled = false; toast(errorText(x)); }
+    };
+    if (b.dataset.set !== 'cancelled') return doIt(b);
+    act.innerHTML = `<div class="notice stack" style="width:100%"><b>${esc(tt(`Отменить дату ${b.dataset.when}?`, `Cancel the date ${b.dataset.when}?`))}</b><span class="small">${esc(tt('Остальные даты не изменятся. Записи сохранятся.', 'Other dates stay as they are. Sign-ups are kept.'))}</span>
+      <div class="row"><button class="btn danger sm" type="button" data-yes>${esc(tt('Отменить эту дату', 'Cancel this date'))}</button><button class="linkbtn" type="button" data-no>${esc(tt('Назад', 'Back'))}</button></div></div>`;
+    act.querySelector('[data-no]').onclick = () => { card.outerHTML = dateCard(m.dates.find((x) => String(x.id) === b.dataset.date)); };
+    act.querySelector('[data-yes]').onclick = (ev) => doIt(ev.target);
+    act.querySelector('[data-yes]').focus();
+  });
+  // ---------- добавить дату (произвольную; при необходимости — еженедельно) ----------
+  const addd = ctx.main.querySelector('#addd'); const addGo = ctx.main.querySelector('#add-date-go');
+  if (addd) {
+    const pv = () => previewFor(ctx.main.querySelector('#addprev'), addd.firstDate.value, m.city, repeatCount(addd));
+    wireDatePicker(addd, pv); wireRepeat(addd, pv);
+    addGo.addEventListener('click', () => { addd.hidden = false; addd.scrollIntoView({ block: 'nearest' }); addd.querySelector('[data-pick-date]').focus(); });
+    ctx.main.querySelector('#addd-cancel').onclick = () => { addd.hidden = true; addGo.focus(); };
+    addd.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = ctx.main.querySelector('#aderr');
+      if (!addd.firstDate.value) { err.textContent = tt('Выберите дату и время.', 'Choose a date and time.'); addd.querySelector('[data-pick-date]').focus(); return; }
+      const btn = addd.querySelector('button[type=submit]'); btn.disabled = true;
+      try { await api(`/api/fac/meetings/${id}/dates`, { method: 'POST', body: { firstDate: addd.firstDate.value, repeatWeekly: repeatCount(addd) } }); toast(tt('Дата добавлена', 'Date added')); ctx.rerender(); }
+      catch (x) { btn.disabled = false; err.textContent = errorText(x); }
+    });
+  }
+  if (!m && mf.firstDate) wireDatePicker(mf, preview);
+  wirePoint();
+  // ---------- место на карте: поиск адреса с подтверждением или точка вручную ----------
+  function wirePoint() {
+    const ptBox = ctx.main.querySelector('#pt'); const geo = ctx.main.querySelector('#geo');
+    const drawPt = () => {
+      const has = mf.lat.value && mf.lng.value;
+      ptBox.innerHTML = `${has ? `<span class="small"><b>✓ ${esc(tt('Точка на карте указана', 'Map point set'))}</b> <span class="muted">(${esc(Number(mf.lat.value).toFixed(5))}, ${esc(Number(mf.lng.value).toFixed(5))})</span></span>` : `<span class="small muted">${esc(tt('Точка на карте не указана — участники увидят адрес текстом.', 'No map point — participants will see the address as text.'))}</span>`}
+        <div class="row"><button class="btn sm" type="button" id="geo-find">${esc(tt('Найти адрес на карте', 'Find the address on the map'))}</button><button class="btn sm light" type="button" id="map-open">${esc(tt('Указать точку на карте', 'Set the point on the map'))}</button>${has ? `<button class="linkbtn" type="button" id="pt-clear">${esc(tt('Убрать точку', 'Remove point'))}</button>` : ''}</div>`;
+      ptBox.querySelector('#geo-find').onclick = find;
+      ptBox.querySelector('#map-open').onclick = () => openMap();
+      const cl = ptBox.querySelector('#pt-clear'); if (cl) cl.onclick = () => { mf.lat.value = ''; mf.lng.value = ''; drawPt(); };
+    };
+    async function find() {
+      const q = [mf.venue.value, mf.city.value, mf.country.value].filter((x) => x.trim()).join(', ');
+      if (!mf.venue.value.trim()) { geo.innerHTML = `<span class="small warn">${esc(tt('Сначала напишите место и адрес.', 'Enter the venue and address first.'))}</span>`; mf.venue.focus(); return; }
+      geo.innerHTML = `<span class="small muted">${esc(tt('Ищем…', 'Searching…'))}</span>`;
+      try {
+        const r = await api(`/api/places/geocode?q=${encodeURIComponent(q)}&cc=${encodeURIComponent((place && place.cc) || '')}&lang=${lang}`);
+        geo.innerHTML = r.results.length ? `<span class="small">${esc(tt('Выберите подходящий результат — или укажите точку вручную:', 'Pick the matching result — or set the point yourself:'))}</span><div class="list">${r.results.map((x, i) => `<button class="item" type="button" data-geo="${i}" style="text-align:left"><span class="body small">${esc(x.label)}</span></button>`).join('')}</div>`
+          : `<span class="small warn">${esc(tt('Ничего не нашли. Укажите точку на карте вручную или уточните адрес.', 'Nothing found. Set the point on the map yourself or refine the address.'))}</span>`;
+        geo.querySelectorAll('[data-geo]').forEach((bt) => bt.addEventListener('click', () => { const x = r.results[Number(bt.dataset.geo)]; geo.innerHTML = ''; openMap({ lat: x.lat, lng: x.lng, confirm: true }); }));
+      } catch (x) { geo.innerHTML = `<span class="small warn">${esc(errorText(x))}</span>`; }
+    }
+    async function openMap(start = null) {
+      let c = start || (mf.lat.value ? { lat: Number(mf.lat.value), lng: Number(mf.lng.value) } : null);
+      if (!c && place && place.lat != null) c = { lat: place.lat, lng: place.lng, zoom: 12 };
+      if (!c && mf.city.value.trim()) { try { const r = await api(`/api/places/resolve?city=${encodeURIComponent(mf.city.value.trim())}&country=${encodeURIComponent(mf.country.value.trim())}`); if (r.place && r.place.lat != null) c = { lat: r.place.lat, lng: r.place.lng, zoom: 12 }; } catch { /* без центра города */ } }
+      pickPoint(c || { lat: 20, lng: 0, zoom: 2 }, start && start.confirm, (pt) => { mf.lat.value = pt.lat.toFixed(6); mf.lng.value = pt.lng.toFixed(6); drawPt(); });
+    }
+    drawPt();
+  }
+}
+
+/** Окно с картой (Leaflet + OpenStreetMap): маркер можно перетащить или поставить нажатием; «Сохранить точку» — явное подтверждение. */
+async function pickPoint(c, fromSearch, onSave) {
+  const opener = document.activeElement;
+  const el = document.createElement('div'); el.className = 'picker-wrap'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', tt('Точка на карте', 'Map point'));
+  el.innerHTML = `<div class="picker"><div class="picker-head"><button class="icon-btn" type="button" data-x aria-label="${esc(tt('Отмена', 'Cancel'))}">${ic.close}</button>
+    <div class="grow"><h2 style="margin:0;font-size:1.1rem">${esc(tt('Точка на карте', 'Map point'))}</h2><span class="small muted">${esc(fromSearch ? tt('Проверьте найденное место; при необходимости перетащите маркер.', 'Check the found place; drag the marker if needed.') : tt('Нажмите на карту или перетащите маркер.', 'Tap the map or drag the marker.'))}</span></div>
+    <button class="btn yellow" type="button" data-ok>${esc(tt('Сохранить точку', 'Save point'))}</button></div>
+    <div id="map" class="map-box"></div><p class="small muted" id="map-state" style="margin:0;padding:0 16px 12px" aria-live="polite"></p></div>`;
+  document.getElementById('overlay-root').appendChild(el); document.body.classList.add('no-scroll');
+  const close = () => { el.remove(); document.body.classList.remove('no-scroll'); document.removeEventListener('keydown', onKey); if (opener && document.contains(opener)) opener.focus({ preventScroll: true }); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  el.querySelector('[data-x]').onclick = close;
+  const state = el.querySelector('#map-state');
+  let pt = { lat: c.lat, lng: c.lng };
+  el.querySelector('[data-ok]').onclick = () => { onSave(pt); close(); };
+  try {
+    await loadLeaflet();
+    const L = window.L;
+    const map = L.map(el.querySelector('#map')).setView([c.lat, c.lng], c.zoom || 16);
+    let fails = 0;
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' })
+      .on('tileerror', () => { if (++fails === 3) state.textContent = tt('Карта загружается с ошибками. Описание места сохранится; точку можно сохранить и позже уточнить.', 'The map is not loading well. The place description is kept; you can save the point and refine it later.'); })
+      .addTo(map);
+    const icon = L.icon({ iconUrl: `${u('/vendor/leaflet/images/marker-icon.png')}`, iconRetinaUrl: `${u('/vendor/leaflet/images/marker-icon-2x.png')}`, shadowUrl: `${u('/vendor/leaflet/images/marker-shadow.png')}`, iconSize: [25, 41], iconAnchor: [12, 41] });
+    const mk = L.marker([c.lat, c.lng], { draggable: true, icon, keyboard: true, title: tt('Место встречи', 'Meeting place') }).addTo(map);
+    const upd = (ll) => { pt = { lat: ll.lat, lng: ll.lng }; state.textContent = `${tt('Точка:', 'Point:')} ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`; };
+    mk.on('dragend', () => upd(mk.getLatLng()));
+    map.on('click', (e) => { mk.setLatLng(e.latlng); upd(e.latlng); });
+    upd({ lat: c.lat, lng: c.lng });
+    setTimeout(() => map.invalidateSize(), 50);
+  } catch {
+    state.textContent = tt('Карта сейчас недоступна. Описание места сохранится — точку можно указать позже.', 'The map is unavailable right now. The place description is kept — you can set the point later.');
+    el.querySelector('[data-ok]').disabled = !fromSearch; // найденную адресом точку можно сохранить и без карты
+  }
+}
+let leafletLoading = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletLoading) return leafletLoading;
+  leafletLoading = new Promise((resolve, reject) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = u('/vendor/leaflet/leaflet.css'); document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = u('/vendor/leaflet/leaflet.js'); js.onload = () => resolve(); js.onerror = () => { leafletLoading = null; reject(new Error('leaflet')); };
+    document.head.appendChild(js);
+  });
+  return leafletLoading;
+}
+
+/** Выбор даты: заметная кнопка «Выбрать дату» с календарём (системный выбор даты), читаемая дата, время отдельным полем. */
+const datePickerHtml = (p) => `<div class="date-pick"><input type="hidden" name="firstDate">
+  <div class="row" style="align-items:flex-end">
+    <div class="stack" style="gap:6px"><span class="field" style="font-weight:600;font-size:.9rem">${esc(tt('Дата', 'Date'))} *</span>
+      <button class="btn date-btn" type="button" data-pick-date>${ic.calendar} <span data-date-label>${esc(tt('Выбрать дату', 'Choose a date'))}</span></button>
+      <input type="date" class="date-native" data-date-input tabindex="-1" aria-hidden="true"></div>
+    <label class="field">${esc(tt('Время', 'Time'))} *<input type="time" data-time-input step="300" style="min-width:120px"></label></div></div>`;
+function wireDatePicker(f, onChange) {
+  const di = f.querySelector('[data-date-input]'); const ti = f.querySelector('[data-time-input]'); const lab = f.querySelector('[data-date-label]');
+  const sync = () => {
+    f.firstDate.value = di.value && ti.value ? `${di.value}T${ti.value}` : '';
+    if (di.value) { const [y, mo, d] = di.value.split('-').map(Number); const s2 = fmtTz(new Date(Date.UTC(y, mo - 1, d, 12)).toISOString(), 'UTC', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); lab.textContent = s2.charAt(0).toUpperCase() + s2.slice(1); }
+    onChange && onChange();
+  };
+  f.querySelector('[data-pick-date]').addEventListener('click', () => { try { di.showPicker(); } catch { di.removeAttribute('aria-hidden'); di.classList.add('shown'); di.focus(); } });
+  di.addEventListener('change', sync); di.addEventListener('input', sync); ti.addEventListener('input', sync); ti.addEventListener('change', sync);
 }
 
 // ---------- путь к роли фасилитатора ----------
@@ -357,18 +442,19 @@ export async function apply(ctx) {
   // Путь (один индикатор): 1 — руководство, 2 — проверка знаний и о себе, 3 — рассмотрение заявки.
   const stage = !a ? 0 : a.status === 'submitted' ? 3 : a.status === 'approved' ? 4 : a.courseDone.length === N ? 2 : 1;
   const path = timeline([
+    { title: tt('Вход по email', 'Sign in with email'), state: 'done' },
     { title: tt('Руководство фасилитатора', 'Facilitator guide'), note: a ? esc(tt(`прочитано глав: ${a.courseDone.length} из ${N}`, `chapters read: ${a.courseDone.length} of ${N}`)) : '', state: stage > 1 ? 'done' : 'now' },
-    { title: tt('Проверка знаний и сведения о себе', 'Quiz and about you'), state: stage > 2 ? 'done' : stage === 2 ? 'now' : 'todo' },
-    { title: tt('Рассмотрение заявки администратором', 'Review by an administrator'), note: a && a.status === 'rejected' ? esc(tt('Не одобрено: ', 'Not approved: ') + (a.decisionNote || '—')) : a && a.status === 'approved' ? esc(tt('Одобрено — роль выдана', 'Approved — role granted')) : '', state: stage === 4 ? 'done' : stage === 3 ? 'now' : a && a.status === 'rejected' ? 'bad' : 'todo' },
+    { title: tt('Проверка знаний и заявка', 'Quiz and application'), state: stage > 2 ? 'done' : stage === 2 ? 'now' : 'todo' },
+    { title: tt('Одобрение заявки', 'Approval'), note: a && a.status === 'rejected' ? esc(tt('Не одобрено: ', 'Not approved: ') + (a.decisionNote || '—')) : a && a.status === 'approved' ? esc(tt('Одобрено — роль выдана', 'Approved — role granted')) : '', state: stage === 4 ? 'done' : stage === 3 ? 'now' : a && a.status === 'rejected' ? 'bad' : 'todo' },
   ]);
   let body = '';
   if (!a) {
-    body = `<div class="card-ui stack"><p style="margin:0">${esc(tt('Фасилитатор знакомит участников с форматом, создаёт условия для разговора и проводит завершающий круг. Сначала вы читаете руководство, затем отвечаете на несколько вопросов и рассказываете о себе, после этого администратор рассматривает заявку и выдаёт роль.', 'A facilitator introduces the format, creates the conditions for conversation and leads the closing circle. First you read the guide, then answer a few questions and tell us about yourself; after that an administrator reviews the application and grants the role.'))}</p>
+    body = `<div class="card-ui stack"><p style="margin:0">${esc(tt('Фасилитатор знакомит участников с форматом, создаёт условия для разговора и проводит завершающий круг. Сначала вы читаете руководство фасилитатора, затем проходите проверку знаний и подаёте заявку, после одобрения сможете создавать встречи и подборки карт.', 'A facilitator introduces the format, creates the conditions for conversation and leads the closing circle. First you read the facilitator guide, then take the quiz and apply; once approved, you can create meetings and card selections.'))}</p>
       <div><button class="btn yellow" type="button" id="start">${esc(tt('Начать', 'Start'))}</button></div></div>`;
   } else if (a.status === 'in_progress' || a.status === 'rejected') {
     const done = new Set(a.courseDone);
     const nextUnread = d.course.findIndex((_, i) => !done.has(i));
-    body = `<section class="stack" aria-labelledby="s1"><h2 id="s1" style="margin:0">${esc(tt('Шаг 1. Руководство фасилитатора', 'Step 1. Facilitator guide'))}</h2>
+    body = `<section class="stack" aria-labelledby="s1"><h2 id="s1" style="margin:0">${esc(tt('Шаг 2. Прочитайте руководство фасилитатора', 'Step 2. Read the facilitator guide'))}</h2>
         <p class="small muted" style="margin:0">${esc(tt('Откройте главу, чтобы прочитать её. Отметку «Я прочитал(а)» ставите вы сами — простое открытие главы её не ставит. Прогресс сохраняется.', 'Open a chapter to read it. You mark “I have read it” yourself — opening a chapter does not. Progress is saved.'))}</p>
         ${d.guideMissing ? `<div class="notice">${esc(tt('Тексты глав ещё не загружены администратором — пока видны только названия.', 'Chapter texts have not been uploaded yet — only titles are shown.'))}</div>` : ''}
         <div class="row between"><b id="prog">${esc(tt(`Прочитано ${done.size} из ${N}`, `Read ${done.size} of ${N}`))}</b>${nextUnread >= 0 && done.size ? `<button class="btn sm" type="button" id="cont">${esc(tt(`Продолжить с главы ${nextUnread + 1}`, `Continue with chapter ${nextUnread + 1}`))}</button>` : ''}</div>
@@ -376,16 +462,16 @@ export async function apply(ctx) {
           <div class="ch-body">${d.chapters ? d.chapters[i].map(block).join('') : `<p class="muted">${esc(tt('Текст этой главы пока не загружен.', 'This chapter’s text is not uploaded yet.'))}</p>`}
             <div class="row" style="margin-top:10px"><button class="btn ${done.has(i) ? 'light' : 'yellow'} sm" type="button" data-read="${i}" aria-pressed="${done.has(i)}">${esc(done.has(i) ? tt('Отметить как непрочитанную', 'Mark as unread') : tt('Я прочитал(а)', 'I have read it'))}</button></div></div></details>`).join('')}
           ${d.extra.map((x) => `<details class="chapter"><summary><span class="state" aria-hidden="true"></span><span class="grow"><b>${esc(x.title)}</b><br><span class="small muted">${esc(tt('дополнительно', 'extra reading'))}</span></span></summary><div class="ch-body">${x.blocks.map(block).join('')}</div></details>`).join('')}</div></section>
-      <section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${esc(tt('Шаг 2. Проверка знаний и сведения о себе', 'Step 2. Quiz and about you'))}</h2>
+      <section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${esc(tt('Шаг 3. Пройдите проверку знаний и подайте заявку', 'Step 3. Take the quiz and apply'))}</h2>
         ${d.questionsPlaceholder ? `<p class="small" style="margin:0"><span class="pill demo">${esc(tt('временные вопросы', 'placeholder questions'))}</span> ${esc(tt('Вопросы проверки пока тестовые — их заменят утверждённые.', 'Quiz questions are temporary and will be replaced by approved ones.'))}</p>` : ''}
         ${d.questions.map((q) => `<fieldset style="border:0;padding:0;margin:0" class="stack"><legend style="font-weight:700;margin-bottom:6px">${esc(q.text)}</legend><div class="seg" role="radiogroup">${q.options.map((o, i) => `<label style="display:inline-flex"><input type="radio" class="sr-only" name="${q.id}" value="${i}" ${String(a.answers[q.id]) === String(i) ? 'checked' : ''}><span class="chip ${String(a.answers[q.id]) === String(i) ? 'on' : ''}">${esc(o)}</span></label>`).join('')}</div></fieldset>`).join('')}
         <label class="field">${esc(tt('Город', 'City'))}<input type="text" id="city" maxlength="100" value="${esc(a.city)}"></label>
         <label class="field">${esc(tt('О себе и опыте встреч', 'About you and your meeting experience'))}<textarea id="about" maxlength="2000">${esc(a.about)}</textarea></label>
         <p class="form-error" id="err" role="alert"></p>
         <div><button class="btn yellow" type="button" id="submit">${esc(tt('Отправить заявку', 'Send application'))}</button></div>
-        <p class="small muted" style="margin:0">${esc(tt('Шаг 3: администратор рассмотрит заявку. Когда роль выдадут, в меню появится кабинет фасилитатора.', 'Step 3: an administrator reviews the application. Once the role is granted, the facilitator space appears in the menu.'))}</p></section>`;
+        <p class="small muted" style="margin:0">${esc(tt('Шаг 4: дождитесь одобрения заявки. После одобрения вы сможете создавать встречи и подборки карт для них.', 'Step 4: wait for approval. Once approved, you can create meetings and card selections for them.'))}</p></section>`;
   } else if (a.status === 'submitted') {
-    body = `<div class="card-ui stack"><span class="pill mint" style="justify-self:start">${esc(tt('Заявка отправлена', 'Application sent'))}</span><h2 style="margin:0">${esc(tt('Шаг 3. Рассмотрение заявки', 'Step 3. Review'))}</h2>
+    body = `<div class="card-ui stack"><span class="pill mint" style="justify-self:start">${esc(tt('Заявка отправлена', 'Application sent'))}</span><h2 style="margin:0">${esc(tt('Шаг 4. Одобрение заявки', 'Step 4. Approval'))}</h2>
       <p class="muted" style="margin:0">${esc(tt('Администратор рассмотрит заявку. Когда роль выдадут, в меню появится «Кабинет фасилитатора». Руководство остаётся доступным для чтения.', 'An administrator will review it. Once the role is granted, “Facilitator space” appears in the menu. The guide stays available to read.'))}</p></div>`;
   } else {
     body = `<div class="card-ui stack"><h2>${esc(tt('Роль выдана', 'Role granted'))}</h2><a class="btn yellow" href="${u('/facilitator')}">${esc(tt('Открыть кабинет фасилитатора', 'Open the facilitator space'))}</a></div>`;

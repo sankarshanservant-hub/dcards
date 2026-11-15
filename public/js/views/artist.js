@@ -19,7 +19,7 @@ function workCard(w) {
       ${['needs_changes', 'rejected'].includes(w.status) ? `<div class="small"><b>${esc(returned ? tt('Почему возвращена:', 'Why it was returned:') : tt('Причина решения:', 'Reason:'))}</b></div>${reasonsHtml(w.lastResult)}` : ''}
       ${returned ? `<form class="work-fix" data-fix="${w.id}">
         <label class="field small">${esc(tt('Что исправлено (по желанию)', 'What was fixed (optional)'))}<input type="text" name="note" maxlength="300"></label>
-        <div class="row"><label class="btn yellow sm">${ic.plus} ${esc(tt('Загрузить исправленную версию', 'Upload corrected version'))}<input type="file" name="image" accept="image/*" hidden></label></div>
+        <div class="row"><label class="btn yellow sm">${ic.plus} ${esc(tt('Загрузить новую версию', 'Upload a new version'))}<input type="file" name="image" accept="image/jpeg,image/png" hidden></label></div>
       </form>` : ''}</div></div>`;
 }
 
@@ -34,11 +34,12 @@ export async function cabinet(ctx) {
   const need = data.works.filter((w) => w.status === 'needs_changes');
   const review = data.works.filter((w) => ['submitted', 'discussion'].includes(w.status));
   const other = data.works.filter((w) => !['needs_changes', 'submitted', 'discussion', 'approved'].includes(w.status));
+  const showAll = ctx.query.get('all') === '1';
   const group = (title, list, open = true) => (list.length ? `<section class="stack" style="gap:8px"><h2 style="margin:10px 0 0">${esc(title)} <span class="muted" style="font-size:1rem">· ${list.length}</span></h2>${list.map(workCard).join('')}</section>` : '');
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><h1>${esc(tt('Мои работы', 'My works'))}</h1><p class="sub">${esc(session.user.publicName)} · ${esc(tt('кабинет художника', 'artist space'))}</p></div>
     <div class="row"><a class="btn yellow" href="${u('/artist/submit')}">${ic.plus} ${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a>
-      <span class="small muted" style="max-width:34em">${esc(tt('Каждая работа рассматривается отдельно. При возврате видны номера и расшифровка критериев.', 'Each work is reviewed separately. If returned, you see the criteria numbers and their text.'))}</span></div>
+      <span class="small muted" style="max-width:34em">${esc(tt('При возврате на доработку вы увидите причину.', 'If a work is returned for changes, you will see the reason.'))}</span></div>
     ${!data.works.length && !data.cards.length ? `<p class="empty">${esc(tt('Вы ещё не предлагали иллюстраций.', 'You have not suggested any illustrations yet.'))}</p>` : ''}
     ${group(tt('Нужно доработать', 'Needs changes'), need)}
     ${group(tt('На рассмотрении', 'Under review'), review)}
@@ -46,11 +47,11 @@ export async function cabinet(ctx) {
       <div class="my-cards" id="mycards">${data.cards.length ? data.cards.map((c) => `<article class="my-card" data-card="${esc(c.code)}">
           <div class="mc-head"><b>${esc(c.code)}</b> · <span>${c.status === 'published' ? esc(tt('В галерее', 'In the gallery')) : esc(tt('Снята с сайта', 'Removed from the site'))}</span>${c.pendingReplacement ? `<span class="small muted"> · ${esc(tt('новая версия на рассмотрении', 'new version in review'))}</span>` : ''}</div>
           <div class="mc-img"><img src="${esc(c.thumb)}" alt="${esc(c.code)}" loading="lazy"></div>
-          ${c.status === 'published' ? `<div class="mc-actions"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/*" data-replace="${esc(c.code)}" hidden></label>
+          ${c.status === 'published' ? `<div class="mc-actions"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/jpeg,image/png" data-replace="${esc(c.code)}" hidden></label>
             <button class="linkbtn mc-remove" type="button" data-withdraw="${esc(c.code)}">${esc(tt('Убрать', 'Remove'))}</button></div>` : ''}
           <div class="mc-ask"></div>
         </article>`).join('') : ''}</div>
-      ${other.length ? `<details class="more card-ui flat"><summary>${esc(tt(`Отклонённые и прочие работы · ${other.length}`, `Declined and other works · ${other.length}`))}</summary><div class="stack" style="gap:8px;margin-top:8px">${other.map(workCard).join('')}</div></details>` : ''}
+      ${showAll ? group(tt('Отклонённые и снятые', 'Declined and withdrawn'), other) : other.length ? `<p class="small" style="margin:6px 0 0"><a href="${u('/artist?all=1')}">${esc(tt('Показать все работы, включая отклонённые', 'Show all works, including declined'))}</a></p>` : ''}
       <div id="ask"></div>
     </div>`;
   const ask = ctx.main.querySelector('#ask');
@@ -104,17 +105,18 @@ export function submit(ctx) {
       ${step === 1 ? `<h1>${esc(tt('Условия публикации', 'Publication terms'))}</h1>
         <div class="card-ui flat stack" style="gap:6px"><b>${esc(tt('Что понадобится', 'What you will need'))}</b>
           <ul style="margin:0;padding-left:1.2em" class="small">
-            <li>${esc(tt('Файлы изображений: JPG, PNG, WebP или TIFF — до 60 МБ каждый, до 20 файлов за одну отправку.', 'Image files: JPG, PNG, WebP or TIFF — up to 60 MB each, up to 20 files per submission.'))}</li>
-            <li>${esc(tt('Согласие с условиями публикации — до загрузки файлов.', 'Agreement to the publication terms — before uploading.'))}</li>
-            <li>${esc(tt('Имя автора под картами берётся из профиля — его можно изменить там.', 'The artist name under the cards comes from your profile — you can change it there.'))}</li></ul></div>
+            <li>${esc(tt('JPEG или PNG, до 60 МБ, до 20 файлов за одну отправку.', 'JPEG or PNG, up to 60 MB, up to 20 files per submission.'))}</li>
+            <li>${esc(tt('Вертикальное изображение, соотношение сторон 7:12.', 'A vertical image with a 7:12 aspect ratio.'))}</li>
+            <li>${esc(tt('Формат печатной карты — 70 × 120 мм.', 'The printed card is 70 × 120 mm.'))}</li></ul>
+          <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The artist name under the cards comes from your profile. You can change it there.'))}</p></div>
         <p>${esc(tt('Публикация добровольная. Прочитайте короткое условие и отметьте галочку.', 'Publishing is voluntary. Read the short condition and tick the box.'))}</p>
         <label class="check card-ui flat"><input type="checkbox" id="terms" ${accepted ? 'checked' : ''}>
           <span>${esc(tt('Я принимаю условия публикации и разрешаю бесплатно показывать эту работу в галерее Dialogue Cards и в подборках для встреч Dialogue Flow. Использование работы в печатной колоде согласуется со мной отдельно.', 'I accept the publication terms and allow this work to be shown free of charge in the Dialogue Cards gallery and in selections for Dialogue Flow meetings. Use of the work in a printed deck will be agreed with me separately.'))}
           <a href="${u('/terms')}" target="_blank">${esc(tt('Полные условия', 'Full terms'))}</a> <span class="pill demo">${esc(tt('черновик текста', 'draft text'))}</span></span></label>
         <button class="btn dark" type="button" id="next" ${accepted ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button>`
       : step === 2 ? `<h1>${esc(tt('Ваши работы', 'Your works'))}</h1>
-        <p>${esc(tt('Можно добавить одно или несколько изображений (JPG, PNG, WebP, TIFF). Каждая работа получит свой статус и решение; код карты присваивается автоматически при публикации.', 'Add one or more images (JPG, PNG, WebP, TIFF). Each work gets its own status and decision; the card code is assigned automatically on publication.'))}</p>
-        <input type="file" id="files" accept="image/jpeg,image/png,image/webp,image/tiff" multiple>
+        <p>${esc(tt('Можно добавить одно или несколько изображений (JPEG или PNG). Каждая работа получит свой статус и решение; код карты присваивается автоматически при публикации.', 'Add one or more images (JPEG or PNG). Each work gets its own status and decision; the card code is assigned automatically on publication.'))}</p>
+        <input type="file" id="files" accept="image/jpeg,image/png" multiple>
         <div class="cells" id="prev">${files.map((f, i) => `<div class="cell"><div class="tile" style="cursor:default"><img src="${URL.createObjectURL(f)}" alt=""></div><small>${esc(f.name)}</small><button class="mini-btn r" type="button" data-rm="${i}">${ic.x}</button></div>`).join('')}</div>
         <p class="small muted" style="margin:0">${esc(tt('Автор в карточке:', 'Artist name on cards:'))} <b>${esc(session.user.publicName)}</b> (${esc(tt('меняется в профиле', 'change it in your profile'))})</p>
         <p class="form-error" id="err" role="alert"></p>
@@ -174,7 +176,7 @@ export async function work(ctx, id) {
       <div class="card-ui stack">${timeline(steps)}
         ${['needs_changes', 'rejected'].includes(w.status) && r ? `<div><b>${esc(tt('Причины решения', 'Reasons'))}</b>${reasonsHtml(r)}</div>` : ''}
         ${['needs_changes', 'submitted'].includes(w.status) && w.artistId === session.user.id ? `<form class="form" id="vf"><b>${esc(w.status === 'needs_changes' ? tt('Отправить исправление в ту же заявку', 'Send a fix in the same submission') : tt('Заменить файл до решения', 'Replace the file before the decision'))}</b>
-          <input type="file" name="image" accept="image/*" required><label class="field">${esc(tt('Что исправлено', 'What was fixed'))}<input type="text" name="note" maxlength="300"></label>
+          <input type="file" name="image" accept="image/jpeg,image/png" required><label class="field">${esc(tt('Что исправлено', 'What was fixed'))}<input type="text" name="note" maxlength="300"></label>
           <button class="btn dark" type="submit">${esc(tt('Отправить новую версию', 'Send new version'))}</button></form>` : ''}
       </div>
       <div class="stack"><h3>${esc(tt('Версии', 'Versions'))}</h3><div class="compare">${w.versions.slice().reverse().map((v) => `<figure><img src="${esc(v.thumb)}" data-full="${esc(v.full)}" data-w="${v.width}" data-h="${v.height}" alt=""><figcaption>${esc(tt('Версия', 'Version'))} ${v.n}${v.note ? ' · ' + esc(v.note) : ''}</figcaption></figure>`).join('')}</div></div>

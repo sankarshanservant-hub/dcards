@@ -9,6 +9,7 @@ import * as acc from './views/account.js';
 import * as artist from './views/artist.js';
 import * as cur from './views/curator.js';
 import * as fac from './views/facilitator.js';
+import * as coll from './views/fac-collections.js';
 import * as team from './views/team.js';
 import * as adm from './views/admin.js';
 
@@ -42,16 +43,26 @@ const routes = [
   [/^\/curator\/works\/(\d+)\/?$/, cur.review],
   [/^\/facilitator\/?$/, fac.cabinet],
   [/^\/facilitator\/apply\/?$/, fac.apply],
-  [/^\/facilitator\/c\/(\d+)\/?$/, fac.collectionEditor],
+  [/^\/facilitator\/collections\/?$/, coll.list],
+  [/^\/facilitator\/meetings\/?$/, fac.meetingsList],
+  [/^\/facilitator\/c\/(\d+)\/?$/, coll.editor],
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
-  [/^\/team\/(curators|facilitators)\/?$/, team.chat],
+  [/^\/chats\/?$/, team.rooms],
+  [/^\/team\/(general|curators|facilitators)\/?$/, team.chat],
   [/^\/print\/?$/, team.print],
   [/^\/admin\/?$/, adm.overview],
   [/^\/admin\/(users|applications|meetings|cards|comments|criteria|guide|letters)\/?$/, adm.section],
 ];
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
+
+// «← На главную» на внутренних страницах (кабинеты, чаты, заявки) — конкретный маршрут, не history.back().
+const INNER = /^\/(chats|team|artist|curator|facilitator|admin|me|print|demo)(\/|$)/;
+function addHomeLink(path, ctx) {
+  if (!ctx.alive() || !INNER.test(path) || main.querySelector('.back-home')) return;
+  main.insertAdjacentHTML('afterbegin', `<div class="wrap" style="padding-top:12px"><a class="back-home" href="${u('/')}">← ${esc(tt('На главную', 'Home'))}</a></div>`);
+}
 
 async function render() {
   const token = ++renderToken;
@@ -66,7 +77,7 @@ async function render() {
   for (const [re, view] of routes) {
     const m = path.match(re);
     if (m) {
-      try { await view(ctx, ...m.slice(1).map(decodeURIComponent)); if (location.hash && ctx.alive()) { const t = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (t) t.scrollIntoView({ block: 'start' }); } } catch (e) { console.error(e); if (ctx.alive()) main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(errorText(e))}</p></div>`; }
+      try { await view(ctx, ...m.slice(1).map(decodeURIComponent)); addHomeLink(path, ctx); if (location.hash && ctx.alive()) { const t = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (t) t.scrollIntoView({ block: 'start' }); } } catch (e) { console.error(e); if (ctx.alive()) main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(errorText(e))}</p></div>`; }
       return;
     }
   }

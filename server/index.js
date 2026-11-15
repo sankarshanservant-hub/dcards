@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -31,7 +33,7 @@ app.use((req, res, next) => {
   res.set({
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'",
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'",
   });
   next();
 });
@@ -61,6 +63,12 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 60 * 1024 * 1024, files: 20 },
   fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp|tiff)$/.test(file.mimetype)),
+});
+// Работы художников: только JPEG или PNG (условие проекта); неподходящий файл — понятная ошибка, а не молчаливый пропуск.
+const artistUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 60 * 1024 * 1024, files: 20 },
+  fileFilter: (req, file, cb) => (/^image\/(jpeg|png)$/.test(file.mimetype) ? cb(null, true) : cb(Object.assign(new Error('bad_image_type'), { code: 'bad_image_type' }))),
 });
 
 // ---------- изображения ----------
@@ -245,7 +253,7 @@ r.get('/api/c/:slug/qr.:fmt(svg|png)', wrap(async (req, res) => {
 r.get('/api/meetings/places', (req, res) => res.json({ places: meetings.places(req.showDemo) }));
 r.get('/api/meetings', (req, res) => res.json({ dates: meetings.upcoming({ country: req.query.country, city: req.query.city }, req.showDemo) }));
 r.get('/api/meetings/dates/:id', (req, res) => {
-  const d = meetings.datePublic(Number(req.params.id), req.showDemo);
+  const d = meetings.datePublic(Number(req.params.id), req.showDemo, req.user ? { id: req.user.id, isAdmin: req.has('admin') } : null);
   if (!d) return bad(res, 'not_found', 404);
   res.json(d);
 });
@@ -267,17 +275,17 @@ r.post('/api/registrations/:token/cancel', (req, res) => out(res, meetings.cance
 // ---------- художник ----------
 // Роль художника выдаётся автоматически при первой подаче работ (правила выдачи ролей ещё уточняются).
 r.get('/api/artist/works', auth.requireUser, (req, res) => res.json({ works: works.myWorks(req.user.id), cards: works.myCards(req.user.id), criteria: works.criteriaList() }));
-r.post('/api/artist/works', auth.requireUser, upload.array('images', 20), wrap(async (req, res) => {
+r.post('/api/artist/works', auth.requireUser, artistUpload.array('images', 20), wrap(async (req, res) => {
   const notes = [].concat(req.body.notes || []);
   const result = await works.submit(req.user, req.files || [], { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, notes });
   if (!result.error) auth.grant(req.user.id, 'artist');
   out(res, result, 201);
 }));
-r.post('/api/artist/works/:id/versions', auth.requireUser, upload.single('image'), wrap(async (req, res) => {
+r.post('/api/artist/works/:id/versions', auth.requireUser, artistUpload.single('image'), wrap(async (req, res) => {
   if (!req.file) return bad(res, 'no_image');
   out(res, await works.addVersion(req.user, Number(req.params.id), req.file, req.body.note));
 }));
-r.post('/api/artist/cards/:code/replace', auth.requireUser, upload.single('image'), wrap(async (req, res) => {
+r.post('/api/artist/cards/:code/replace', auth.requireUser, artistUpload.single('image'), wrap(async (req, res) => {
   if (!req.file) return bad(res, 'no_image');
   out(res, await works.proposeReplacement(req.user, req.params.code, req.file, { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, note: req.body.note }), 201);
 }));
@@ -296,18 +304,46 @@ r.post('/api/curation/works/:id/decide', curator, (req, res) => out(res, works.d
 r.post('/api/curation/works/:id/discuss', curator, (req, res) => out(res, works.discuss(req.user, Number(req.params.id), req.body.question ?? req.body.comment)));
 r.post('/api/curation/works/:id/vote', curator, (req, res) => out(res, works.vote(req.user, Number(req.params.id), req.body.vote, req.body.comment)));
 
-// ---------- командные чаты ----------
-r.get('/api/chats/:room', auth.requireUser, (req, res) => {
-  const room = req.params.room;
-  if (!community.ROOMS[room]) return bad(res, 'not_found', 404);
-  if (!req.has(...community.ROOMS[room])) return bad(res, 'forbidden', 403);
-  res.json({ messages: community.chat(room, req.showDemo), members: community.members(room) });
+// ---------- чаты: общий и ролевые; сообщения с изображениями; «Медиа» ----------
+const chatUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 6 },
+  fileFilter: (req, file, cb) => (/^image\/(jpeg|png|webp)$/.test(file.mimetype) ? cb(null, true) : cb(Object.assign(new Error('bad_image_type'), { code: 'bad_image_type' }))),
 });
-r.post('/api/chats/:room', auth.requireUser, (req, res) => {
+const CHAT_DIR = path.join(config.mediaDir, 'chat');
+for (const d of ['full', 'thumb']) fs.mkdirSync(path.join(CHAT_DIR, d), { recursive: true });
+async function chatImage(buf) {
+  const meta = await sharp(buf).metadata();
+  if (!meta.width || !meta.height) throw Object.assign(new Error('bad_image_type'), { code: 'bad_image_type' });
+  const name = `${crypto.randomBytes(12).toString('base64url')}.webp`;
+  const full = await sharp(buf).rotate().resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).webp({ quality: 84 }).toBuffer({ resolveWithObject: true });
+  await sharp(buf).rotate().resize({ width: 360, withoutEnlargement: true }).webp({ quality: 78 }).toFile(path.join(CHAT_DIR, 'thumb', name));
+  fs.writeFileSync(path.join(CHAT_DIR, 'full', name), full.data);
+  return { file: name, width: full.info.width, height: full.info.height };
+}
+const roomGuard = (req, res, next) => {
   const room = req.params.room;
   if (!community.ROOMS[room]) return bad(res, 'not_found', 404);
-  if (!req.has(...community.ROOMS[room])) return bad(res, 'forbidden', 403);
-  out(res, community.post(room, req.user, req.body.text), 201);
+  if (!community.canRoom(room, req.has)) return bad(res, 'forbidden', 403);
+  next();
+};
+r.get('/api/chats', auth.requireUser, (req, res) => res.json({ rooms: community.rooms(req.has) }));
+r.get('/api/chats/:room', auth.requireUser, roomGuard, (req, res) => res.json({ messages: community.chat(req.params.room, req.showDemo), members: community.members(req.params.room) }));
+r.post('/api/chats/:room', auth.requireUser, roomGuard, chatUpload.array('images', 6), wrap(async (req, res) => {
+  const b = req.body || {};
+  if (b.clientId) { const dup = db.prepare('SELECT id FROM chat_messages WHERE user_id = ? AND client_id = ?').get(req.user.id, String(b.clientId).slice(0, 64)); if (dup) return res.status(201).json({ ok: true, id: dup.id, duplicate: true }); }
+  const files = [];
+  for (const f of req.files || []) files.push(await chatImage(f.buffer));
+  out(res, community.post(req.params.room, req.user, b.text, { files, category: b.category, clientId: b.clientId }), 201);
+}));
+r.delete('/api/chats/:room/messages/:id', auth.requireUser, roomGuard, (req, res) => out(res, community.deleteMessage(req.params.room, Number(req.params.id), req.user, req.has('admin'))));
+r.get('/api/chats/:room/media', auth.requireUser, roomGuard, (req, res) => res.json({ media: community.media(req.params.room, req.showDemo, String(req.query.category || '')) }));
+// Файлы вложений — только тем, у кого есть доступ к комнате, и только у неудалённых сообщений (не публичные адреса /media).
+r.get('/api/chats/:room/media/:kind(full|thumb)/:file', auth.requireUser, roomGuard, (req, res) => {
+  const file = path.basename(req.params.file);
+  if (!community.attachmentFile(req.params.room, file)) return bad(res, 'not_found', 404);
+  res.set('Cache-Control', 'private, max-age=86400');
+  res.sendFile(path.join(CHAT_DIR, req.params.kind, file));
 });
 
 // ---------- фасилитатор: подборки ----------
@@ -342,6 +378,23 @@ r.delete('/api/collections/:id', fac, (req, res) => {
 // ---------- фасилитатор: встречи ----------
 const ownsMeeting = (req, id) => meetings.facilitatorOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('meetings', 'id', id)));
 r.get('/api/fac/meetings', fac, (req, res) => res.json({ meetings: meetings.mine(req.user.id) }));
+// Поиск места/адреса для точки на карте (через сервер; OpenStreetMap Nominatim). Результат подтверждает фасилитатор.
+const geoCache = new Map(); let geoLast = 0;
+r.get('/api/places/geocode', fac, wrap(async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 200); const cc = /^[a-z]{2}$/i.test(req.query.cc || '') ? req.query.cc.toLowerCase() : '';
+  if (q.length < 3) return res.json({ results: [] });
+  const key = cc + '|' + q.toLowerCase();
+  if (geoCache.has(key)) return res.json({ results: geoCache.get(key) });
+  const wait = Math.max(0, geoLast + 1100 - Date.now()); if (wait) await new Promise((r2) => setTimeout(r2, wait)); geoLast = Date.now(); // не чаще 1 запроса в секунду
+  try {
+    const url = `${process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search'}?${new URLSearchParams({ format: 'jsonv2', limit: '5', q, 'accept-language': req.query.lang === 'en' ? 'en' : 'ru', ...(cc ? { countrycodes: cc } : {}) })}`;
+    const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://harekrishna.info/dialogue-cards/)' }, signal: AbortSignal.timeout(8000) });
+    if (!rr.ok) throw new Error('geocoder ' + rr.status);
+    const results = (await rr.json()).map((x) => ({ label: x.display_name, lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+    geoCache.set(key, results); if (geoCache.size > 500) geoCache.delete(geoCache.keys().next().value);
+    res.json({ results });
+  } catch { bad(res, 'geocoder_unavailable', 503); }
+}));
 // Город встречи → часовой пояс (пояс вручную не выбирается). ?city=&country=&placeId=
 r.get('/api/places/resolve', fac, (req, res) => res.json(places.resolve({ city: req.query.city, country: req.query.country, placeId: req.query.placeId })));
 /**
@@ -590,6 +643,7 @@ r.get('*', (req, res) => {
 });
 
 r.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+  if (err && err.code === 'bad_image_type') return bad(res, 'bad_image_type');
   console.error(err);
   if (err instanceof multer.MulterError) return bad(res, err.code === 'LIMIT_FILE_SIZE' ? 'file_too_large' : 'upload_error');
   bad(res, 'server_error', 500);

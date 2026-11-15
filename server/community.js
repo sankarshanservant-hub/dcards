@@ -27,20 +27,64 @@ function recentComments(showDemo) {
     .map((c) => ({ id: c.id, code: c.code, author: userName(c.user_id), text: c.text, createdAt: c.created_at, isDemo: !!c.is_demo }));
 }
 
-// ---------- командные чаты ----------
-// Кто видит переписку: чат кураторов — кураторы и администраторы; чат фасилитаторов — фасилитаторы и администраторы.
-const ROOMS = { curators: ['curator'], facilitators: ['facilitator'] };
+// ---------- чаты ----------
+// Кто видит переписку: общий — все вошедшие; кураторов — кураторы и администраторы; фасилитаторов — фасилитаторы и администраторы.
+// [] — доступен любому вошедшему.
+const ROOMS = { general: [], curators: ['curator'], facilitators: ['facilitator'] };
+const CATEGORIES = ['meetings', 'illustrations', 'inspiration'];
+const canRoom = (room, has) => !!ROOMS[room] && (!ROOMS[room].length || has(...ROOMS[room]));
+const attOut = (room) => (a) => ({ id: a.id, category: a.category, width: a.width, height: a.height,
+  thumb: `/api/chats/${room}/media/thumb/${a.file}`, full: `/api/chats/${room}/media/full/${a.file}` });
 function chat(room, showDemo) {
-  return db.prepare(`SELECT * FROM chat_messages WHERE room = ? AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC LIMIT 200`).all(room).reverse()
-    .map((m) => ({ id: m.id, author: userName(m.user_id), userId: m.user_id, text: m.text, createdAt: m.created_at, workId: m.work_id || null }));
+  const rows = db.prepare(`SELECT * FROM chat_messages WHERE room = ? AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC LIMIT 200`).all(room).reverse();
+  const atts = rows.length ? db.prepare(`SELECT * FROM chat_attachments WHERE message_id IN (${rows.map(() => '?').join(',')}) ORDER BY id`).all(...rows.map((m) => m.id)) : [];
+  return rows.map((m) => ({
+    id: m.id, author: userName(m.user_id), userId: m.user_id, createdAt: m.created_at, workId: m.work_id || null,
+    deleted: !!m.deleted_at, text: m.deleted_at ? '' : m.text,
+    attachments: m.deleted_at ? [] : atts.filter((a) => a.message_id === m.id).map(attOut(room)),
+  }));
 }
-function post(room, user, text) {
+/** Сообщение с изображениями. files — уже обработанные { file, width, height }. Повтор с тем же clientId не создаёт дубль. */
+function post(room, user, text, { files = [], category = '', clientId = '' } = {}) {
   const t = String(text || '').trim().slice(0, 4000);
-  if (!t) return { error: 'empty' };
-  db.prepare('INSERT INTO chat_messages (room, user_id, text, is_demo) VALUES (?, ?, ?, ?)').run(room, user.id, t, user.is_demo ? 1 : 0);
+  if (!t && !files.length) return { error: 'empty' };
+  const cid = String(clientId || '').slice(0, 64);
+  if (cid) { const dup = db.prepare('SELECT id FROM chat_messages WHERE user_id = ? AND client_id = ?').get(user.id, cid); if (dup) return { ok: true, id: dup.id, duplicate: true }; }
+  const cat = CATEGORIES.includes(category) ? category : '';
+  return db.transaction(() => {
+    const info = db.prepare('INSERT INTO chat_messages (room, user_id, text, is_demo, client_id) VALUES (?, ?, ?, ?, ?)').run(room, user.id, t, user.is_demo ? 1 : 0, cid || null);
+    const id = Number(info.lastInsertRowid);
+    for (const f of files) db.prepare('INSERT INTO chat_attachments (message_id, room, file, width, height, category) VALUES (?, ?, ?, ?, ?, ?)').run(id, room, f.file, f.width, f.height, cat);
+    return { ok: true, id };
+  })();
+}
+/** Удалить сообщение: автор или администратор. Текст и изображения скрываются везде (и в «Медиа»), автор и время остаются. */
+function deleteMessage(room, id, user, isAdmin) {
+  const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND room = ?').get(id, room);
+  if (!m) return { error: 'not_found' };
+  if (m.user_id !== user.id && !isAdmin) return { error: 'forbidden' };
+  db.prepare(`UPDATE chat_messages SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), deleted_by = ? WHERE id = ?`).run(user.id, id);
   return { ok: true };
 }
+/** «Медиа» чата: изображения неудалённых сообщений, с автором, временем и текстом сообщения. */
+function media(room, showDemo, category = '') {
+  return db.prepare(`SELECT a.*, m.user_id, m.text, m.created_at AS msg_at FROM chat_attachments a JOIN chat_messages m ON m.id = a.message_id
+      WHERE a.room = ? AND m.deleted_at IS NULL AND ${showDemo ? '1=1' : 'm.is_demo = 0'} ${CATEGORIES.includes(category) ? 'AND a.category = ?' : ''} ORDER BY a.id DESC LIMIT 300`)
+    .all(...[room, ...(CATEGORIES.includes(category) ? [category] : [])])
+    .map((a) => ({ ...attOut(room)(a), messageId: a.message_id, author: userName(a.user_id), text: a.text, createdAt: a.msg_at }));
+}
+/** Файл вложения доступен, только если сообщение не удалено (права на комнату проверяет маршрут). */
+function attachmentFile(room, file) {
+  return db.prepare(`SELECT a.file FROM chat_attachments a JOIN chat_messages m ON m.id = a.message_id WHERE a.room = ? AND a.file = ? AND m.deleted_at IS NULL`).get(room, file);
+}
+function rooms(has) {
+  return Object.keys(ROOMS).filter((r) => canRoom(r, has)).map((r) => {
+    const last = db.prepare('SELECT created_at FROM chat_messages WHERE room = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1').get(r);
+    return { room: r, lastAt: last ? last.created_at : null };
+  });
+}
 function members(room) {
+  if (!ROOMS[room].length) return null; // общий чат: все участники
   return db.prepare(`SELECT DISTINCT u.id, COALESCE(NULLIF(u.public_name,''), u.name) AS name, r.role FROM users u JOIN user_roles r ON r.user_id = u.id
     WHERE r.role IN (?, 'admin') ORDER BY r.role, name`).all(ROOMS[room][0]);
 }
@@ -134,6 +178,6 @@ function decideCuratorApplication(adminId, userId, approve, note = '') {
 
 module.exports = {
   curatorApplication, submitCuratorApplication, curatorApplications, decideCuratorApplication,
-  comments, addComment, deleteComment, recentComments, ROOMS, chat, post, members,
+  comments, addComment, deleteComment, recentComments, ROOMS, CATEGORIES, canRoom, chat, post, deleteMessage, media, attachmentFile, rooms, members,
   COURSE, QUESTIONS, application, startApplication, saveApplication, submitApplication, applications, decideApplication,
 };

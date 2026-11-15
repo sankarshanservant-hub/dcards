@@ -9,7 +9,7 @@ export const ic = {
   cards: P('<rect x="4" y="3" width="11" height="16" rx="2"/><path d="M17 6l3 1-4 14-7-2"/>'),
   calendar: P('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
   brush: P('<path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h4"/>'),
-  people: P('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15 15c3 0 6 1.5 6 4"/>'),
+  people: P('<circle cx="7.5" cy="7.5" r="2.8"/><circle cx="16.5" cy="7.5" r="2.8"/><path d="M2.5 19c0-3 2.2-5.2 5-5.2s5 2.2 5 5.2"/><path d="M14 14.1c.8-.2 1.6-.3 2.5-.3 2.8 0 5 2.2 5 5.2"/>'),
   check: P('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
   shield: P('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>'),
   chat: P('<path d="M4 5h16v11H9l-5 4z"/>'),
@@ -26,8 +26,9 @@ export const ic = {
   sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'),
   globe: P('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>'),
   book: P('<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-6M20 4v14h-6"/>'),
-  picPlus: P('<rect x="3" y="6" width="14" height="14" rx="2"/><path d="M3 17l4-4 3 3 2-2 5 5"/><path d="M19 2v6M16 5h6"/>'),
-  picCheck: P('<rect x="3" y="6" width="14" height="14" rx="2"/><path d="M3 17l4-4 3 3 2-2 5 5"/><path d="M16.5 5.5l2.5 2.5 4-4.5"/>'),
+  picPlus: P('<rect x="2.5" y="7" width="12.5" height="14.5" rx="2"/><path d="M2.5 18l3.5-3.5 3 3 2-2 4 4"/><circle cx="10.5" cy="11.5" r="1.3"/><path d="M19.5 2.5v6M16.5 5.5h6"/>'),
+  picCheck: P('<rect x="2.5" y="7" width="12.5" height="14.5" rx="2"/><path d="M2.5 18l3.5-3.5 3 3 2-2 4 4"/><circle cx="10.5" cy="11.5" r="1.3"/><path d="M16.5 5.2l2.1 2.1 3.9-4.3"/>'),
+  chats: P('<path d="M3 4h12v8H8l-4 3z"/><path d="M9 15v1h8l4 3v-11h-3"/>'),
   arrow: P('<path d="M5 12h14M13 6l6 6-6 6"/>'),
 };
 

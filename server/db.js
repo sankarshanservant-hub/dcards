@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 CREATE TABLE IF NOT EXISTS chat_messages (
   id         INTEGER PRIMARY KEY,
-  room       TEXT NOT NULL CHECK (room IN ('curators','facilitators')),
+  room       TEXT NOT NULL,                        -- general | curators | facilitators (права — в community.ROOMS)
   user_id    INTEGER NOT NULL REFERENCES users(id),
   text       TEXT NOT NULL,
   is_demo    INTEGER NOT NULL DEFAULT 0,
@@ -306,6 +306,8 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_site_uid ON users(site_uid)
 addColumn('collections', 'owner_id', 'INTEGER REFERENCES users(id)');
 addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 // Единый счётчик «Выбрали для обсуждения»: выбор в подборке не идёт в счёт, если карту выбрал её автор или демо-роль.
+addColumn('meetings', 'lat', 'REAL');                   // точка места на карте (подтверждена фасилитатором)
+addColumn('meetings', 'lng', 'REAL');
 addColumn('meetings', 'duration_min', 'INTEGER');       // продолжительность (мин); у старых встреч — пусто, не выдумываем
 addColumn('meetings', 'price_amount', 'REAL');          // стоимость участия с человека (платная встреча)
 addColumn('meetings', 'currency', "TEXT NOT NULL DEFAULT ''"); // ISO 4217, например THB
@@ -319,6 +321,32 @@ db.exec(`CREATE TABLE IF NOT EXISTS print_requests (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 )`);
 addColumn('chat_messages', 'work_id', 'INTEGER REFERENCES works(id)'); // вопрос куратора со ссылкой на работу
+// Старые базы: снять ограничение room IN ('curators','facilitators'), чтобы добавить общий чат (данные переносятся как есть).
+{
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chat_messages'").get();
+  if (row && /CHECK \(room IN/.test(row.sql)) {
+    const cols = db.prepare('PRAGMA table_info(chat_messages)').all().map((c) => c.name).join(', ');
+    db.exec(`PRAGMA foreign_keys = OFF; BEGIN;
+      CREATE TABLE chat_messages_new (id INTEGER PRIMARY KEY, room TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id), text TEXT NOT NULL,
+        is_demo INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), work_id INTEGER REFERENCES works(id));
+      INSERT INTO chat_messages_new (${cols}) SELECT ${cols} FROM chat_messages;
+      DROP TABLE chat_messages; ALTER TABLE chat_messages_new RENAME TO chat_messages; COMMIT; PRAGMA foreign_keys = ON;`);
+  }
+}
+addColumn('chat_messages', 'deleted_at', 'TEXT');      // удалено автором или модератором: текст и изображения скрываются, автор и время остаются
+addColumn('chat_messages', 'deleted_by', 'INTEGER');
+addColumn('chat_messages', 'client_id', 'TEXT');       // защита от дубля при повторной отправке
+db.exec(`CREATE TABLE IF NOT EXISTS chat_attachments (
+  id         INTEGER PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES chat_messages(id),
+  room       TEXT NOT NULL,
+  file       TEXT NOT NULL,                          -- имя в media/chat/{full,thumb}
+  width      INTEGER, height INTEGER,
+  category   TEXT NOT NULL DEFAULT '',               -- '' | meetings | illustrations | inspiration
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_att_room ON chat_attachments(room, id);
+CREATE INDEX IF NOT EXISTS idx_chat_msg_room ON chat_messages(room, id);`);
 addColumn('selections', 'counted', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('selections', 'user_id', 'INTEGER REFERENCES users(id)');
 // Выбор для обсуждения в общей библиотеке (сценарии «Вдвоём» и «В группе»). Один активный выбор карты на браузер и на аккаунт.

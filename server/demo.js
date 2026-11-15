@@ -67,6 +67,7 @@ async function seed() {
   }
   community.post('curators', curator, 'Пример: коллеги, посмотрите работу на обсуждении — она в очереди со статусом «на обсуждении».');
   community.post('facilitators', fac, 'Пример: кто проводил встречу в библиотеке? Поделитесь, как расставляли столы.');
+  community.post('general', guest, 'Пример: всем привет! Была на встрече в кафе — понравилось, что можно начать с картинки.');
   community.startApplication(guest);
   return { ok: true };
 }
@@ -109,6 +110,7 @@ function clear() {
       db.prepare('DELETE FROM comments WHERE card_id = ?').run(id);
       db.prepare('DELETE FROM card_versions WHERE card_id = ?').run(id);
     }
+    db.prepare('DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM chat_messages WHERE is_demo = 1)').run();
     db.prepare('DELETE FROM chat_messages WHERE is_demo = 1').run(); // сообщения со ссылкой на демо-работу — до удаления работ
     db.prepare('UPDATE works SET card_id = NULL WHERE is_demo = 1').run();
     db.prepare('DELETE FROM works WHERE is_demo = 1').run();

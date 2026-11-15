@@ -172,7 +172,8 @@ function queue(showDemo) {
     .all().map((w) => workOut(w));
 }
 function recentDecided(showDemo) {
-  return db.prepare(`SELECT * FROM works WHERE status NOT IN ('submitted','discussion') AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC LIMIT 30`)
+  // Принятые решения за последние 30 дней (период показывается кураторам явно).
+  return db.prepare(`SELECT * FROM works WHERE status NOT IN ('submitted','discussion') AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC LIMIT 200`)
     .all().map((w) => workOut(w));
 }
 function detail(id) { const w = q.work.get(id); return w ? workOut(w, { full: true }) : null; }

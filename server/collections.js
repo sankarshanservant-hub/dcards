@@ -105,6 +105,8 @@ function listAll(ownerId = null) {
     ownerName: c.owner_id ? (db.prepare('SELECT COALESCE(NULLIF(public_name, \'\'), name) AS n FROM users WHERE id = ?').get(c.owner_id) || {}).n : '',
     cardCount: c.card_count, unavailableCount: c.unavailable_count,
     visitors: c.visitors, selections: c.selections, updatedAt: c.updated_at,
+    // 3–4 миниатюры для стопки на карточке подборки (узнавать набор по цвету и настроению)
+    covers: stmt.cards.all(c.id).filter((k) => k.status === 'published').slice(0, 4).map((k) => publicCard(k).thumb),
   }));
 }
 

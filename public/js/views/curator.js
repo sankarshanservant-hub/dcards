@@ -1,7 +1,7 @@
 // Кураторы: работы на рассмотрении (общий список), проверка по критериям, сравнение версий, обсуждение с коллегами и голоса, история.
 import { esc, tt, u, api, errorText, toast, fmtDate } from '../util.js';
 import { openViewer } from '../viewer.js';
-import { session, hasRole, needLogin, noRole, loading, failed, WORK_STATUS, statusPill, demoPill } from '../ui.js';
+import { session, hasRole, needLogin, noRole, loading, failed, WORK_STATUS, statusPill, demoPill, ic } from '../ui.js';
 import { historyRow } from './artist.js';
 
 export async function queue(ctx) {
@@ -11,23 +11,29 @@ export async function queue(ctx) {
   let d;
   try { d = await api('/api/curation/queue'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const tab = ctx.query.get('tab') || 'all';
-  const list = tab === 'discussion' ? d.queue.filter((w) => w.status === 'discussion') : tab === 'recent' ? d.recent : d.queue;
+  const tab = ['all', 'discussion', 'recent'].includes(ctx.query.get('tab')) ? ctx.query.get('tab') : 'all';
+  const disc = d.queue.filter((w) => w.status === 'discussion');
+  const list = tab === 'discussion' ? disc : tab === 'recent' ? d.recent : d.queue;
   const placeholders = d.criteria.some((c) => c.placeholder);
-  ctx.main.innerHTML = `<section class="hero"><div class="wrap" style="padding-block:30px"><div>
-      <p class="eyebrow">${esc(tt('Кураторы', 'Curators'))}</p><h1>${esc(tt('Работы на рассмотрении', 'Works under review'))}</h1>
-      <p class="lead">${esc(tt(`Работ на рассмотрении: ${d.queue.length}. Список общий для всех кураторов.`, `Works under review: ${d.queue.length}. The list is shared by all curators.`))}</p>
-      <div class="row"><a class="btn light sm" href="${u('/team/curators')}">${esc(tt('Чат кураторов', 'Curators’ chat'))}</a></div></div></div></section>
-    <div class="wrap page stack">
-      ${placeholders ? `<div class="notice demo">${esc(tt('Критерии пока временные: формулировки будут перенесены из PDF владельца проекта. Номера и механика выбора уже работают.', 'Criteria are placeholders for now: wording will be taken from the owner’s PDF. Numbers and the selection flow already work.'))}</div>` : ''}
-      <div class="chips">${[['all', 'Все на рассмотрении', 'All under review', d.queue.length], ['discussion', 'На обсуждении', 'In discussion', d.queue.filter((w) => w.status === 'discussion').length], ['recent', 'Недавние решения', 'Recent decisions', d.recent.length]]
-        .map(([k, ru, en, n]) => `<a class="chip ${tab === k ? 'on' : ''}" href="${u('/curator?tab=' + k)}">${esc(tt(ru, en))} · ${n}</a>`).join('')}</div>
-      ${list.length ? `<div class="list">${list.map((w) => `<a class="work" href="${u('/curator/works/' + w.id)}" style="text-decoration:none;color:inherit">
-          <div class="thumb">${w.version ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</div>
-          <div class="body"><div class="row" style="gap:6px">${statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}${w.kind === 'replacement' ? `<span class="pill">${esc(tt('Новая версия', 'New version'))} ${esc(w.targetCard.code)}</span>` : ''}</div>
-            <b>${esc(w.artist)}</b><span class="small muted">${esc(tt('Работа', 'Work'))} №${w.id} · ${esc(tt('версия', 'version'))} ${w.versionsCount} · ${esc(fmtDate(w.updatedAt, { day: 'numeric', month: 'short' }))}</span></div></a>`).join('')}</div>`
-        : `<p class="empty">${esc(tt('Здесь пусто.', 'Nothing here.'))}</p>`}
-    </div>`;
+  const TABS = [['all', 'На рассмотрении', 'Under review', d.queue.length], ['discussion', 'На обсуждении у кураторов', 'Discussed by curators', disc.length], ['recent', 'Принятые решения', 'Decisions made', d.recent.length]];
+  const head = tab === 'all'
+    ? [tt('Работы на рассмотрении', 'Works under review'), tt(`Ожидают решения: ${d.queue.length}`, `Awaiting a decision: ${d.queue.length}`), tt('Список общий для всех кураторов.', 'The list is shared by all curators.')]
+    : tab === 'discussion'
+      ? [tt('На обсуждении у кураторов', 'Discussed by curators'), tt(`Работ: ${disc.length}`, `Works: ${disc.length}`), tt('Работы, вынесенные в чат кураторов за советом. Окончательного решения по ним ещё нет.', 'Works brought to the curators’ chat for advice. No final decision yet.')]
+      : [tt('Принятые решения', 'Decisions made'), tt(`За последние 30 дней: ${d.recent.length}`, `In the last 30 days: ${d.recent.length}`), tt('Опубликованные, возвращённые на доработку и отклонённые работы.', 'Published, returned and declined works.')];
+  const DEC = { approved: tt('Опубликована', 'Published'), needs_changes: tt('Возвращена на доработку', 'Returned for changes'), rejected: tt('Отклонена', 'Declined') };
+  ctx.main.innerHTML = `<div class="wrap page stack">
+    <div class="page-head"><h1>${esc(tt('Кабинет куратора', 'Curator space'))}</h1></div>
+    <div class="row"><a class="btn sm light" href="${u('/chats')}">${ic.chat} ${esc(tt('Написать в чат', 'Write in a chat'))}</a></div>
+    <div class="seg" role="tablist" aria-label="${esc(tt('Списки работ', 'Work lists'))}">${TABS.map(([k, ru, en, n]) => `<a role="tab" aria-selected="${tab === k}" class="${tab === k ? 'on' : ''}" href="${u('/curator?tab=' + k)}" style="text-decoration:none;padding:8px 14px;border-radius:999px;font-weight:600;font-size:.9rem;${tab === k ? 'background:var(--accent);color:var(--on-accent)' : ''}">${esc(tt(ru, en))} · ${n}</a>`).join('')}</div>
+    <div><h2 style="margin:0">${esc(head[0])}</h2><p style="margin:4px 0 0;font-weight:600">${esc(head[1])}</p><p class="small muted" style="margin:2px 0 0">${esc(head[2])}</p></div>
+    ${placeholders ? `<div class="notice demo small">${esc(tt('Критерии пока временные: формулировки будут перенесены из PDF владельца проекта. Номера и механика выбора уже работают.', 'Criteria are placeholders for now: wording will be taken from the owner’s PDF. Numbers and selection already work.'))}</div>` : ''}
+    ${list.length ? `<div class="list">${list.map((w) => `<a class="work" href="${u('/curator/works/' + w.id)}" style="text-decoration:none;color:inherit">
+        <div class="thumb">${w.version ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</div>
+        <div class="body"><div class="row" style="gap:6px">${tab === 'recent' ? `<span class="pill">${esc(DEC[w.status] || w.status)}</span>` : statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}${w.kind === 'replacement' ? `<span class="pill">${esc(tt('Новая версия', 'New version'))} ${esc(w.targetCard.code)}</span>` : ''}</div>
+          <b>${esc(tt('Работа', 'Work'))} №${w.id} · ${esc(w.artist)}</b><span class="small muted">${esc(tt('версия', 'version'))} ${w.versionsCount} · ${esc(tab === 'recent' ? tt('решение', 'decided') : tt('обновлено', 'updated'))} ${esc(fmtDate(w.updatedAt, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div></a>`).join('')}</div>`
+      : `<p class="empty">${esc(tab === 'all' ? tt('Сейчас работ на рассмотрении нет.', 'No works are waiting now.') : tab === 'discussion' ? tt('На обсуждении работ нет.', 'No works under discussion.') : tt('За последние 30 дней решений не было.', 'No decisions in the last 30 days.'))}</p>`}
+  </div>`;
 }
 
 export async function review(ctx, id) {
@@ -46,8 +52,9 @@ export async function review(ctx, id) {
   const tally = ['approve', 'return', 'reject'].map((v) => [v, w.votes.filter((x) => x.vote === v).length]);
   const VOTE = { approve: tt('одобрить', 'approve'), return: tt('вернуть', 'return'), reject: tt('отклонить', 'decline') };
   ctx.main.innerHTML = `<div class="wrap page stack">
-    <a href="${u('/curator')}" class="small">← ${esc(tt('Работы на рассмотрении', 'Works under review'))}</a>
-    <div class="page-head"><h1>${esc(tt('Работа', 'Work'))} №${w.id}</h1><p class="sub">${esc(w.artist)}</p></div>
+    <a href="${u('/curator')}" class="small">← ${esc(tt('К работам', 'To works'))}</a>
+    <div class="page-head"><h1>${esc(tt('Работа', 'Work'))} №${w.id}</h1><p class="sub">${esc(w.artist)} · ${esc(tt('версия', 'version'))} ${cur.n} · ${esc(tt('подана', 'submitted'))} ${esc(fmtDate(cur.createdAt || w.createdAt, { day: 'numeric', month: 'long', year: 'numeric' }))}${w.targetCard ? ` · ${esc(tt('карта', 'card'))} ${esc(w.targetCard.code)}` : ''}</p></div>
+    ${(() => { const ret = (w.history || []).filter((h) => h.action === 'return').pop(); return ret && versions.length > 1 ? `<div class="notice small"><b>${esc(tt(`Повторная подача. Причины прошлого возврата (версия ${ret.versionN}):`, `Resubmission. Reasons for the previous return (version ${ret.versionN}):`))}</b><ul class="reasons">${ret.criteria.map((c) => `<li><b>${c.number}.</b>${esc(c.text)}</li>`).join('')}</ul>${ret.comment ? `<p style="margin:6px 0 0">${esc(tt('Комментарий:', 'Comment:'))} ${esc(ret.comment)}</p>` : ''}</div>` : ''; })()}
     <div class="row" style="gap:8px">${statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}${w.kind === 'replacement' ? `<span class="pill navy">${esc(tt('Новая версия опубликованной карты', 'New version of a published card'))}</span>` : ''}</div>
     <div class="review-layout"><div class="stack">
     ${compareA ? `<div class="seg ba-toggle" role="group" aria-label="${esc(tt('Сравнение версий', 'Compare versions'))}">
@@ -67,13 +74,13 @@ export async function review(ctx, id) {
         <div class="crit">${q.criteria.map((c) => `<label><input type="checkbox" name="crit" value="${c.number}"><span class="num">${c.number}</span><span>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временный текст', 'placeholder'))}</span>` : ''}</span></label>`).join('')}</div></div>
       <label class="field">${esc(tt('Комментарий для художника', 'Comment for the artist'))} <span class="hint" id="chint">${esc(tt('по желанию', 'optional'))}</span><textarea name="comment" maxlength="2000"></textarea></label>
       <p class="form-error" id="err" role="alert"></p>
-      <button class="btn yellow" type="submit" id="dsubmit">${esc(tt('Опубликовать карту', 'Publish card'))}</button>
+      <button class="btn yellow" type="submit" id="dsubmit">${esc(tt('Одобрить и опубликовать', 'Approve and publish'))}</button>
     </form>
     <div class="card-ui flat stack" id="disc"><h3>${esc(tt('Обсуждение с коллегами', 'Discussion with colleagues'))}</h3>
         ${w.status === 'submitted' ? `<p class="small muted" style="margin:0">${esc(tt('Сложную работу можно обсудить с коллегами: ваш вопрос появится в чате кураторов со ссылкой на эту работу.', 'A difficult work can be discussed with colleagues: your question appears in the curators’ chat with a link to this work.'))}</p>
           <div id="dbox"><button class="btn" type="button" id="dopen">${esc(tt('Вынести на обсуждение', 'Bring to discussion'))}</button></div>`
         : `<p class="small" style="margin:0">${tally.map(([v, n]) => `${esc(VOTE[v])}: <b>${n}</b>`).join(' · ')}</p>
-          <a class="small" href="${u('/team/curators')}">${esc(tt('Вопрос в чате кураторов →', 'The question in the curators’ chat →'))}</a>
+          <a class="small" href="${u('/team/curators?work=' + w.id)}">${esc(tt('Открыть обсуждение в чате кураторов →', 'Open the discussion in the curators’ chat →'))}</a>
           <p class="small muted" style="margin:0">${esc(tt('Коллеги открывают работу по ссылке и оставляют голоса и комментарии здесь. Пороги голосования не согласованы: голоса видны всем кураторам, окончательное решение принимает куратор.', 'Colleagues open the work from the link and leave votes and comments here. Voting thresholds are not agreed: votes are visible to all curators; a curator makes the final decision.'))}</p>
           <div class="chips">${['approve', 'return', 'reject'].map((v) => `<button class="chip" type="button" data-vote="${v}">${esc(VOTE[v])}</button>`).join('')}</div>
           <input type="text" id="vcomment" placeholder="${esc(tt('Комментарий к голосу', 'Comment on your vote'))}">`}
@@ -99,7 +106,7 @@ export async function review(ctx, id) {
     const rt = ctx.main.querySelector('#rtype'); if (rt) rt.hidden = a !== 'approve';
     // Кнопка называет выбранное действие; решение применяется только по нажатию, не от смены переключателя.
     const btn = ctx.main.querySelector('#dsubmit');
-    btn.textContent = a === 'approve' ? tt('Опубликовать карту', 'Publish card') : a === 'return' ? tt('Вернуть на доработку', 'Return for changes') : tt('Отклонить работу', 'Decline work');
+    btn.textContent = a === 'approve' ? tt('Одобрить и опубликовать', 'Approve and publish') : a === 'return' ? tt('Вернуть на доработку', 'Return for changes') : tt('Отклонить', 'Decline');
     btn.className = 'btn ' + (a === 'reject' ? 'danger' : 'yellow');
     ctx.main.querySelector('#chint').textContent = a === 'approve' ? tt('по желанию', 'optional') : tt('Достаточно выбрать причины. Комментарий — по желанию.', 'Choosing the reasons is enough. A comment is optional.');
   };

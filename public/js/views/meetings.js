@@ -20,7 +20,7 @@ const hm = (iso, tz) => fmtTz(iso, tz, { hour: '2-digit', minute: '2-digit' });
 const timeRange = (d, m) => timeInCity(d.endsAt ? `${hm(d.startsAt, m.timezone)}–${hm(d.endsAt, m.timezone)}` : hm(d.startsAt, m.timezone), m.city);
 /** Время человека — только если его пояс отличается, менее заметно. */
 const yourTime = (d, m) => (myTz() !== m.timezone ? tt(`У вас в это время: ${fmtTz(d.startsAt, myTz(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`, `Your time: ${fmtTz(d.startsAt, myTz(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`) : '');
-const mapLink = (m) => (m.venue ? `https://www.openstreetmap.org/search?query=${encodeURIComponent([m.venue, m.city, m.country].filter(Boolean).join(', '))}` : '');
+const mapLink = (m) => (m.lat != null && m.lng != null ? `https://www.openstreetmap.org/?mlat=${m.lat}&mlon=${m.lng}#map=17/${m.lat}/${m.lng}` : m.venue ? `https://www.openstreetmap.org/search?query=${encodeURIComponent([m.venue, m.city, m.country].filter(Boolean).join(', '))}` : '');
 
 export function eventRow(d) {
   const m = d.meeting;
@@ -54,6 +54,15 @@ export async function search(ctx, country, city) {
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><p class="eyebrow" style="margin:0">Dialogue Flow</p><h1>${esc(tt('Найти встречу', 'Find a meeting'))}</h1>
       <p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))} <a href="${u('/library')}">${esc(tt('Смотреть карты', 'View cards'))}</a></p></div>
+    <details class="about-df card-ui flat"><summary><span class="grow">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</span><span class="chev" aria-hidden="true">▾</span></summary>
+      <div class="about-body">
+        <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече. Начать просто: выберите иллюстрацию и расскажите, что вас в ней зацепило. Дальше можно говорить о том, что вам интересно.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet. It is easy to start: choose an illustration and say what caught your eye in it. From there you can talk about whatever interests you.'))}</p>
+        <h3>${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h3>
+        <ol class="steps">
+          <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
+          <li>${esc(tt('Участники выбирают карты и общаются вдвоём или в группе. Вопросы помогают начать разговор.', 'Participants choose cards and talk in pairs or in a group. Questions help to start the conversation.'))}</li>
+          <li>${esc(tt('В конце встречи участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
+        </ol></div></details>
     <form class="filters card-ui flat" id="flt" style="padding:14px">
       <label class="field">${esc(tt('Страна', 'Country'))}<select name="country"><option value="">${esc(tt('Все страны', 'All countries'))}</option>${places.map((p) => `<option ${p.country === country ? 'selected' : ''} value="${esc(p.country)}">${esc(p.country)} (${p.count})</option>`).join('')}</select></label>
       <label class="field">${esc(tt('Город', 'City'))}<select name="city" ${cur ? '' : 'disabled'}><option value="">${esc(cur ? tt('Все города', 'All cities') : tt('Сначала выберите страну', 'Choose a country first'))}</option>${cur ? cur.cities.map((c) => `<option ${c.city === city ? 'selected' : ''} value="${esc(c.city)}">${esc(c.city)} (${c.count})</option>`).join('') : ''}</select></label>
@@ -81,6 +90,7 @@ export async function datePage(ctx, id) {
     return failed(ctx.main, e, ctx.rerender);
   }
   if (!ctx.alive()) return;
+  if (d.unavailable) { ctx.main.innerHTML = `<div class="wrap page narrow stack"><div class="empty stack" style="justify-items:center"><b>${esc(tt('Встреча недоступна', 'The meeting is unavailable'))}</b><a class="btn sm" href="${u('/meetings')}">${esc(tt('Посмотреть все встречи', 'See all meetings'))}</a></div></div>`; return; }
   const m = d.meeting;
   const dateStr = fmtTz(d.startsAt, m.timezone, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   let state = d.open ? (d.left ? 'open' : 'full') : 'closed';
@@ -94,6 +104,7 @@ export async function datePage(ctx, id) {
       <div class="stack">
         <a class="small" href="${u('/meetings/' + encodeURIComponent(m.country) + '/' + encodeURIComponent(m.city))}">← ${esc(tt('Встречи', 'Meetings'))}: ${esc(m.city)}</a>
         <div class="page-head"><h1>${esc(m.title)} ${demoPill(m.isDemo)}</h1></div>
+        ${m.status === 'unpublished' ? `<div class="notice">${esc(tt('Встреча скрыта: участники видят «Встреча недоступна». Эту страницу видите только вы.', 'The meeting is hidden: participants see “The meeting is unavailable”. Only you can see this page.'))}</div>` : ''}
         ${m.status === 'removed' ? `<div class="notice red">${esc(tt('Встреча снята с публикации администратором.', 'The meeting was taken down by an administrator.'))}</div>` : ''}
         <div class="card-ui flat"><dl class="meeting-facts">
           <div><dt>${esc(tt('Дата', 'Date'))}</dt><dd>${esc(dateStr)}</dd></div>

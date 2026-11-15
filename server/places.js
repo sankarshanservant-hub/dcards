@@ -24,7 +24,7 @@ function load() {
   if (data) return data;
   const file = path.join(__dirname, 'data', 'cities.json.gz');
   const rows = JSON.parse(zlib.gunzipSync(fs.readFileSync(file)).toString('utf8'));
-  const entries = rows.map(([id, ru, en, cc, tz, pop, keys]) => ({ id: String(id), ru, en, cc, tz, pop, keys: keys.split('|') }));
+  const entries = rows.map(([id, ru, en, cc, tz, pop, keys, lat, lng]) => ({ id: String(id), ru, en, cc, tz, pop, keys: keys.split('|'), lat, lng }));
   const byKey = new Map(); const byId = new Map(); const zones = new Map();
   for (const e of entries) {
     byId.set(e.id, e);
@@ -60,7 +60,7 @@ function countryCode(country) {
 const option = (e, typed) => {
   const d = load();
   const sameKey = typed && e.keys.includes(cityKey(typed));
-  return { placeId: e.id, city: sameKey ? tidy(typed) : (e.ru || e.en), country: d.ruName(e.cc), cc: e.cc, timezone: e.tz, population: e.pop };
+  return { placeId: e.id, city: sameKey ? tidy(typed) : (e.ru || e.en), country: d.ruName(e.cc), cc: e.cc, timezone: e.tz, population: e.pop, lat: e.lat ?? null, lng: e.lng ?? null };
 };
 const tidy = (s) => { const t = String(s).trim().replace(/\s+/g, ' '); return t.charAt(0).toUpperCase() + t.slice(1); };
 
