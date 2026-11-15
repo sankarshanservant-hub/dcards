@@ -6,6 +6,9 @@ export const hasRole = (...roles) => !!session.user && (session.user.roles.inclu
 
 const P = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 export const ic = {
+  bell: P('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>'),
+  lock: P('<rect x="5" y="11" width="14" height="9.5" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  reply: P('<path d="M10 7L4 12l6 5"/><path d="M4 12h10a6 6 0 0 1 6 6v1"/>'),
   clock: P('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>'),
   pin: P('<path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/>'),
   ticket: P('<path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 7v10" stroke-dasharray="1.6 2"/>'),

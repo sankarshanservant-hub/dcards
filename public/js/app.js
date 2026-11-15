@@ -4,6 +4,7 @@ import { isViewerOpen, handleViewerPopState } from './viewer.js';
 import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } from './ui.js';
 import * as pub from './views/public.js';
 import * as tool from './views/meeting-tool.js';
+import * as notif from './views/notify.js';
 import * as meet from './views/meetings.js';
 import * as acc from './views/account.js';
 import * as artist from './views/artist.js';
@@ -49,6 +50,8 @@ const routes = [
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
   [/^\/chats\/?$/, team.rooms],
+  [/^\/chat\/?$/, (ctx) => ctx.navigate('/team/general', { replace: true })], // короткая ссылка для участников Zoom
+  [/^\/me\/notifications\/?$/, notif.settings],
   [/^\/team\/(general|curators|facilitators)\/?$/, team.chat],
   [/^\/print\/?$/, team.print],
   [/^\/admin\/?$/, adm.overview],
@@ -114,13 +117,28 @@ window.addEventListener('popstate', () => {
 function initial(name) { const m = String(name || '').match(/[\p{L}\p{N}]/u); return m ? m[0].toLocaleUpperCase() : ''; }
 const avatar = (name) => initial(name) || ic.user;
 
+// Непрочитанные в «Общении» (без push: считаются на сервере по последнему прочитанному сообщению).
+let unreadAt = 0;
+export async function refreshUnread(force = false) {
+  const draw = () => document.querySelectorAll('[data-unread]').forEach((b) => { b.hidden = !session.unread; b.textContent = session.unread > 99 ? '99+' : String(session.unread || ''); b.setAttribute('aria-label', tt(`непрочитанных: ${session.unread}`, `unread: ${session.unread}`)); });
+  if (!session.user) { session.unread = 0; draw(); return; }
+  draw();
+  if (!force && Date.now() - unreadAt < 30000) return;
+  unreadAt = Date.now();
+  try { const d = await api('/api/chats'); session.unread = d.rooms.reduce((n, r) => n + (r.unread || 0), 0); } catch { /* без счётчика */ }
+  draw();
+}
+window.dcRefreshUnread = refreshUnread;
+
 function renderChrome() {
   const p = appPath();
   const link = (href, ru, en, on) => `<a href="${u(href)}" class="${on ? 'on' : ''}">${esc(tt(ru, en))}</a>`;
   document.getElementById('nav').innerHTML =
     link('/library', 'Карты', 'Cards', p.startsWith('/library') || p.startsWith('/cards'))
     + link('/meetings', 'Встречи', 'Meetings', p.startsWith('/meetings') || p.startsWith('/m/'))
-    + link('/start#join', 'Участвовать', 'Take part', p.startsWith('/start') || p.startsWith('/facilitator/about') || p.startsWith('/curator/apply'));
+    + link('/start#join', 'Участвовать', 'Take part', p.startsWith('/start') || p.startsWith('/facilitator/about') || p.startsWith('/curator/apply'))
+    + `<a href="${u('/chats')}" class="${p.startsWith('/chats') || p.startsWith('/team') ? 'on' : ''}">${esc(tt('Общение', 'Community'))}<span class="nav-badge" data-unread hidden></span></a>`;
+  refreshUnread();
   const acct = document.getElementById('acct');
   acct.innerHTML = session.user
     ? `<button class="acct" type="button" data-menu><span class="ava">${avatar(session.user.publicName)}</span><span class="nm">${esc(session.user.publicName)}</span></button>`
@@ -154,6 +172,7 @@ document.getElementById('theme').addEventListener('click', () => {
   const next = currentTheme() === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   try { localStorage.setItem('dc_theme', next); } catch { /* без сохранения — тема до перезагрузки */ }
+  const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.setAttribute('content', next === 'light' ? '#f5f5f2' : '#060c1e');
   drawThemeBtn();
 });
 document.getElementById('lang').addEventListener('click', () => { setLang(lang === 'ru' ? 'en' : 'ru'); if (isViewerOpen()) history.back(); render(); });
@@ -175,8 +194,8 @@ function openMenu() {
   const cabinets = [];
   if (s) {
     if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет художника', 'Artist space', 'Мои работы и карты', 'My works and cards'));
-    if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space', 'Подборки и встречи', 'Selections and meetings'), mi('/team/facilitators', ic.chat, 'Чат фасилитаторов', 'Facilitators’ chat'));
-    if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space', 'Работы на рассмотрении', 'Works under review'), mi('/team/curators', ic.chat, 'Чат кураторов', 'Curators’ chat'));
+    if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space', 'Подборки и встречи', 'Selections and meetings'));
+    if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space', 'Работы на рассмотрении', 'Works under review'));
   }
   const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Художник', 'Artist'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
   el.innerHTML = `<div class="panel" aria-label="${esc(tt('Меню', 'Menu'))}">
@@ -189,9 +208,11 @@ function openMenu() {
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}
     ${mi('/start#join', ic.people, 'Участвовать', 'Take part')}
+    ${mi('/chats', ic.chats, 'Общение', 'Community', 'Общий чат и чаты команды', 'General chat and team chats', false, session.unread ? String(session.unread) : '')}
     ${s ? `${cabinets.length ? `<div class="sec">${esc(tt('Мои кабинеты', 'My spaces'))}</div>${cabinets.join('')}` : ''}
       <div class="sec">${esc(tt('Аккаунт', 'Account'))}</div>
       ${mi('/me', ic.user, 'Профиль', 'Profile', 'Имя и публичное имя', 'Name and public name')}
+      ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications', 'Ответы и упоминания на телефон', 'Replies and mentions on your phone')}
       ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', 'Роли, встречи, заявки, модерация', 'Roles, meetings, applications, moderation', true) : ''}`
     : `<div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', 'Без пароля — код в письме или аккаунт сайта', 'No password — an emailed code or the site account', true)}`}
     ${session.config.demoMode ? `<div class="demo-box">

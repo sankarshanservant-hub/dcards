@@ -35,36 +35,99 @@ const CATEGORIES = ['meetings', 'illustrations', 'inspiration'];
 const canRoom = (room, has) => !!ROOMS[room] && (!ROOMS[room].length || has(...ROOMS[room]));
 const attOut = (room) => (a) => ({ id: a.id, category: a.category, width: a.width, height: a.height,
   thumb: `/api/chats/${room}/media/thumb/${a.file}`, full: `/api/chats/${room}/media/full/${a.file}` });
-function chat(room, showDemo) {
+const rolesOf = (userId) => db.prepare('SELECT role FROM user_roles WHERE user_id = ?').all(userId).map((r) => r.role);
+/** Доступ участника к комнате по его ролям (администратор — во все). */
+function userCanRoom(room, userId) {
+  const roles = rolesOf(userId);
+  return canRoom(room, (...need) => roles.includes('admin') || need.some((r) => roles.includes(r)));
+}
+const excerpt = (t, n = 140) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+const parseIds = (j) => { try { const a = JSON.parse(j || '[]'); return Array.isArray(a) ? a.map(Number).filter(Boolean) : []; } catch { return []; } };
+
+/**
+ * Сообщения комнаты. Удалённые автором — без текста. Скрытые модератором — без текста для всех, кроме администратора
+ * (он видит исходный текст, чтобы решить, восстанавливать ли). Ответ показывает отрывок исходного сообщения, если оно не удалено.
+ */
+function chat(room, showDemo, viewer = null) {
+  const isAdmin = !!(viewer && viewer.isAdmin);
   const rows = db.prepare(`SELECT * FROM chat_messages WHERE room = ? AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC LIMIT 200`).all(room).reverse();
   const atts = rows.length ? db.prepare(`SELECT * FROM chat_attachments WHERE message_id IN (${rows.map(() => '?').join(',')}) ORDER BY id`).all(...rows.map((m) => m.id)) : [];
-  return rows.map((m) => ({
-    id: m.id, author: userName(m.user_id), userId: m.user_id, createdAt: m.created_at, workId: m.work_id || null,
-    deleted: !!m.deleted_at, text: m.deleted_at ? '' : m.text,
-    attachments: m.deleted_at ? [] : atts.filter((a) => a.message_id === m.id).map(attOut(room)),
-  }));
+  const byId = new Map(rows.map((m) => [m.id, m]));
+  const getMsg = (id) => byId.get(id) || db.prepare('SELECT * FROM chat_messages WHERE id = ? AND room = ?').get(id, room);
+  return rows.map((m) => {
+    const gone = !!m.deleted_at;
+    let replyTo = null;
+    if (m.reply_to) {
+      const o = getMsg(m.reply_to);
+      replyTo = o ? { id: o.id, author: userName(o.user_id), text: o.deleted_at ? '' : excerpt(o.text, 90), deleted: !!o.deleted_at } : null;
+    }
+    return {
+      id: m.id, author: userName(m.user_id), userId: m.user_id, createdAt: m.created_at, workId: m.work_id || null,
+      deleted: gone, moderated: !!m.moderated, text: gone ? '' : m.text,
+      hiddenText: gone && m.moderated && isAdmin ? m.text : undefined,
+      replyTo, mentions: parseIds(m.mentions).map((id) => ({ id, name: userName(id) })),
+      attachments: gone ? [] : atts.filter((a) => a.message_id === m.id).map(attOut(room)),
+    };
+  });
+}
+/** Кого можно упомянуть: участники с доступом к комнате, писавшие в ней (и состав закрытой комнаты). */
+function people(room, showDemo) {
+  const ids = new Set(db.prepare(`SELECT DISTINCT user_id FROM chat_messages WHERE room = ? AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC LIMIT 300`).all(room).map((r) => r.user_id));
+  const mem = members(room); if (mem) mem.forEach((x) => ids.add(x.id));
+  return [...ids].filter((id) => userCanRoom(room, id)).map((id) => ({ id, name: userName(id) })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 /** Сообщение с изображениями. files — уже обработанные { file, width, height }. Повтор с тем же clientId не создаёт дубль. */
-function post(room, user, text, { files = [], category = '', clientId = '' } = {}) {
+function post(room, user, text, { files = [], category = '', clientId = '', replyTo = null, mentions = [] } = {}) {
   const t = String(text || '').trim().slice(0, 4000);
   if (!t && !files.length) return { error: 'empty' };
   const cid = String(clientId || '').slice(0, 64);
   if (cid) { const dup = db.prepare('SELECT id FROM chat_messages WHERE user_id = ? AND client_id = ?').get(user.id, cid); if (dup) return { ok: true, id: dup.id, duplicate: true }; }
   const cat = CATEGORIES.includes(category) ? category : '';
+  let rt = Number(replyTo) || null;
+  if (rt && !db.prepare('SELECT id FROM chat_messages WHERE id = ? AND room = ?').get(rt, room)) rt = null; // ответ — только в той же комнате
+  // Упомянуть можно только того, кто видит эту комнату (закрытое не уходит постороннему даже уведомлением).
+  const ment = [...new Set((Array.isArray(mentions) ? mentions : String(mentions || '').split(',')).map(Number).filter(Boolean))]
+    .filter((id) => id !== user.id && db.prepare('SELECT id FROM users WHERE id = ?').get(id) && userCanRoom(room, id)).slice(0, 20);
   return db.transaction(() => {
-    const info = db.prepare('INSERT INTO chat_messages (room, user_id, text, is_demo, client_id) VALUES (?, ?, ?, ?, ?)').run(room, user.id, t, user.is_demo ? 1 : 0, cid || null);
+    const info = db.prepare('INSERT INTO chat_messages (room, user_id, text, is_demo, client_id, reply_to, mentions) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(room, user.id, t, user.is_demo ? 1 : 0, cid || null, rt, ment.length ? JSON.stringify(ment) : null);
     const id = Number(info.lastInsertRowid);
     for (const f of files) db.prepare('INSERT INTO chat_attachments (message_id, room, file, width, height, category) VALUES (?, ?, ?, ?, ?, ?)').run(id, room, f.file, f.width, f.height, cat);
+    // своё сообщение прочитано
+    db.prepare(`INSERT INTO chat_reads (user_id, room, last_id) VALUES (?, ?, ?) ON CONFLICT(user_id, room) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`).run(user.id, room, id);
     return { ok: true, id };
   })();
 }
-/** Удалить сообщение: автор или администратор. Текст и изображения скрываются везде (и в «Медиа»), автор и время остаются. */
-function deleteMessage(room, id, user, isAdmin) {
+/**
+ * Удалить сообщение. Автор удаляет своё. Администратор скрывает чужое как модератор: можно восстановить,
+ * действие записывается в журнал. Текст никто не переписывает — только скрытие/восстановление.
+ */
+function deleteMessage(room, id, user, isAdmin, reason = '') {
   const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND room = ?').get(id, room);
   if (!m) return { error: 'not_found' };
   if (m.user_id !== user.id && !isAdmin) return { error: 'forbidden' };
-  db.prepare(`UPDATE chat_messages SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), deleted_by = ? WHERE id = ?`).run(user.id, id);
+  if (m.deleted_at) return { ok: true };
+  const mod = m.user_id !== user.id ? 1 : 0;
+  db.transaction(() => {
+    db.prepare(`UPDATE chat_messages SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), deleted_by = ?, moderated = ? WHERE id = ?`).run(user.id, mod, id);
+    if (mod) db.prepare('INSERT INTO chat_mod_log (message_id, room, action, by_user, reason) VALUES (?, ?, ?, ?, ?)').run(id, room, 'hide', user.id, String(reason || '').slice(0, 300));
+  })();
+  return { ok: true, moderated: !!mod };
+}
+/** Восстановить скрытое модератором сообщение (только администратор; удалённое самим автором не восстанавливается). */
+function restoreMessage(room, id, admin) {
+  const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND room = ?').get(id, room);
+  if (!m) return { error: 'not_found' };
+  if (!m.deleted_at || !m.moderated) return { error: 'not_moderated' };
+  db.transaction(() => {
+    db.prepare('UPDATE chat_messages SET deleted_at = NULL, deleted_by = NULL, moderated = 0 WHERE id = ?').run(id);
+    db.prepare('INSERT INTO chat_mod_log (message_id, room, action, by_user) VALUES (?, ?, ?, ?)').run(id, room, 'restore', admin.id);
+  })();
   return { ok: true };
+}
+function modLog() {
+  return db.prepare('SELECT l.*, m.user_id AS author_id FROM chat_mod_log l JOIN chat_messages m ON m.id = l.message_id ORDER BY l.id DESC LIMIT 200').all()
+    .map((l) => ({ id: l.id, messageId: l.message_id, room: l.room, action: l.action, by: userName(l.by_user), author: userName(l.author_id), reason: l.reason, at: l.created_at }));
 }
 /** «Медиа» чата: изображения неудалённых сообщений, с автором, временем и текстом сообщения. */
 function media(room, showDemo, category = '') {
@@ -77,11 +140,26 @@ function media(room, showDemo, category = '') {
 function attachmentFile(room, file) {
   return db.prepare(`SELECT a.file FROM chat_attachments a JOIN chat_messages m ON m.id = a.message_id WHERE a.room = ? AND a.file = ? AND m.deleted_at IS NULL`).get(room, file);
 }
-function rooms(has) {
+/** Доступные комнаты с числом непрочитанных (чужие неудалённые сообщения после последнего прочитанного) и отметкой закрытости. */
+function rooms(has, userId = null, showDemo = false) {
   return Object.keys(ROOMS).filter((r) => canRoom(r, has)).map((r) => {
-    const last = db.prepare('SELECT created_at FROM chat_messages WHERE room = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1').get(r);
-    return { room: r, lastAt: last ? last.created_at : null };
+    const last = db.prepare('SELECT id, created_at FROM chat_messages WHERE room = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1').get(r);
+    let unread = 0; let mentions = 0;
+    if (userId) {
+      const seen = (db.prepare('SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?').get(userId, r) || {}).last_id || 0;
+      const rows = db.prepare(`SELECT reply_to, mentions FROM chat_messages WHERE room = ? AND id > ? AND user_id != ? AND deleted_at IS NULL AND ${showDemo ? '1=1' : 'is_demo = 0'}`).all(r, seen, userId);
+      unread = rows.length;
+      mentions = rows.filter((m) => parseIds(m.mentions).includes(userId) || (m.reply_to && (db.prepare('SELECT user_id FROM chat_messages WHERE id = ?').get(m.reply_to) || {}).user_id === userId)).length;
+    }
+    const mode = userId ? (db.prepare('SELECT mode FROM chat_notify WHERE user_id = ? AND room = ?').get(userId, r) || {}).mode || 'mentions' : null;
+    return { room: r, closed: ROOMS[r].length > 0, lastAt: last ? last.created_at : null, unread, mentions, notify: mode };
   });
+}
+function markRead(userId, room, lastId) {
+  const max = (db.prepare('SELECT MAX(id) AS n FROM chat_messages WHERE room = ?').get(room) || {}).n || 0;
+  const id = Math.min(Number(lastId) || max, max);
+  db.prepare(`INSERT INTO chat_reads (user_id, room, last_id) VALUES (?, ?, ?) ON CONFLICT(user_id, room) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`).run(userId, room, id);
+  return { ok: true };
 }
 function members(room) {
   if (!ROOMS[room].length) return null; // общий чат: все участники
@@ -178,6 +256,6 @@ function decideCuratorApplication(adminId, userId, approve, note = '') {
 
 module.exports = {
   curatorApplication, submitCuratorApplication, curatorApplications, decideCuratorApplication,
-  comments, addComment, deleteComment, recentComments, ROOMS, CATEGORIES, canRoom, chat, post, deleteMessage, media, attachmentFile, rooms, members,
+  comments, addComment, deleteComment, recentComments, ROOMS, CATEGORIES, canRoom, userCanRoom, chat, people, post, deleteMessage, restoreMessage, modLog, markRead, excerpt, media, attachmentFile, rooms, members,
   COURSE, QUESTIONS, application, startApplication, saveApplication, submitApplication, applications, decideApplication,
 };

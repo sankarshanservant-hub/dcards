@@ -16,6 +16,7 @@ const collections = require('./collections');
 const works = require('./works');
 const meetings = require('./meetings');
 const community = require('./community');
+const push = require('./push');
 const demo = require('./demo');
 const choices = require('./choices');
 const places = require('./places');
@@ -33,7 +34,7 @@ app.use((req, res, next) => {
   res.set({
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'",
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'self'; base-uri 'self'",
   });
   next();
 });
@@ -327,16 +328,35 @@ const roomGuard = (req, res, next) => {
   if (!community.canRoom(room, req.has)) return bad(res, 'forbidden', 403);
   next();
 };
-r.get('/api/chats', auth.requireUser, (req, res) => res.json({ rooms: community.rooms(req.has) }));
-r.get('/api/chats/:room', auth.requireUser, roomGuard, (req, res) => res.json({ messages: community.chat(req.params.room, req.showDemo), members: community.members(req.params.room) }));
+r.get('/api/chats', auth.requireUser, (req, res) => res.json({ rooms: community.rooms(req.has, req.user.id, req.showDemo) }));
+r.get('/api/chats/:room', auth.requireUser, roomGuard, (req, res) => res.json({
+  messages: community.chat(req.params.room, req.showDemo, { id: req.user.id, isAdmin: req.has('admin') }),
+  members: community.members(req.params.room), people: community.people(req.params.room, req.showDemo),
+  notify: push.roomMode(req.user.id, req.params.room), rooms: community.rooms(req.has, req.user.id, req.showDemo),
+}));
+r.post('/api/chats/:room/read', auth.requireUser, roomGuard, (req, res) => res.json(community.markRead(req.user.id, req.params.room, (req.body || {}).lastId)));
+r.put('/api/chats/:room/notify', auth.requireUser, roomGuard, (req, res) => out(res, push.setRoomMode(req.user.id, req.params.room, (req.body || {}).mode)));
+r.post('/api/chats/:room/messages/:id/restore', auth.requireUser, roomGuard, (req, res) => {
+  if (!req.has('admin')) return bad(res, 'forbidden', 403);
+  out(res, community.restoreMessage(req.params.room, Number(req.params.id), req.user));
+});
+r.get('/api/admin/chat-log', auth.requireUser, (req, res) => (req.has('admin') ? res.json({ log: community.modLog() }) : bad(res, 'forbidden', 403)));
+// ---------- push-уведомления: подписка по согласию, настройки, проверка ----------
+r.get('/api/push', auth.requireUser, (req, res) => res.json({ ...push.status(req.user), demo: !!req.user.is_demo }));
+r.post('/api/push/subscribe', auth.requireUser, (req, res) => out(res, push.subscribe(req.user, (req.body || {}).subscription, req.get('user-agent') || '')));
+r.post('/api/push/unsubscribe', auth.requireUser, (req, res) => out(res, push.unsubscribe(req.user, (req.body || {}).endpoint)));
+r.put('/api/push/prefs', auth.requireUser, (req, res) => { const b = req.body || {}; const v = (x) => (typeof x === 'boolean' ? x : undefined); res.json({ prefs: push.setPrefs(req.user.id, { enabled: v(b.enabled), replies: v(b.replies), mentions: v(b.mentions) }) }); });
+r.post('/api/push/test', auth.requireUser, wrap(async (req, res) => { const sent = await push.test(req.user); res.json({ sent }); }));
 r.post('/api/chats/:room', auth.requireUser, roomGuard, chatUpload.array('images', 6), wrap(async (req, res) => {
   const b = req.body || {};
   if (b.clientId) { const dup = db.prepare('SELECT id FROM chat_messages WHERE user_id = ? AND client_id = ?').get(req.user.id, String(b.clientId).slice(0, 64)); if (dup) return res.status(201).json({ ok: true, id: dup.id, duplicate: true }); }
   const files = [];
   for (const f of req.files || []) files.push(await chatImage(f.buffer));
-  out(res, community.post(req.params.room, req.user, b.text, { files, category: b.category, clientId: b.clientId }), 201);
+  const r0 = community.post(req.params.room, req.user, b.text, { files, category: b.category, clientId: b.clientId, replyTo: b.replyTo, mentions: b.mentions });
+  if (r0.ok && !r0.duplicate) push.onMessage(r0.id).catch((e) => console.error('push:', e.message)); // в фоне: ответ не ждёт push-сервисов
+  out(res, r0, 201);
 }));
-r.delete('/api/chats/:room/messages/:id', auth.requireUser, roomGuard, (req, res) => out(res, community.deleteMessage(req.params.room, Number(req.params.id), req.user, req.has('admin'))));
+r.delete('/api/chats/:room/messages/:id', auth.requireUser, roomGuard, (req, res) => out(res, community.deleteMessage(req.params.room, Number(req.params.id), req.user, req.has('admin'), (req.body || {}).reason || req.query.reason)));
 r.get('/api/chats/:room/media', auth.requireUser, roomGuard, (req, res) => res.json({ media: community.media(req.params.room, req.showDemo, String(req.query.category || '')) }));
 // Файлы вложений — только тем, у кого есть доступ к комнате, и только у неудалённых сообщений (не публичные адреса /media).
 r.get('/api/chats/:room/media/:kind(full|thumb)/:file', auth.requireUser, roomGuard, (req, res) => {

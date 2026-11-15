@@ -363,4 +363,38 @@ db.exec(`CREATE TABLE IF NOT EXISTS library_choices (
 CREATE INDEX IF NOT EXISTS idx_lib_card ON library_choices(card_id) WHERE cancelled_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_lib_visitor ON library_choices(visitor_id, card_id) WHERE cancelled_at IS NULL;`);
 
+// ---------- общение: ответы, упоминания, прочитанное, модерация, push (15.11.2026) ----------
+addColumn('chat_messages', 'reply_to', 'INTEGER');        // ответ на сообщение той же комнаты
+addColumn('chat_messages', 'mentions', 'TEXT');           // JSON: id упомянутых участников (проверены на доступ к комнате)
+addColumn('chat_messages', 'moderated', 'INTEGER NOT NULL DEFAULT 0'); // 1 — скрыто модератором (можно восстановить)
+db.exec(`
+CREATE TABLE IF NOT EXISTS chat_reads (
+  user_id INTEGER NOT NULL REFERENCES users(id), room TEXT NOT NULL, last_id INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, room)
+);
+CREATE TABLE IF NOT EXISTS chat_mod_log (
+  id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES chat_messages(id), room TEXT NOT NULL,
+  action TEXT NOT NULL,                                -- hide | restore
+  by_user INTEGER NOT NULL REFERENCES users(id), reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+  endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL, auth TEXT NOT NULL, ua TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), last_ok_at TEXT, last_error TEXT
+);
+CREATE TABLE IF NOT EXISTS notify_prefs (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  enabled INTEGER NOT NULL DEFAULT 1, replies INTEGER NOT NULL DEFAULT 1, mentions INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS chat_notify (
+  user_id INTEGER NOT NULL REFERENCES users(id), room TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'mentions',               -- all | mentions (ответы и упоминания) | none
+  PRIMARY KEY (user_id, room)
+);
+CREATE TABLE IF NOT EXISTS push_log (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, message_id INTEGER NOT NULL, reason TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), UNIQUE (user_id, message_id)
+);`);
+
 module.exports = db;

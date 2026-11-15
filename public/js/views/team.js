@@ -1,14 +1,25 @@
-// Чаты (общий, кураторов, фасилитаторов) с изображениями и разделом «Медиа»; печатное направление.
+// «Общение»: общий чат и закрытые чаты команды. Список чатов (слева / сверху), непрочитанные, замок у закрытых,
+// ответы и упоминания, изображения и «Медиа», модерация (скрыть / восстановить) и режим уведомлений для чата.
 import { esc, tt, u, api, errorText, toast, fmtDate } from '../util.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, ic } from '../ui.js';
+import { MODE_LABEL } from './notify.js';
 
 const ROOM_TITLE = { general: ['Общий чат', 'General chat'], curators: ['Чат кураторов', 'Curators’ chat'], facilitators: ['Чат фасилитаторов', 'Facilitators’ chat'] };
-const ROOM_NOTE = { general: ['Для всех участников проекта.', 'For everyone in the project.'], curators: ['Закрытый: кураторы и администраторы.', 'Private: curators and administrators.'], facilitators: ['Закрытый: фасилитаторы и администраторы.', 'Private: facilitators and administrators.'] };
+const ROOM_NOTE = { general: ['Для всех участников проекта: вопросы, знакомство, предложения, впечатления.', 'For everyone in the project: questions, introductions, ideas, impressions.'], curators: ['Закрытый: кураторы и администраторы.', 'Private: curators and administrators.'], facilitators: ['Закрытый: фасилитаторы и администраторы.', 'Private: facilitators and administrators.'] };
 const CAT = { '': ['Все', 'All'], meetings: ['Фото со встреч', 'Meeting photos'], illustrations: ['Иллюстрации', 'Illustrations'], inspiration: ['Вдохновение', 'Inspiration'] };
 const rt = (r) => tt(...ROOM_TITLE[r]);
 const initial = (n) => { const m = String(n || '').match(/[\p{L}\p{N}]/u); return m ? m[0].toLocaleUpperCase() : '·'; };
+const when = (iso) => fmtDate(iso, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const refreshBadge = () => { if (window.dcRefreshUnread) window.dcRefreshUnread(true); };
 
-// ---------- список доступных чатов ----------
+function roomLinks(rooms, current) {
+  return `<nav class="room-side" aria-label="${esc(tt('Чаты', 'Chats'))}"><h2>${esc(tt('Чаты', 'Chats'))}</h2><div class="room-list">${rooms.map((r) => `<a href="${u('/team/' + r.room)}" ${r.room === current ? 'aria-current="page"' : ''}>
+      ${r.closed ? `<span title="${esc(tt('Закрытый чат', 'Private chat'))}">${ic.lock}</span><span class="sr-only">${esc(tt('закрытый', 'private'))}</span>` : ic.chat}
+      <span class="grow">${esc(rt(r.room))}</span>
+      ${r.unread && r.room !== current ? `<span class="room-badge ${r.mentions ? 'at' : ''}" aria-label="${esc(tt(`непрочитанных: ${r.unread}`, `unread: ${r.unread}`))}">${r.mentions ? '@' : ''}${r.unread > 99 ? '99+' : r.unread}</span>` : ''}</a>`).join('')}</div></nav>`;
+}
+
+// ---------- «Написать в чат» / «Общение»: доступные чаты; если доступен только общий — сразу он ----------
 export async function rooms(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Чтобы общаться с участниками, войдите. После входа вы вернётесь к чатам.', 'Sign in to talk with participants. You will come back to the chats after signing in.'));
   loading(ctx.main);
@@ -16,48 +27,77 @@ export async function rooms(ctx) {
   try { d = await api('/api/chats'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   if (d.rooms.length === 1) { ctx.navigate('/team/' + d.rooms[0].room, { replace: true }); return; }
-  ctx.main.innerHTML = `<div class="wrap page narrow stack"><div class="page-head"><h1>${esc(tt('Чаты', 'Chats'))}</h1></div>
-    <div class="list">${d.rooms.map((r) => `<a class="item" href="${u('/team/' + r.room)}"><span class="ic">${ic.chat}</span><span class="body"><b>${esc(rt(r.room))}</b><span class="small">${esc(tt(...ROOM_NOTE[r.room]))}${r.lastAt ? ` · ${esc(tt('последнее', 'last'))} ${esc(fmtDate(r.lastAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}` : ''}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div></div>`;
+  ctx.main.innerHTML = `<div class="wrap page narrow stack"><div class="page-head"><h1>${esc(tt('Общение', 'Community'))}</h1><p class="sub">${esc(tt('Ваши чаты. Закрытые отмечены замком.', 'Your chats. Private ones are marked with a lock.'))}</p></div>
+    <div class="list">${d.rooms.map((r) => `<a class="item" href="${u('/team/' + r.room)}"><span class="ic">${r.closed ? ic.lock : ic.chat}</span><span class="body"><b>${esc(rt(r.room))}${r.unread ? ` <span class="room-badge ${r.mentions ? 'at' : ''}">${r.mentions ? '@' : ''}${r.unread}</span>` : ''}</b><span class="small">${esc(tt(...ROOM_NOTE[r.room]))}${r.lastAt ? ` · ${esc(tt('последнее', 'last'))} ${esc(when(r.lastAt))}` : ''}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
+    <p class="small muted"><a href="${u('/me/notifications')}">${esc(tt('Уведомления на телефон', 'Phone notifications'))}</a></p></div>`;
 }
 
 // ---------- комната: сообщения и «Медиа» ----------
 export async function chat(ctx, room) {
   if (!session.user) return needLogin(ctx.main, tt('Чат доступен после входа. После входа вы вернётесь сюда.', 'Sign in to open the chat. You will come back here after signing in.'));
   loading(ctx.main);
-  let d; let list;
+  let d;
   const load = async () => { d = await api(`/api/chats/${room}`); };
-  try { [, list] = await Promise.all([load(), api('/api/chats')]); } catch (e) {
+  try { await load(); } catch (e) {
     if (!ctx.alive()) return;
     if (e.status === 403) return noRole(ctx.main, room === 'curators' ? ROLE_LABEL.curator() : ROLE_LABEL.facilitator());
     return failed(ctx.main, e, ctx.rerender);
   }
   if (!ctx.alive()) return;
+  const isAdmin = session.user.roles.includes('admin');
   let tab = ctx.query.get('tab') === 'media' ? 'media' : 'msgs';
   let cat = '';
-  const draft = { text: '', files: [], category: '', clientId: '' };
+  const draft = { text: '', files: [], category: '', clientId: '', replyTo: null, mentions: [] };
   const focusWork = Number(ctx.query.get('work')) || null;
-  const msgHtml = (m) => `<article class="msg ${m.userId === session.user.id ? 'me' : ''}" id="m-${m.id}">
-      <div class="msg-head"><span class="msg-ava" aria-hidden="true">${esc(initial(m.author))}</span><b>${esc(m.author)}</b><time datetime="${esc(m.createdAt)}">${esc(fmtDate(m.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</time>
-        ${!m.deleted && (m.userId === session.user.id || hasRole('admin') && session.user.roles.includes('admin')) ? `<button class="linkbtn msg-del" type="button" data-del="${m.id}" aria-label="${esc(tt('Удалить сообщение', 'Delete message'))}">${esc(tt('Удалить', 'Delete'))}</button>` : ''}</div>
-      ${m.deleted ? `<p class="muted small">${esc(tt('Сообщение удалено.', 'Message deleted.'))}</p>` : `${m.text ? `<p>${esc(m.text)}</p>` : ''}
+  let focusMsg = Number(ctx.query.get('m')) || null;
+  // Граница «Новые сообщения»: сколько чужих непрочитанных было при входе.
+  const unreadAtOpen = ((d.rooms || []).find((r) => r.room === room) || {}).unread || 0;
+  const firstUnreadId = (() => { if (!unreadAtOpen) return null; const others = d.messages.filter((m) => m.userId !== session.user.id && !m.deleted); return (others[others.length - unreadAtOpen] || {}).id || null; })();
+  const markRead = async () => {
+    const last = d.messages.length ? d.messages[d.messages.length - 1].id : 0;
+    if (!last) return;
+    try { await api(`/api/chats/${room}/read`, { method: 'POST', body: { lastId: last } }); (d.rooms.find((r) => r.room === room) || {}).unread = 0; refreshBadge(); } catch { /* счётчик обновится позже */ }
+  };
+  // Текст с выделенными упоминаниями (@Имя тех, кого упомянули в этом сообщении).
+  const textHtml = (m) => {
+    let h = esc(m.text);
+    for (const p of m.mentions || []) { const tag = esc('@' + p.name); h = h.split(tag).join(`<span class="ment">${tag}</span>`); }
+    return h;
+  };
+  const toMe = (m) => (m.mentions || []).some((p) => p.id === session.user.id) || (m.replyTo && d.messages.some((x) => x.id === m.replyTo.id && x.userId === session.user.id));
+  const msgHtml = (m) => `${m.id === firstUnreadId ? `<div class="unread-line" role="separator">${esc(tt('Новые сообщения', 'New messages'))}</div>` : ''}<article class="msg ${m.userId === session.user.id ? 'me' : ''} ${toMe(m) ? 'to-me' : ''}" id="m-${m.id}" tabindex="-1">
+      <div class="msg-head"><span class="msg-ava" aria-hidden="true">${esc(initial(m.author))}</span><b>${esc(m.author)}</b><time datetime="${esc(m.createdAt)}">${esc(when(m.createdAt))}</time></div>
+      ${m.deleted ? `<p class="msg-hidden">${esc(m.moderated ? tt('Сообщение скрыто модератором.', 'Message hidden by a moderator.') : tt('Сообщение удалено автором.', 'Message deleted by its author.'))}${isAdmin && m.hiddenText != null ? `<br><span class="small">${esc(tt('Видно только администратору:', 'Visible to admins only:'))} «${esc(m.hiddenText)}»</span>` : ''}</p>
+        ${isAdmin && m.moderated ? `<div class="msg-acts"><button class="linkbtn" type="button" data-restore="${m.id}">${esc(tt('Восстановить', 'Restore'))}</button></div>` : ''}`
+      : `${m.replyTo ? `<button type="button" class="msg-quote" data-goto="${m.replyTo.id}"><b>${esc(m.replyTo.author)}</b> · ${esc(m.replyTo.deleted ? tt('сообщение удалено', 'message deleted') : m.replyTo.text || tt('изображение', 'image'))}</button>` : ''}
+      ${m.text ? `<p>${textHtml(m)}</p>` : ''}
       ${m.attachments.length ? `<div class="msg-imgs">${m.attachments.map((a) => `<button type="button" class="msg-img" data-att="${m.id}:${a.id}" aria-label="${esc(tt('Открыть изображение', 'Open image'))}"><img src="${esc(u(a.thumb))}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}
-      ${m.workId ? `<a class="btn sm" href="${u('/curator/works/' + m.workId)}">${esc(tt(`Открыть работу №${m.workId}`, `Open work #${m.workId}`))} →</a>` : ''}`}
+      ${m.workId ? `<a class="btn sm" href="${u('/curator/works/' + m.workId)}">${esc(tt(`Открыть работу №${m.workId}`, `Open work #${m.workId}`))} →</a>` : ''}
+      <div class="msg-acts"><button class="linkbtn" type="button" data-reply="${m.id}">${esc(tt('Ответить', 'Reply'))}</button>
+        ${m.userId !== session.user.id ? `<button class="linkbtn" type="button" data-mention="${m.userId}">${esc(tt('Упомянуть', 'Mention'))}</button>` : ''}
+        ${m.userId === session.user.id ? `<button class="linkbtn" type="button" data-del="${m.id}">${esc(tt('Удалить', 'Delete'))}</button>` : isAdmin ? `<button class="linkbtn" type="button" data-hide="${m.id}">${esc(tt('Скрыть (модерация)', 'Hide (moderation)'))}</button>` : ''}</div>`}
     </article>`;
+  const zoomUrl = `${location.origin}${u('/chat')}`;
   const draw = async () => {
     const tabs = `<div class="seg" role="tablist" aria-label="${esc(tt('Раздел чата', 'Chat section'))}"><button role="tab" type="button" data-tab="msgs" aria-selected="${tab === 'msgs'}">${esc(tt('Сообщения', 'Messages'))}</button><button role="tab" type="button" data-tab="media" aria-selected="${tab === 'media'}">${esc(tt('Медиа', 'Media'))}</button></div>`;
     let body = '';
     if (tab === 'msgs') {
-      body = `<div class="chat card-ui flat" id="msgs">${d.messages.map(msgHtml).join('') || `<p class="muted">${esc(tt('Сообщений пока нет.', 'No messages yet.'))}</p>`}</div>
+      const rep = draft.replyTo && d.messages.find((m) => m.id === draft.replyTo);
+      const ppl = (d.people || []).filter((p) => p.id !== session.user.id);
+      body = `<div class="chat card-ui flat" id="msgs" aria-live="polite">${d.messages.map(msgHtml).join('') || `<p class="muted">${esc(tt('Сообщений пока нет. Напишите первым — представьтесь или задайте вопрос.', 'No messages yet. Be the first — introduce yourself or ask a question.'))}</p>`}</div>
         <form class="card-ui flat stack composer" id="cf" novalidate>
+          ${rep ? `<div class="reply-strip">${ic.reply}<span class="grow">${esc(tt('Ответ', 'Reply to'))} <b>${esc(rep.author)}</b>: ${esc((rep.text || '').slice(0, 80))}</span><button type="button" class="mini-btn" data-unreply aria-label="${esc(tt('Отменить ответ', 'Cancel reply'))}">${ic.x}</button></div>` : ''}
+          ${draft.mentions.length ? `<div class="ment-chips">${draft.mentions.map((id) => { const p = ppl.find((x) => x.id === id); return p ? `<span class="chip on">@${esc(p.name)} <button type="button" class="mini-btn" data-unment="${id}" aria-label="${esc(tt('Убрать упоминание', 'Remove mention'))}">${ic.x}</button></span>` : ''; }).join('')}</div>` : ''}
           <label class="sr-only" for="ct">${esc(tt('Сообщение', 'Message'))}</label>
           <textarea id="ct" name="text" maxlength="4000" placeholder="${esc(tt('Сообщение', 'Message'))}" style="min-height:64px">${esc(draft.text)}</textarea>
           <div class="cf-files" id="cf-files">${draft.files.map((f, i) => `<span class="cf-file"><img src="${esc(f.url)}" alt=""><button type="button" class="mini-btn r" data-unfile="${i}" aria-label="${esc(tt('Убрать изображение', 'Remove image'))}">${ic.x}</button></span>`).join('')}</div>
           ${draft.files.length ? `<label class="field small">${esc(tt('Категория изображений', 'Image category'))} <span class="hint">${esc(tt('необязательно', 'optional'))}</span><select name="category">${Object.entries(CAT).map(([k, v]) => `<option value="${k}" ${k === draft.category ? 'selected' : ''}>${esc(k ? tt(...v) : tt('Без категории', 'No category'))}</option>`).join('')}</select></label>
             ${draft.category === 'illustrations' ? `<p class="small muted" style="margin:0">${esc(tt('Изображения из чата не публикуются в галерее. Чтобы предложить карту, используйте «Предложить иллюстрацию».', 'Chat images are not published in the gallery. To suggest a card, use “Suggest an illustration”.'))}</p>` : ''}` : ''}
           <p class="form-error" id="cerr" role="alert"></p>
-          <div class="row between"><label class="btn sm light" style="cursor:pointer">${ic.plus} ${esc(tt('Добавить фото', 'Add photos'))}<input type="file" id="cfile" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
+          <div class="row between"><div class="row"><label class="btn sm light" style="cursor:pointer">${ic.plus} ${esc(tt('Фото', 'Photos'))}<input type="file" id="cfile" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
+            ${ppl.length ? `<label class="sr-only" for="cment">${esc(tt('Упомянуть участника', 'Mention someone'))}</label><select id="cment" class="btn sm light" style="max-width:12em"><option value="">@ ${esc(tt('Упомянуть', 'Mention'))}</option>${ppl.filter((p) => !draft.mentions.includes(p.id)).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>` : ''}</div>
             <button class="btn yellow" type="submit" id="csend">${esc(tt('Отправить', 'Send'))}</button></div>
-          <p class="small muted" style="margin:0">${esc(tt('JPEG, PNG или WebP, до 6 изображений, каждое до 15 МБ.', 'JPEG, PNG or WebP, up to 6 images, up to 15 MB each.'))}</p></form>`;
+          <p class="small muted" style="margin:0">${esc(tt('JPEG, PNG или WebP, до 6 изображений, каждое до 15 МБ. В сообщениях видно ваше публичное имя, email не показывается.', 'JPEG, PNG or WebP, up to 6 images, up to 15 MB each. Messages show your public name; your email is not shown.'))}</p></form>`;
     } else {
       let media = [];
       try { ({ media } = await api(`/api/chats/${room}/media${cat ? '?category=' + cat : ''}`)); } catch (e) { body = `<p class="error-box">${esc(errorText(e))}</p>`; }
@@ -65,11 +105,17 @@ export async function chat(ctx, room) {
         ${media.length ? `<div class="media-grid">${media.map((a) => `<button type="button" class="msg-img" data-media="${a.id}"><img src="${esc(u(a.thumb))}" alt="" loading="lazy"></button>`).join('')}</div>` : `<p class="empty">${esc(tt('Здесь пока нет изображений.', 'No images here yet.'))}</p>`}`;
       ctx._media = media;
     }
-    ctx.main.innerHTML = `<div class="wrap page narrow stack">
-      <div class="crumbs"><a class="small" href="${u('/chats')}">← ${esc(tt('Чаты', 'Chats'))}</a></div>
-      <div class="page-head"><h1>${esc(rt(room))}</h1><p class="sub">${esc(tt(...ROOM_NOTE[room]))}${d.members ? ` ${esc(tt('Сейчас в доступе:', 'Currently:'))} ${d.members.map((m) => esc(m.name)).join(', ')}.` : ''}</p></div>
-      ${list.rooms.length > 1 ? `<div class="chips">${list.rooms.map((r) => `<a class="chip ${r.room === room ? 'on' : ''}" href="${u('/team/' + r.room)}" ${r.room === room ? 'aria-current="page"' : ''}>${esc(rt(r.room))}</a>`).join('')}</div>` : ''}
-      ${tabs}${body}</div>`;
+    const canShareZoom = room === 'general' && (hasRole('facilitator') || isAdmin);
+    ctx.main.innerHTML = `<div class="wrap page stack">
+      <div class="chat-layout">
+        ${d.rooms.length > 1 ? roomLinks(d.rooms, room) : '<div></div>'}
+        <div class="stack" style="min-width:0">
+          <div class="page-head"><h1>${ROOM_TITLE[room] && room !== 'general' ? `${ic.lock} ` : ''}${esc(rt(room))}</h1><p class="sub">${esc(tt(...ROOM_NOTE[room]))}${d.members ? ` ${esc(tt('Сейчас в доступе:', 'Currently:'))} ${d.members.map((m) => esc(m.name)).join(', ')}.` : ''}</p></div>
+          <div class="chat-tools">${tabs}
+            <label class="small">${ic.bell} <span class="sr-only">${esc(tt('Уведомления этого чата', 'Notifications for this chat'))}</span><select id="cnotify" aria-label="${esc(tt('Уведомления этого чата', 'Notifications for this chat'))}">${Object.entries(MODE_LABEL).map(([k, v]) => `<option value="${k}" ${d.notify === k ? 'selected' : ''}>${esc(tt(...v))}</option>`).join('')}</select>
+              <a class="small" href="${u('/me/notifications')}">${esc(tt('Настройки', 'Settings'))}</a></label></div>
+          ${canShareZoom ? `<details class="small zoom-link"><summary>${esc(tt('Ссылка на общий чат для участников Zoom', 'General chat link for Zoom participants'))}</summary><input type="text" readonly value="${esc(zoomUrl)}" id="zoomurl"><span class="muted">${esc(tt('Гость увидит вход и после него вернётся в общий чат.', 'A guest sees sign-in and returns to the general chat afterwards.'))}</span></details>` : ''}
+          ${body}</div></div></div>`;
     wire();
   };
   function openImage(src, w, h, msgId, caption) {
@@ -83,26 +129,47 @@ export async function chat(ctx, room) {
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);
     el.querySelector('[data-x]').onclick = close; el.addEventListener('click', (e) => { if (e.target === el) close(); });
-    const go = el.querySelector('[data-go]'); if (go) go.onclick = async () => { close(); tab = 'msgs'; await draw(); const t = ctx.main.querySelector('#m-' + msgId); if (t) { t.scrollIntoView({ block: 'center' }); t.classList.add('flash'); } };
+    const go = el.querySelector('[data-go]'); if (go) go.onclick = async () => { close(); tab = 'msgs'; focusMsg = msgId; await draw(); };
     el.querySelector('[data-x]').focus();
   }
+  const flash = (id) => { const t = ctx.main.querySelector('#m-' + id); if (t) { t.scrollIntoView({ block: 'center' }); t.classList.add('flash'); t.focus({ preventScroll: true }); return true; } return false; };
   function wire() {
     ctx.main.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; draw(); }));
     ctx.main.querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => { cat = b.dataset.cat; draw(); }));
-    ctx.main.querySelectorAll('[data-media]').forEach((b) => b.addEventListener('click', () => { const a = ctx._media.find((x) => String(x.id) === b.dataset.media); openImage(u(a.full), a.width, a.height, a.messageId, `<b>${esc(a.author)}</b> · ${esc(fmtDate(a.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${a.text ? `<br>${esc(a.text.slice(0, 160))}` : ''}`); }));
+    ctx.main.querySelectorAll('[data-media]').forEach((b) => b.addEventListener('click', () => { const a = ctx._media.find((x) => String(x.id) === b.dataset.media); openImage(u(a.full), a.width, a.height, a.messageId, `<b>${esc(a.author)}</b> · ${esc(when(a.createdAt))}${a.text ? `<br>${esc(a.text.slice(0, 160))}` : ''}`); }));
+    const nsel = ctx.main.querySelector('#cnotify');
+    nsel.addEventListener('change', async () => { try { await api(`/api/chats/${room}/notify`, { method: 'PUT', body: { mode: nsel.value } }); d.notify = nsel.value; toast(tt('Режим уведомлений сохранён', 'Notification mode saved')); } catch (e) { toast(errorText(e)); nsel.value = d.notify; } });
+    const zu = ctx.main.querySelector('#zoomurl'); if (zu) zu.addEventListener('focus', () => zu.select());
     const box = ctx.main.querySelector('#msgs');
     if (!box) return;
     box.scrollTop = box.scrollHeight;
-    if (focusWork) { const t = [...d.messages].reverse().find((m) => m.workId === focusWork); const el = t && ctx.main.querySelector('#m-' + t.id); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); } }
+    if (focusMsg) { flash(focusMsg); focusMsg = null; }
+    else if (focusWork) { const t = [...d.messages].reverse().find((m) => m.workId === focusWork); if (t) flash(t.id); }
+    else if (firstUnreadId) { const t = ctx.main.querySelector('#m-' + firstUnreadId); if (t) box.scrollTop = t.offsetTop - box.offsetTop - 40; }
     box.addEventListener('click', async (e) => {
       const at = e.target.closest('[data-att]');
-      if (at) { const [mid, aid] = at.dataset.att.split(':').map(Number); const m = d.messages.find((x) => x.id === mid); const a = m.attachments.find((x) => x.id === aid); openImage(u(a.full), a.width, a.height, null, `<b>${esc(m.author)}</b> · ${esc(fmtDate(m.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}`); return; }
+      if (at) { const [mid, aid] = at.dataset.att.split(':').map(Number); const m = d.messages.find((x) => x.id === mid); const a = m.attachments.find((x) => x.id === aid); openImage(u(a.full), a.width, a.height, null, `<b>${esc(m.author)}</b> · ${esc(when(m.createdAt))}`); return; }
+      const gt = e.target.closest('[data-goto]'); if (gt) { if (!flash(gt.dataset.goto)) toast(tt('Исходное сообщение старше показанных.', 'The original message is older than those shown.')); return; }
+      const rp = e.target.closest('[data-reply]'); if (rp) { draft.replyTo = Number(rp.dataset.reply); await draw(); ctx.main.querySelector('#ct').focus(); return; }
+      const mn = e.target.closest('[data-mention]'); if (mn) { addMention(Number(mn.dataset.mention)); return; }
       const del = e.target.closest('[data-del]');
-      if (del) { if (!confirm(tt('Удалить сообщение? Текст и изображения скроются у всех.', 'Delete the message? Its text and images will be hidden for everyone.'))) return; try { await api(`/api/chats/${room}/messages/${del.dataset.del}`, { method: 'DELETE' }); await load(); draw(); } catch (x) { toast(errorText(x)); } }
+      if (del) { if (!confirm(tt('Удалить сообщение? Текст и изображения скроются у всех.', 'Delete the message? Its text and images will be hidden for everyone.'))) return; try { await api(`/api/chats/${room}/messages/${del.dataset.del}`, { method: 'DELETE' }); await load(); draw(); } catch (x) { toast(errorText(x)); } return; }
+      const hide = e.target.closest('[data-hide]');
+      if (hide) {
+        const reason = prompt(tt('Скрыть сообщение как модератор? Автор и время останутся, текст увидит только администратор; можно восстановить. Причина (необязательно):', 'Hide this message as a moderator? Author and time stay, only admins see the text; it can be restored. Reason (optional):'), '');
+        if (reason === null) return;
+        try { await api(`/api/chats/${room}/messages/${hide.dataset.hide}?reason=${encodeURIComponent(reason)}`, { method: 'DELETE' }); toast(tt('Скрыто. Действие записано в журнал.', 'Hidden. The action is logged.')); await load(); draw(); } catch (x) { toast(errorText(x)); }
+        return;
+      }
+      const rs = e.target.closest('[data-restore]');
+      if (rs) { try { await api(`/api/chats/${room}/messages/${rs.dataset.restore}/restore`, { method: 'POST' }); toast(tt('Сообщение восстановлено', 'Message restored')); await load(); draw(); } catch (x) { toast(errorText(x)); } }
     });
     const f = ctx.main.querySelector('#cf');
     f.text.addEventListener('input', () => { draft.text = f.text.value; });
     if (f.category) f.category.addEventListener('change', () => { draft.category = f.category.value; draw(); });
+    const cm = ctx.main.querySelector('#cment'); if (cm) cm.addEventListener('change', () => { if (cm.value) addMention(Number(cm.value)); });
+    const ur = ctx.main.querySelector('[data-unreply]'); if (ur) ur.addEventListener('click', () => { draft.replyTo = null; draw(); });
+    ctx.main.querySelectorAll('[data-unment]').forEach((b) => b.addEventListener('click', () => { draft.mentions = draft.mentions.filter((x) => x !== Number(b.dataset.unment)); draw(); }));
     ctx.main.querySelector('#cfile').addEventListener('change', (e) => {
       const add = [...e.target.files].filter((x) => /^image\/(jpeg|png|webp)$/.test(x.type));
       if (add.length < e.target.files.length) toast(tt('Подходят только JPEG, PNG или WebP.', 'Only JPEG, PNG or WebP.'));
@@ -116,16 +183,28 @@ export async function chat(ctx, room) {
       // одна и та же попытка (текст + файлы) отправляется с одним clientId: повтор после ошибки не создаст дубль
       if (!draft.clientId) draft.clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
       const fd = new FormData(); fd.append('text', draft.text); fd.append('category', draft.category); fd.append('clientId', draft.clientId);
+      if (draft.replyTo) fd.append('replyTo', String(draft.replyTo));
+      if (draft.mentions.length) fd.append('mentions', draft.mentions.join(','));
       for (const x of draft.files) fd.append('images', x.file, x.file.name);
       btn.disabled = true; btn.textContent = draft.files.length ? tt('Загружаем…', 'Uploading…') : tt('Отправляем…', 'Sending…'); err.textContent = '';
       try {
         await api(`/api/chats/${room}`, { method: 'POST', form: fd });
-        draft.files.forEach((x) => URL.revokeObjectURL(x.url)); Object.assign(draft, { text: '', files: [], category: '', clientId: '' });
-        await load(); draw();
+        draft.files.forEach((x) => URL.revokeObjectURL(x.url)); Object.assign(draft, { text: '', files: [], category: '', clientId: '', replyTo: null, mentions: [] });
+        await load(); draw(); markRead();
       } catch (x) { btn.disabled = false; btn.textContent = tt('Повторить отправку', 'Retry sending'); err.textContent = `${errorText(x)} ${tt('Текст и фото сохранены.', 'Your text and photos are kept.')}`; }
     });
   }
-  draw();
+  // Упоминание: участник попадает в список упомянутых, в текст добавляется @Имя.
+  function addMention(id) {
+    const p = (d.people || []).find((x) => x.id === id);
+    if (!p) { toast(tt('Этого участника нельзя упомянуть в этом чате.', 'This person cannot be mentioned in this chat.')); return; }
+    if (!draft.mentions.includes(id)) draft.mentions.push(id);
+    const tag = '@' + p.name;
+    if (!draft.text.includes(tag)) draft.text = (draft.text ? draft.text.replace(/\s*$/, ' ') : '') + tag + ' ';
+    draw().then(() => { const t = ctx.main.querySelector('#ct'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } });
+  }
+  await draw();
+  markRead();
 }
 
 export async function print(ctx) {

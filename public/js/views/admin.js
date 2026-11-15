@@ -184,11 +184,16 @@ const SECTIONS = {
   },
 
   async comments(ctx) {
-    const { comments } = await api('/api/admin/comments');
+    const [{ comments }, { log }] = await Promise.all([api('/api/admin/comments'), api('/api/admin/chat-log')]);
     if (!ctx.alive()) return;
+    const ROOM = { general: tt('Общий чат', 'General chat'), curators: tt('Чат кураторов', 'Curators’ chat'), facilitators: tt('Чат фасилитаторов', 'Facilitators’ chat') };
+    const logHtml = `<h2 style="margin:22px 0 6px;font-size:1.15rem">${esc(tt('Журнал модерации чатов', 'Chat moderation log'))}</h2>
+      <p class="small muted">${esc(tt('Скрыть чужое сообщение можно в самом чате («Скрыть (модерация)»); там же — «Восстановить». Текст не переписывается, автор и время сохраняются.', 'Hide someone’s message in the chat itself (“Hide (moderation)”); restore it there too. Text is never rewritten; author and time are kept.'))}</p>
+      ${log.length ? `<div class="list">${log.map((l) => `<div class="comment"><header><b>${esc(l.action === 'hide' ? tt('Скрыто', 'Hidden') : tt('Восстановлено', 'Restored'))}</b><a href="${u('/team/' + l.room + '?m=' + l.messageId)}">${esc(ROOM[l.room] || l.room)} · №${l.messageId}</a><span>${esc(fmtDate(l.at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span></header>
+        <p class="small">${esc(tt('Автор сообщения', 'Message author'))}: ${esc(l.author)} · ${esc(tt('модератор', 'moderator'))}: ${esc(l.by)}${l.reason ? ` · ${esc(tt('причина', 'reason'))}: ${esc(l.reason)}` : ''}</p></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Действий модерации пока не было.', 'No moderation actions yet.'))}</p>`}`;
     const sec = shell(ctx, 'comments', tt('Обсуждения', 'Discussions'), `<p class="small muted">${esc(tt('Последние сообщения под картами. Жалобы и правила модерации ещё уточняются; удалять может администратор и сам автор сообщения.', 'Latest messages under cards. Reports and moderation rules are being agreed; an admin or the author can delete a message.'))}</p>
       <div class="list">${comments.map((c) => `<div class="comment"><header><b>${esc(c.author)}</b><a href="${u('/cards/' + c.code)}">${esc(c.code)}</a><span>${esc(fmtDate(c.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>${demoPill(c.isDemo)}
-        <button class="linkbtn danger" type="button" data-del="${c.id}">${esc(tt('Удалить', 'Delete'))}</button></header><p>${esc(c.text)}</p></div>`).join('') || `<p class="empty">${esc(tt('Сообщений нет.', 'No messages.'))}</p>`}</div>`);
+        <button class="linkbtn danger" type="button" data-del="${c.id}">${esc(tt('Удалить', 'Delete'))}</button></header><p>${esc(c.text)}</p></div>`).join('') || `<p class="empty">${esc(tt('Сообщений нет.', 'No messages.'))}</p>`}</div>${logHtml}`);
     sec.addEventListener('click', async (e) => { const d = e.target.closest('[data-del]'); if (!d) return; try { await api(`/api/comments/${d.dataset.del}`, { method: 'DELETE' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
   },
 

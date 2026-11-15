@@ -588,3 +588,104 @@ test('03: вход аккаунтом сайта — сессия проверя
   assert.equal(me.json.user.id, r1.json.user.id);
   assert.equal((await call('GET', '/api/config')).json.siteLogin, true);
 });
+
+test('Общение: непрочитанные, ответы и упоминания, доступ к закрытым, модерация с восстановлением и журналом', async () => {
+  const dima = await emailLogin('dima-chat@example.org', 'Дима');
+  const rooms0 = (await call('GET', '/api/chats', null, { cookie: dima.cookie })).json.rooms;
+  assert.deepEqual(rooms0.map((r) => r.room), ['general'], 'обычному участнику доступен только общий чат');
+  // куратор видит общий и закрытый, закрытый помечен
+  const cr = (await call('GET', '/api/chats', null, { cookie: curatorU.cookie })).json.rooms;
+  assert.ok(cr.some((r) => r.room === 'general') && cr.find((r) => r.room === 'curators').closed, 'куратор: общий и закрытый чат кураторов');
+  const m1 = await call('POST', '/api/chats/general', { text: 'Всем привет, я Дима' }, { cookie: dima.cookie });
+  assert.equal(m1.status, 201);
+  // непрочитанное у куратора, после чтения — 0
+  const unread = (c) => call('GET', '/api/chats', null, { cookie: c }).then((r) => r.json.rooms.find((x) => x.room === 'general').unread);
+  assert.ok(await unread(curatorU.cookie) >= 1, 'непрочитанное у другого участника');
+  assert.equal(await unread(dima.cookie), 0, 'своё сообщение не считается непрочитанным');
+  await call('POST', '/api/chats/general/read', {}, { cookie: curatorU.cookie });
+  assert.equal(await unread(curatorU.cookie), 0, 'после чтения непрочитанных нет');
+  // ответ с упоминанием → у Димы непрочитанное с отметкой «для вас»
+  const r2 = await call('POST', '/api/chats/general', { text: '@Дима привет!', replyTo: m1.json.id, mentions: String(dima.user.id) }, { cookie: curatorU.cookie });
+  const g = (await call('GET', '/api/chats/general', null, { cookie: dima.cookie })).json;
+  const msg = g.messages.find((m) => m.id === r2.json.id);
+  assert.equal(msg.replyTo.id, m1.json.id); assert.equal(msg.mentions[0].id, dima.user.id);
+  assert.equal(g.rooms.find((r) => r.room === 'general').mentions, 1, 'ответ/упоминание отмечены');
+  // упомянуть в закрытом чате того, у кого нет доступа, нельзя
+  const r3 = await call('POST', '/api/chats/curators', { text: 'секрет', mentions: String(dima.user.id) }, { cookie: curatorU.cookie });
+  const cm = (await call('GET', '/api/chats/curators', null, { cookie: curatorU.cookie })).json.messages.find((m) => m.id === r3.json.id);
+  assert.equal(cm.mentions.length, 0, 'постороннего нельзя упомянуть в закрытом чате');
+  assert.equal((await call('GET', '/api/chats/curators', null, { cookie: dima.cookie })).status, 403, 'закрытый чат по прямому API — 403');
+  // ответ в другой комнате на сообщение общего чата не принимается
+  const r4 = await call('POST', '/api/chats/curators', { text: 'x', replyTo: m1.json.id }, { cookie: curatorU.cookie });
+  assert.equal((await call('GET', '/api/chats/curators', null, { cookie: curatorU.cookie })).json.messages.find((m) => m.id === r4.json.id).replyTo, null);
+  // модерация: участник не может скрыть чужое; администратор скрывает с причиной, видит текст, восстанавливает
+  assert.equal((await call('DELETE', `/api/chats/general/messages/${m1.json.id}`, null, { cookie: curatorU.cookie })).status, 403);
+  assert.equal((await call('DELETE', `/api/chats/general/messages/${m1.json.id}?reason=спам`, null, { cookie: owner.cookie })).json.moderated, true);
+  const hid = (await call('GET', '/api/chats/general', null, { cookie: dima.cookie })).json.messages.find((m) => m.id === m1.json.id);
+  assert.ok(hid.deleted && hid.moderated && hid.text === '' && hid.hiddenText === undefined, 'участник не видит скрытый текст');
+  const hidA = (await call('GET', '/api/chats/general', null, { cookie: owner.cookie })).json.messages.find((m) => m.id === m1.json.id);
+  assert.equal(hidA.hiddenText, 'Всем привет, я Дима', 'администратор видит исходный текст');
+  assert.equal((await call('POST', `/api/chats/general/messages/${m1.json.id}/restore`, {}, { cookie: curatorU.cookie })).status, 403, 'восстановить может только администратор');
+  assert.equal((await call('POST', `/api/chats/general/messages/${m1.json.id}/restore`, {}, { cookie: owner.cookie })).status, 200);
+  const back = (await call('GET', '/api/chats/general', null, { cookie: dima.cookie })).json.messages.find((m) => m.id === m1.json.id);
+  assert.equal(back.text, 'Всем привет, я Дима', 'автор и текст восстановлены без изменений');
+  const log = (await call('GET', '/api/admin/chat-log', null, { cookie: owner.cookie })).json.log;
+  assert.deepEqual(log.filter((l) => l.messageId === m1.json.id).map((l) => l.action), ['restore', 'hide']);
+  assert.equal(log.find((l) => l.action === 'hide' && l.messageId === m1.json.id).reason, 'спам');
+  // своё удалённое сообщение не восстанавливается
+  const own = await call('POST', '/api/chats/general', { text: 'удалю' }, { cookie: dima.cookie });
+  await call('DELETE', `/api/chats/general/messages/${own.json.id}`, null, { cookie: dima.cookie });
+  assert.equal((await call('POST', `/api/chats/general/messages/${own.json.id}/restore`, {}, { cookie: owner.cookie })).status, 400);
+});
+
+test('Push: подписка по согласию, адресаты по ответам/упоминаниям/режиму чата, одно уведомление, права и выключение', async () => {
+  const push = require('../server/push');
+  const sent = [];
+  push.setSender(async (sub, payload) => { sent.push({ endpoint: sub.endpoint, ...JSON.parse(payload) }); });
+  const ann = await emailLogin('ann-push@example.org', 'Анна');
+  const bob = await emailLogin('bob-push@example.org', 'Борис');
+  const sub = (n) => ({ endpoint: `https://push.example.org/${n}`, keys: { p256dh: 'BPk' + n, auth: 'au' + n } });
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint: 'http://bad' } }, { cookie: ann.cookie })).status, 400, 'неверная подписка');
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('ann') }, { cookie: ann.cookie })).status, 200);
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('bob') }, { cookie: bob.cookie })).status, 200);
+  const st = (await call('GET', '/api/push', null, { cookie: ann.cookie })).json;
+  assert.ok(st.publicKey && st.devices === 1 && st.prefs.replies && st.prefs.mentions, 'ключ VAPID, одно устройство, по умолчанию ответы и упоминания');
+  const wait = () => new Promise((r) => setTimeout(r, 120));
+  // обычное сообщение без ответа — никому (режим по умолчанию «Ответы и упоминания»)
+  const a1 = await call('POST', '/api/chats/general', { text: 'Анна пишет в общий' }, { cookie: ann.cookie }); await wait();
+  assert.equal(sent.length, 0, 'обычное сообщение не уведомляет при режиме по умолчанию');
+  // ответ + упоминание одного человека → одно уведомление со ссылкой на сообщение
+  const b1 = await call('POST', '/api/chats/general', { text: '@Анна да!', replyTo: a1.json.id, mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
+  assert.equal(sent.length, 1, 'ответ и упоминание — одно уведомление');
+  assert.ok(sent[0].endpoint.endsWith('/ann') && sent[0].url.endsWith(`/team/general?m=${b1.json.id}`) && sent[0].title.includes('Борис'), 'уведомление ведёт к конкретному сообщению');
+  // выключили ответы и упоминания → ответ не приходит
+  await call('PUT', '/api/push/prefs', { replies: false, mentions: false }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: 'ещё ответ', replyTo: a1.json.id }, { cookie: bob.cookie }); await wait();
+  assert.equal(sent.length, 1, 'категории выключены — уведомления нет');
+  // режим «Все сообщения» для чата — приходит любое; «Без уведомлений» — ничего
+  await call('PUT', '/api/chats/general/notify', { mode: 'all' }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: 'просто новость' }, { cookie: bob.cookie }); await wait();
+  assert.equal(sent.length, 2, '«Все сообщения» — уведомление о любом сообщении');
+  await call('PUT', '/api/chats/general/notify', { mode: 'none' }, { cookie: ann.cookie });
+  await call('PUT', '/api/push/prefs', { replies: true, mentions: true }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: 'ответ в тихом чате', replyTo: a1.json.id }, { cookie: bob.cookie }); await wait();
+  assert.equal(sent.length, 2, '«Без уведомлений» для чата — тишина');
+  assert.equal((await call('PUT', '/api/chats/general/notify', { mode: 'loud' }, { cookie: ann.cookie })).status, 400);
+  // закрытый чат: посторонний не получает уведомление даже с режимом «все»
+  await call('PUT', '/api/chats/general/notify', { mode: 'mentions' }, { cookie: ann.cookie });
+  assert.equal((await call('PUT', '/api/chats/curators/notify', { mode: 'all' }, { cookie: ann.cookie })).status, 403, 'режим для чужого закрытого чата не задать');
+  await call('POST', '/api/chats/curators', { text: 'закрытое обсуждение' }, { cookie: curatorU.cookie }); await wait();
+  assert.ok(!sent.slice(2).some((x) => /закрытое/.test(x.body)), 'содержимое закрытого чата не уходит постороннему');
+  // общий выключатель
+  await call('PUT', '/api/push/prefs', { enabled: false }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: '@Анна', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
+  assert.equal(sent.length, 2, 'общий переключатель выключен — уведомлений нет');
+  // недействительная подписка удаляется
+  push.setSender(async () => { const e = new Error('gone'); e.statusCode = 410; throw e; });
+  await call('PUT', '/api/push/prefs', { enabled: true }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: '@Анна снова', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
+  assert.equal((await call('GET', '/api/push', null, { cookie: ann.cookie })).json.devices, 0, 'подписка с ответом 410 удалена');
+  // демо-аккаунт подписаться не может
+  const demo = await call('POST', '/api/demo/login', { as: 'guest' });
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('demo') }, { cookie: demo.cookie })).json.error, 'push_demo');
+});
