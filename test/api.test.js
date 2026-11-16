@@ -323,7 +323,7 @@ test('16: курс, проверка, заявка, одобрение адми�
   const u = await emailLogin('newfac@example.org', 'Новый');
   await call('POST', '/api/fac/application', null, { cookie: u.cookie });
   assert.equal((await call('POST', '/api/fac/application/submit', null, { cookie: u.cookie })).json.error, 'course_not_finished');
-  await call('PUT', '/api/fac/application', { courseDone: [0, 1, 2, 3, 4, 5, 6, 7], answers: { q1: 1, q2: 1, q3: 1 }, about: 'Провожу клубы', city: 'Пермь' }, { cookie: u.cookie });
+  await call('PUT', '/api/fac/application', { courseDone: [0, 1, 2, 3, 4, 5, 6, 7], answers: Object.fromEntries(require('../server/community').QUESTIONS.map((q) => [q.id, q.answer])), about: 'Провожу клубы', city: 'Пермь' }, { cookie: u.cookie });
   assert.equal((await call('POST', '/api/fac/application/submit', null, { cookie: u.cookie })).status, 200);
   const apps = await call('GET', '/api/admin/applications', null, { cookie: owner.cookie });
   assert.equal(apps.json.applications.find((a) => a.userId === u.user.id).status, 'submitted');

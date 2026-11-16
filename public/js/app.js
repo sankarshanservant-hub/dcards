@@ -63,12 +63,20 @@ const routes = [
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
 
-// «← На главную» на внутренних страницах (кабинеты, чаты, заявки) — конкретный маршрут, не history.back().
-const INNER = /^\/(chats|team|artist|curator|facilitator|admin|me|print|demo)(\/|$)/;
-function addHomeLink(path, ctx) {
-  if (!ctx.alive() || !INNER.test(path) || main.querySelector('.back-home')) return;
-  main.insertAdjacentHTML('afterbegin', `<div class="wrap" style="padding-top:12px"><a class="back-home" href="${u('/')}">← ${esc(tt('На главную', 'Home'))}</a></div>`);
+// «← Назад» вверху на всех страницах, кроме главной и экрана встречи. Если в этой вкладке уже были переходы по сайту —
+// возвращает на предыдущую страницу; если человек пришёл по ссылке извне — ведёт на главную («← На главную»).
+const depth = () => (history.state && history.state.depth) || 0;
+function addBackLink(path, ctx) {
+  if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back]')) return;
+  // у страницы уже есть своя ссылка «← …» наверху (например, «← Встречи: город») — не дублируем
+  if ([...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'))) return;
+  const back = depth() > 0;
+  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar"><a class="back-home" data-back href="${u('/')}">← ${esc(back ? tt('Назад', 'Back') : tt('На главную', 'Home'))}</a></div>`);
 }
+main.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-back]');
+  if (a && depth() > 0) { e.preventDefault(); e.stopPropagation(); history.back(); }
+}, true);
 
 async function render() {
   const token = ++renderToken;
@@ -83,7 +91,7 @@ async function render() {
   for (const [re, view] of routes) {
     const m = path.match(re);
     if (m) {
-      try { await view(ctx, ...m.slice(1).map(decodeURIComponent)); addHomeLink(path, ctx); if (location.hash && ctx.alive()) { const t = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (t) t.scrollIntoView({ block: 'start' }); } } catch (e) { console.error(e); if (ctx.alive()) main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(errorText(e))}</p></div>`; }
+      try { await view(ctx, ...m.slice(1).map(decodeURIComponent)); addBackLink(path, ctx); if (location.hash && ctx.alive()) { const t = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (t) t.scrollIntoView({ block: 'start' }); } } catch (e) { console.error(e); if (ctx.alive()) main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(errorText(e))}</p></div>`; }
       return;
     }
   }
@@ -92,7 +100,7 @@ async function render() {
 
 export function navigate(path, { replace = false } = {}) {
   const url = path.startsWith('http') ? path : u(path);
-  if (replace) history.replaceState({}, '', url); else history.pushState({}, '', url);
+  if (replace) history.replaceState({ depth: depth() }, '', url); else history.pushState({ depth: depth() + 1 }, '', url);
   render();
   window.scrollTo(0, 0);
 }

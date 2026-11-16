@@ -29,7 +29,7 @@ export async function home(ctx) {
         <div class="home-cta"><a class="btn yellow big" href="${u('/library')}">${ic.cards} ${esc(tt('Откройте любую карту', 'Open any card'))}</a>
           <span class="muted">${esc(tt('Посмотрите, что откликнется вам.', 'See what speaks to you.'))}</span></div>
       </div>
-      <a class="trio" id="trio" href="${u('/library')}" tabindex="-1" aria-hidden="true"></a>
+      <div class="trio" id="trio"></div>
     </div></section>
     <section class="wrap band">
       <div class="roles">${JOIN.map(([href, icon, ru, en, dru, den]) => `<a class="role" href="${u(href)}"><span class="role-head"><span class="ic">${ic[icon]}</span><b>${esc(tt(ru, en))}</b></span><p>${esc(tt(dru, den))}</p></a>`).join('')}</div>
@@ -41,8 +41,9 @@ export async function home(ctx) {
     const pool = cards.filter((c) => !c.isDemo); const picks = [];
     while (picks.length < 3 && pool.length) picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     const trio = ctx.main.querySelector('#trio');
-    trio.innerHTML = picks.map((c) => `<img src="${esc(c.thumb)}" alt="" width="${c.width}" height="${c.height}" loading="eager">`).join('');
-    trio.querySelectorAll('img').forEach((im) => im.addEventListener('error', () => im.remove()));
+    // Каждая из трёх карт открывает именно себя (галерея с открытой картой).
+    trio.innerHTML = picks.map((c) => `<a href="${u('/library?card=' + encodeURIComponent(c.code))}" aria-label="${esc(tt('Открыть карту', 'Open card'))} ${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" width="${c.width}" height="${c.height}" loading="eager"></a>`).join('');
+    trio.querySelectorAll('img').forEach((im) => im.addEventListener('error', () => im.closest('a').remove()));
   } catch { /* украшение: без карт блок просто пустой */ }
 }
 
@@ -149,7 +150,6 @@ export function facilitatorAbout(ctx) {
     [tt('Дождитесь одобрения заявки', 'Wait for approval'), tt('После одобрения вы сможете создавать встречи и подборки карт для них.', 'Once approved, you can create meetings and card selections for them.')],
   ];
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <a class="back-home" href="${u('/')}">← ${esc(tt('На главную', 'Home'))}</a>
     <div class="page-head"><h1>${esc(tt('Проводите встречи Dialogue Flow в своём городе', 'Host Dialogue Flow meetings in your city'))}</h1></div>
     <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого разговора. Вы познакомите участников с форматом и предложите им выбрать карту. С неё начнётся разговор, а дальше участники смогут говорить о том, что им интересно.', 'Bring people together for a real conversation. You introduce the format and invite everyone to choose a card. The conversation starts from it, and then participants can talk about whatever interests them.'))}</p>
     <p class="callout">${esc(tt('Предварительная подготовка не требуется.', 'No prior training is needed.'))}</p>
@@ -157,7 +157,6 @@ export function facilitatorAbout(ctx) {
     <h2 style="margin:8px 0 0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
     <ol class="path">${steps.map(([t1, t2]) => `<li><b>${esc(t1)}</b><span>${esc(t2)}</span></li>`).join('')}</ol>
     <div><a class="btn yellow big" href="${u('/facilitator/apply')}">${esc(tt('Начать путь фасилитатора', 'Start the facilitator path'))}</a></div>
-    <p class="small" style="margin:0">${ic.book} <a href="${u('/guide/dialogue-flow-guide.docx')}" download>${esc(tt('Скачать руководство фасилитатора (Word)', 'Download the facilitator guide (Word)'))}</a> <span class="muted">${esc(tt('— можно прочитать заранее и поделиться.', '— read it in advance and share it.'))}</span></p>
     <p class="small muted" style="margin:6px 0 0">${esc(tt('Уже фасилитатор?', 'Already a facilitator?'))} <a href="${u('/facilitator')}">${esc(tt('Перейти в кабинет', 'Go to your space'))}</a></p>
   </div>`;
 }
@@ -169,7 +168,7 @@ export async function curatorApply(ctx) {
   if (session.user) { try { info = await api('/api/curator/application'); } catch (e) { return failed(ctx.main, e, ctx.rerender); } }
   if (!ctx.alive()) return;
   const app = info && info.application;
-  const intro = `<a class="back-home" href="${u('/')}">← ${esc(tt('На главную', 'Home'))}</a>
+  const intro = `
     <div class="page-head"><h1>${esc(tt('Стать куратором', 'Become a curator'))}</h1></div>
     <p class="lead" style="margin:0">${esc(tt('Кураторы помогают отбирать иллюстрации для коллекции Dialog Arts.', 'Curators help choose illustrations for the Dialog Arts collection.'))}</p>
     <ul class="icon-lines">

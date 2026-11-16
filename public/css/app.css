@@ -410,7 +410,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .92rem; }
 
 /* ---------- панель «Вопросы» ---------- */
 .qpanel { position: absolute; left: 0; right: 0; top: var(--top); bottom: 0; z-index: 4; display: flex; flex-direction: column; background: var(--surface-2); color: var(--text); border-top: 1px solid var(--border); animation: q-in .22s ease; padding-bottom: var(--safe-b); touch-action: pan-y; outline: none; }
-@keyframes q-in { from { transform: translateX(-24%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes q-in { from { transform: translateX(24%); opacity: 0; } to { transform: none; opacity: 1; } }
 .viewer.q-side { --right: min(440px, 42vw); }
 .viewer.q-side .qpanel { left: auto; width: var(--right); border-top: 0; border-left: 1px solid var(--border); animation-name: q-side-in; }
 @keyframes q-side-in { from { transform: translateX(16%); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -592,8 +592,13 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 .btn.big { min-height: 54px; padding: 12px 26px; font-size: 1.05rem; }
 .trio { display: flex; justify-content: center; align-items: flex-end; padding: 8px 0; min-height: 200px; }
 .trio img { width: clamp(108px, 27vw, 190px); height: auto; border-radius: 14px; box-shadow: var(--shadow); border: 3px solid var(--surface); position: relative; }
-.trio img + img { margin-left: -18px; }
-.trio img:nth-child(2) { z-index: 2; transform: translateY(-14px); }
+.trio a { display: block; position: relative; transition: transform .15s ease; }
+.trio a + a { margin-left: -18px; }
+.trio a:nth-child(2) { z-index: 2; transform: translateY(-14px); }
+.trio a:hover, .trio a:focus-visible { transform: translateY(-6px); z-index: 3; }
+.trio a:nth-child(2):hover, .trio a:nth-child(2):focus-visible { transform: translateY(-20px); }
+.trio a:focus-visible { outline: none; } .trio a:focus-visible img { outline: 3px solid var(--focus); }
+.trio img { display: block; }
 .roles .role .ic { width: 52px; height: 52px; border-radius: 16px; }
 .roles .role .ic svg { width: 30px; height: 30px; stroke-width: 1.7; }
 .back-home { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--text-2); text-decoration: none; min-height: 36px; }
@@ -656,13 +661,15 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 .menu-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 14px; padding: 6px 14px; box-shadow: var(--shadow); white-space: nowrap; }
 
 /* ---------- 15.11-1: кубик «Случайная карта», единые пиктограммы участия ---------- */
-.dice-btn { gap: 9px; }
-.dice-btn .die { display: inline-grid; place-items: center; width: 26px; height: 26px; flex: none; }
-.dice-btn .die svg { width: 26px; height: 26px; stroke: none !important; }
-.dice-btn .die .die-body { fill: var(--accent); stroke: color-mix(in srgb, var(--accent) 70%, #000); stroke-width: 1; }
-.dice-btn .die .pip { fill: var(--on-accent); }
-.dice-btn.rolling .die { animation: die-roll .42s cubic-bezier(.3,.7,.4,1); }
-@keyframes die-roll { 0% { transform: rotate(0) scale(1); } 45% { transform: rotate(200deg) scale(1.15); } 100% { transform: rotate(360deg) scale(1); } }
+.btn.dice-btn { gap: 10px; background: transparent; color: var(--text); border: 1.5px solid var(--accent); padding-left: 10px; }
+.btn.dice-btn:hover { background: var(--accent-soft); border-color: var(--accent); opacity: 1; }
+.dice-btn .die { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,.35)); }
+.dice-btn .die svg { width: 30px; height: 30px; stroke: none !important; overflow: visible; }
+.die3d path { stroke: #2a1d05; stroke-width: 1.1; stroke-linejoin: round; }
+.die3d .f-top { fill: #FFE07A; } .die3d .f-left { fill: #F5BE2E; } .die3d .f-right { fill: #DE9F12; }
+.die3d .pip { fill: #1d1530; }
+.dice-btn.rolling .die { animation: die-roll .5s cubic-bezier(.3,.7,.4,1); }
+@keyframes die-roll { 0% { transform: translateY(0) rotate(0); } 35% { transform: translateY(-7px) rotate(-140deg) scale(1.1); } 70% { transform: translateY(1px) rotate(-320deg) scale(.96); } 100% { transform: translateY(0) rotate(-360deg); } }
 .roles .role .ic svg, .join-block .item .ic svg, .big-action .ic svg { stroke-width: 1.7; }
 .join-block .item .ic { width: 46px; height: 46px; }
 .join-block .item .ic svg { width: 28px; height: 28px; }
@@ -804,3 +811,6 @@ body.live-mode .foot, body.live-mode #demo-pill { display: none; }
 .lp-row { display: flex; gap: 12px; align-items: center; }
 .live-on { display: block; text-decoration: none; color: var(--text); border-color: var(--accent); }
 .live-on svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.9; vertical-align: -3px; }
+
+.back-bar { padding-top: 10px; }
+.back-bar + .page { padding-top: 10px; }

@@ -29,7 +29,7 @@ export const ic = {
   menu: P('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   close: P('<path d="M6 6l12 12M18 6L6 18"/>'),
   plus: P('<path d="M12 5v14M5 12h14"/>'),
-  dice: P('<rect x="3.5" y="3.5" width="17" height="17" rx="4.2" class="die-body"/><circle cx="8.6" cy="8.6" r="1.5" class="pip"/><circle cx="15.4" cy="15.4" r="1.5" class="pip"/><circle cx="15.4" cy="8.6" r="1.5" class="pip"/><circle cx="8.6" cy="15.4" r="1.5" class="pip"/><circle cx="12" cy="12" r="1.5" class="pip"/>'),
+  dice: '<svg viewBox="0 0 32 32" aria-hidden="true" class="die3d"><path class="f-top" d="M16 3.2 L27.6 9.6 L16 16 L4.4 9.6 Z"/><path class="f-left" d="M4.4 9.6 L16 16 L16 28.8 L4.4 22.4 Z"/><path class="f-right" d="M27.6 9.6 L16 16 L16 28.8 L27.6 22.4 Z"/><ellipse class="pip" cx="16" cy="9.6" rx="2.2" ry="1.25"/><ellipse class="pip" cx="7.6" cy="14.3" rx="1.25" ry="1.7" transform="rotate(-28 7.6 14.3)"/><ellipse class="pip" cx="12.8" cy="23.4" rx="1.25" ry="1.7" transform="rotate(-28 12.8 23.4)"/><ellipse class="pip" cx="24.6" cy="13.6" rx="1.25" ry="1.7" transform="rotate(28 24.6 13.6)"/><ellipse class="pip" cx="21.8" cy="18.6" rx="1.25" ry="1.7" transform="rotate(28 21.8 18.6)"/><ellipse class="pip" cx="19" cy="23.6" rx="1.25" ry="1.7" transform="rotate(28 19 23.6)"/></svg>',
   expand: P('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   x: P('<path d="M7 7l10 10M17 7L7 17"/>'),
   sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'),
@@ -168,6 +168,6 @@ export function wireDice(btn, fn, alive = () => true) {
     if (btn.dataset.rolling) return;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { fn(); return; }
     btn.dataset.rolling = '1'; btn.classList.add('rolling');
-    setTimeout(() => { btn.classList.remove('rolling'); delete btn.dataset.rolling; if (alive()) fn(); }, 420);
+    setTimeout(() => { btn.classList.remove('rolling'); delete btn.dataset.rolling; if (alive()) fn(); }, 500);
   });
 }

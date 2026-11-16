@@ -122,9 +122,10 @@ export function openViewer(opts) {
     clamp(); apply(animate);
   }
   const rel = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2]; };
-  // Листать карты можно только в обычном просмотре; на весь экран и в режиме разговора свайп переключает «Карта / Вопросы».
+  // Свайп по карте влево — вопросы (16.11.2026); листать карты — стрелками по бокам (в режиме разговора карты не листаются).
+  // В просмотре без вопросов (кабинеты) свайп листает карты, как раньше.
   const canFlip = () => opts.cards.length > 1 && !mode.talk;
-  const swipeToQuestions = () => withQ && (mode.talk || mode.full || !canFlip());
+  const swipeToQuestions = () => withQ;
 
   const pointers = new Map();
   let gesture = null; let lastTap = 0; let tapTimer = null;
@@ -150,7 +151,7 @@ export function openViewer(opts) {
       const dx = e.clientX - gesture.sx; const dy = e.clientY - gesture.sy;
       if (Math.abs(dx) + Math.abs(dy) > 6) gesture.moved = true;
       if (z.s > 1.01) { z.x = gesture.x + dx; z.y = gesture.y + dy; clamp(); apply(false); }
-      else if (swipeToQuestions() ? dx > 0 : canFlip()) { z.x = dx * 0.5; apply(false); } // лёгкий отклик на свайп
+      else if (swipeToQuestions() ? dx < 0 : canFlip()) { z.x = dx * 0.5; apply(false); } // лёгкий отклик на свайп
     }
   });
   const end = (e) => {
@@ -167,7 +168,7 @@ export function openViewer(opts) {
     const dx = e.clientX - g.sx; const dy = e.clientY - g.sy;
     if (z.s <= 1.01 && g.moved) {
       const horiz = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2;
-      if (horiz && swipeToQuestions()) { z.x = 0; apply(true); if (dx > 0) setView('questions'); return; }
+      if (horiz && swipeToQuestions()) { z.x = 0; apply(true); if (dx < 0) setView('questions'); return; }
       if (horiz && canFlip()) { go(dx < 0 ? 1 : -1); return; }
       z.x = 0; apply(true); return;
     }
@@ -377,14 +378,14 @@ export function openViewer(opts) {
         group[(i + (e.key === 'ArrowRight' ? 1 : -1) + group.length) % group.length].click();
       }
     });
-    // Свайп влево по вопросам — обратно к карте; вертикальный жест прокручивает список (touch-action: pan-y).
+    // Свайп вправо по вопросам — обратно к карте; вертикальный жест прокручивает список (touch-action: pan-y).
     let qsw = null;
     qpanel.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') qsw = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
     qpanel.addEventListener('pointercancel', () => { qsw = null; });
     qpanel.addEventListener('pointerup', (e) => {
       if (!qsw || qsw.id !== e.pointerId) return;
       const dx = e.clientX - qsw.x; const dy = e.clientY - qsw.y; qsw = null;
-      if (dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.2 && !el.classList.contains('q-side')) setView('card');
+      if (dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.2 && !el.classList.contains('q-side')) setView('card');
     });
     qpanel.addEventListener('scroll', () => saveScroll(), true);
   }

@@ -565,7 +565,7 @@ r.get('/api/fac/application', auth.requireUser, (req, res) => {
     chapters: chapters && chapters.length === community.COURSE.length ? chapters.map((c) => c.blocks) : null,
     extra: g ? g.chapters.filter((c) => !c.course) : [],
     guideTitle: g ? g.title : '', guideMissing: !(chapters && chapters.length === community.COURSE.length),
-    questions: community.QUESTIONS.map(({ id, text, options }) => ({ id, text, options })), questionsPlaceholder: true,
+    questions: community.QUESTIONS.map(({ id, text, options }) => ({ id, text, options })), questionsPlaceholder: false,
   });
 });
 r.post('/api/fac/application', auth.requireUser, (req, res) => res.json({ application: community.startApplication(req.user) }));

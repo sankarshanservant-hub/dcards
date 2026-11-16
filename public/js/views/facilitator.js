@@ -1,6 +1,7 @@
 // Фасилитатор: кабинет (подборки, встречи, записи), редактор подборки, редактор встречи, путь получения роли.
 import { esc, tt, u, api, errorText, toast, fmtTz, fmtDate, ruPlural, enterTimeHint, durationText } from '../util.js';
 import { lang } from '../i18n.js';
+import { QUESTION_FORMATS } from '../content.js';
 import { openViewer, icons } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, demoPill, timeline, stepsBar, ic, showQr, refreshSession } from '../ui.js';
 import { langName, LANG_NAMES, priceText } from './meetings.js';
@@ -448,7 +449,19 @@ export async function apply(ctx) {
   const a = d.application;
   const N = d.course.length;
   const save = async (patch) => { await api('/api/fac/application', { method: 'PUT', body: patch }); };
-  const block = (b) => (b.t === 'h' ? `<h4>${esc(b.text)}</h4>` : b.t === 'li' ? `<ul><li>${esc(b.text)}</li></ul>` : `<p>${esc(b.text)}</p>`);
+  // Служебные пометки автора «[Ожидает правки…]» читателю не показываем; заглушку карточки с вопросами заменяем
+  // утверждёнными вопросами «Для двоих»; место для ссылки на группу иллюстраторов — ссылка «Предложить иллюстрацию».
+  const pairQ = () => ((QUESTION_FORMATS.find((f) => f.key === 'pair') || {}).lists || []).map((l) => `<h4>${esc(l.title[lang] || l.title.ru)}</h4><ul>${(l.items[lang] || l.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>`).join('');
+  // Варианты ответа перемешиваются при каждом открытии страницы (верный не стоит всегда на одном месте).
+  const order = {};
+  const shuffled = (q) => order[q.id] || (order[q.id] = q.options.map((_, i) => i).sort(() => Math.random() - 0.5));
+  const block = (b) => {
+    const t = String(b.text || '').trim();
+    if (/^\[Ожидает списка вопросов/.test(t)) return pairQ();
+    if (/^\[Ссылка на группу иллюстраторов/.test(t)) return `<p><a href="${u('/artist/submit')}">${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a> · <a href="${u('/team/general')}">${esc(tt('Общий чат сообщества', 'Community chat'))}</a></p>`;
+    if (/^\[Ожидает/.test(t)) return '';
+    return b.t === 'h' ? `<h4>${esc(t)}</h4>` : b.t === 'li' ? `<ul><li>${esc(t)}</li></ul>` : `<p>${esc(t)}</p>`;
+  };
   // Путь (один индикатор): 1 — руководство, 2 — проверка знаний и о себе, 3 — рассмотрение заявки.
   const stage = !a ? 0 : a.status === 'submitted' ? 3 : a.status === 'approved' ? 4 : a.courseDone.length === N ? 2 : 1;
   const path = timeline([
@@ -474,7 +487,7 @@ export async function apply(ctx) {
           ${d.extra.map((x) => `<details class="chapter"><summary><span class="state" aria-hidden="true"></span><span class="grow"><b>${esc(x.title)}</b><br><span class="small muted">${esc(tt('дополнительно', 'extra reading'))}</span></span></summary><div class="ch-body">${x.blocks.map(block).join('')}</div></details>`).join('')}</div></section>
       <section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${esc(tt('Шаг 3. Пройдите проверку знаний и подайте заявку', 'Step 3. Take the quiz and apply'))}</h2>
         ${d.questionsPlaceholder ? `<p class="small" style="margin:0"><span class="pill demo">${esc(tt('временные вопросы', 'placeholder questions'))}</span> ${esc(tt('Вопросы проверки пока тестовые — их заменят утверждённые.', 'Quiz questions are temporary and will be replaced by approved ones.'))}</p>` : ''}
-        ${d.questions.map((q) => `<fieldset style="border:0;padding:0;margin:0" class="stack"><legend style="font-weight:700;margin-bottom:6px">${esc(q.text)}</legend><div class="seg" role="radiogroup">${q.options.map((o, i) => `<label style="display:inline-flex"><input type="radio" class="sr-only" name="${q.id}" value="${i}" ${String(a.answers[q.id]) === String(i) ? 'checked' : ''}><span class="chip ${String(a.answers[q.id]) === String(i) ? 'on' : ''}">${esc(o)}</span></label>`).join('')}</div></fieldset>`).join('')}
+        ${d.questions.map((q) => `<fieldset class="fs quiz-q"><legend>${esc(q.text)}</legend><div class="radio-list" role="radiogroup">${shuffled(q).map((i) => `<label class="radio"><input type="radio" name="${q.id}" value="${i}" ${String(a.answers[q.id]) === String(i) ? 'checked' : ''}><span>${esc(q.options[i])}</span></label>`).join('')}</div></fieldset>`).join('')}
         <label class="field">${esc(tt('Город', 'City'))}<input type="text" id="city" maxlength="100" value="${esc(a.city)}"></label>
         <label class="field">${esc(tt('О себе и опыте встреч', 'About you and your meeting experience'))}<textarea id="about" maxlength="2000">${esc(a.about)}</textarea></label>
         <p class="form-error" id="err" role="alert"></p>
@@ -498,10 +511,23 @@ export async function apply(ctx) {
     if (set.has(i)) set.delete(i); else set.add(i);
     const next = [...set].sort((x, y) => x - y);
     b.disabled = true;
-    try { await save({ courseDone: next }); a.courseDone = next; ctx.rerender(); } catch (x) { b.disabled = false; toast(errorText(x)); }
+    const wasAll = a.courseDone.length === N;
+    try { await save({ courseDone: next }); } catch (x) { b.disabled = false; toast(errorText(x)); return; }
+    a.courseDone = next;
+    // Все главы прочитаны (или отметку сняли с последней) — открывается/закрывается шаг 3: перерисовываем, сохранив место на странице.
+    if ((next.length === N) !== wasAll) { const y = window.scrollY; await ctx.rerender(); window.scrollTo(0, y); return; }
+    // Иначе — только эта глава и счётчик, без перерисовки: читать можно дальше с того же места.
+    const on = set.has(i); const det = b.closest('details.chapter');
+    det.classList.toggle('read', on);
+    det.querySelector('.state').innerHTML = on ? icons.check : '';
+    det.querySelector('[data-chstate]').textContent = on ? tt('Прочитано', 'Read') : tt('Не прочитано', 'Not read');
+    b.className = `btn ${on ? 'light' : 'yellow'} sm`; b.setAttribute('aria-pressed', String(on));
+    b.textContent = on ? tt('Отметить как непрочитанную', 'Mark as unread') : tt('Я прочитал(а)', 'I have read it');
+    b.disabled = false;
+    const pr = ctx.main.querySelector('#prog'); if (pr) pr.textContent = tt(`Прочитано ${next.length} из ${N}`, `Read ${next.length} of ${N}`);
+    if (on) toast(tt('Глава отмечена как прочитанная', 'Chapter marked as read'));
   }));
-  ctx.main.querySelectorAll('fieldset input[type=radio]').forEach((r) => r.addEventListener('change', async () => {
-    r.closest('fieldset').querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.previousElementSibling.checked));
+  ctx.main.querySelectorAll('fieldset.quiz-q input[type=radio]').forEach((r) => r.addEventListener('change', async () => {
     a.answers[r.name] = Number(r.value);
     try { await save({ answers: a.answers }); } catch (x) { toast(errorText(x)); }
   }));
