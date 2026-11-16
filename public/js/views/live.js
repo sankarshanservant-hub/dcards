@@ -51,7 +51,7 @@ export function participant(ctx, slug, col, first) {
       ${me.card && cardBy.get(me.card) ? `<img class="live-card" src="${esc(cardBy.get(me.card).thumb)}" alt="">` : ''}
       <p class="lead">${esc(tt('Пока не показывайте её никому. Собеседники выбирают карты — скоро вы увидите знак своей пары.', 'Do not show it to anyone yet. Partners are choosing cards — soon you will see your pair sign.'))}</p>`);
     else if (['pairs', 'talk', 'break'].includes(s.status)) html = me.pair ? pairScreen(s, me, recall) : frame(`${recall}<h1>${esc(s.status === 'break' ? tt('Раунд закончен', 'The round is over') : tt('В этом раунде вы без пары', 'You have no pair this round'))}</h1>
-      <p class="lead">${esc(s.status === 'break' ? tt('Перерыв. Фасилитатор позовёт всех к следующему раунду.', 'Break. The facilitator will call everyone for the next round.') : tt('Подойдите к фасилитатору — он поможет присоединиться к разговору.', 'Please go to the facilitator — they will help you join a conversation.'))}</p>`);
+      <p class="lead">${esc(s.status === 'break' ? tt('Перерыв. Фасилитатор позовёт всех к следующему раунду.', 'Break. The facilitator will call everyone for the next round.') : tt('Подойдите к фасилитатору — он поможет присоединиться к разговору.', 'Please go to the facilitator — they will help you join a conversation.'))}</p>${s.status === 'break' ? `<button class="linkbtn" type="button" data-leave>${esc(tt('Выйти из встречи', 'Leave the meeting'))}</button>` : ''}`);
     else html = frame('<p class="muted">…</p>');
     ctx.main.innerHTML = html;
     wire();
@@ -111,7 +111,7 @@ export function participant(ctx, slug, col, first) {
       <p class="lead live-role">${esc(holder ? tt('Вы выбрали эту карту первым. Расскажите, почему она привлекла ваше внимание. Потом спросите собеседника — вопросы ниже.', 'You chose this card first. Tell your partner why it caught your attention. Then ask your partner — the questions are below.') : tt('Сначала послушайте, почему собеседника привлекла эта карта, и задавайте вопросы — они ниже.', 'First listen to why the card caught your partner’s attention, and ask the questions below.'))}</p>
       <div class="qtabs" role="tablist" aria-label="${esc(tt('Кто задаёт вопросы', 'Who asks'))}">${['partner', 'holder'].map((k) => `<button type="button" role="tab" aria-selected="${k === cur}" data-list="${k}">${esc(listTitle(k))}${k === mineKey ? ` · ${esc(tt('вы', 'you'))}` : ''}</button>`).join('')}</div>
       <ul class="qlist">${items(cur).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>
-      <p class="small muted">${esc(tt('Вопросы — помощь, а не маршрут: можно пропускать, задавать свои или просто говорить.', 'Questions are a help, not a route: skip them, ask your own or just talk.'))}</p>${soundRow()}`, 'talk');
+      <p class="small muted">${esc(tt('Вопросы — помощь, а не маршрут: можно пропускать, задавать свои или просто говорить.', 'Questions are a help, not a route: skip them, ask your own or just talk.'))}</p>${soundRow()}${s.status === 'break' ? `<button class="linkbtn" type="button" data-leave>${esc(tt('Выйти из встречи', 'Leave the meeting'))}</button>` : ''}`, 'talk');
   }
   function finalScreen(s) {
     const sent = ui.fbSent || s.feedbackSent;

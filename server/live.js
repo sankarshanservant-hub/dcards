@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS live_feedback (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );`);
 
+try { db.exec('ALTER TABLE live_sessions ADD COLUMN fac_device TEXT'); } catch { /* уже есть */ } // телефон фасилитатора: с него он входит в игру при нечётной группе
 const now = () => new Date().toISOString();
 const ACTIVE = "status != 'ended'";
 const MAX_MEMBERS = 60;
@@ -129,7 +130,8 @@ function panel(s) {
   return {
     id: s.id, slug: col.slug, title: col.title, status: s.status, round: s.round, roundMinutes: s.round_minutes,
     talkEndsAt: s.talk_ends_at, recallAt: s.recall_at, serverNow: now(), createdAt: s.created_at, endedAt: s.ended_at, isDemo: !!s.is_demo, version: version(s.id),
-    members: members.map((m) => ({ id: m.id, name: m.name, isFacilitator: !!m.is_facilitator, role: roles.get(m.id) || null, joinedAt: m.joined_at })),
+    members: members.filter((m) => !m.is_facilitator).map((m) => ({ id: m.id, name: m.name, role: roles.get(m.id) || null, joinedAt: m.joined_at })),
+    facRole: (() => { const f = members.find((m) => m.is_facilitator); return f ? roles.get(f.id) || null : null; })(),
     pairs: slots.map((x, i) => ({ slotId: x.id, sign: signOut(x.sign, i + 1), card: x.card_code, holder: name(x.holder_id), listeners: [x.listener_id, x.extra_listener_id].filter(Boolean).map(name) })),
     progress: {
       holders: [...roles.values()].filter((r) => r === 'holder').length, holdersDone: slots.length,
@@ -144,6 +146,21 @@ const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math
 /** Новый раунд: половина — держатели карт. Со второго раунда роли меняются: прежние собеседники становятся держателями. */
 const startRound = db.transaction((s) => {
   if (!['lobby', 'break'].includes(s.status)) return { error: 'live_bad_state' };
+  // Перед каждым раундом группа пересчитывается: опоздавшие входят, ушедшие выходят. Нечётное число — фасилитатор
+  // сам становится участником (с самого распределения); чётное — фасилитатор в этом раунде не играет. Пар втроём нет.
+  const all = db.prepare('SELECT * FROM live_members WHERE session_id = ?').all(s.id);
+  const others = all.filter((m) => !m.is_facilitator && !m.removed_at);
+  let fac = all.find((m) => m.is_facilitator);
+  const needFac = others.length % 2 === 1;
+  if (needFac && s.fac_device) {
+    if (fac) db.prepare('UPDATE live_members SET removed_at = NULL WHERE id = ?').run(fac.id);
+    else {
+      const u = db.prepare('SELECT * FROM users WHERE id = ?').get(s.facilitator_id) || {};
+      const ex = S.member.get(s.id, s.fac_device);
+      if (ex) db.prepare('UPDATE live_members SET removed_at = NULL, is_facilitator = 1 WHERE id = ?').run(ex.id);
+      else db.prepare('INSERT INTO live_members (session_id, device_id, name, is_facilitator, user_id) VALUES (?, ?, ?, 1, ?)').run(s.id, s.fac_device, String(u.public_name || u.name || 'Фасилитатор').slice(0, 60), s.facilitator_id);
+    }
+  } else if (!needFac && fac && !fac.removed_at) db.prepare('UPDATE live_members SET removed_at = ? WHERE id = ?').run(now(), fac.id);
   const members = S.members.all(s.id);
   if (members.length < 2) return { error: 'live_too_few' };
   const prev = s.round ? roleMap(s) : new Map();
@@ -155,8 +172,10 @@ const startRound = db.transaction((s) => {
   const round = s.round + 1;
   order.forEach((m, i) => db.prepare('INSERT INTO live_roles (session_id, round, member_id, role) VALUES (?, ?, ?, ?)').run(s.id, round, m.id, i < nh ? 'holder' : 'listener'));
   db.prepare("UPDATE live_sessions SET status = 'holders', round = ?, talk_started_at = NULL, talk_ends_at = NULL, recall_at = NULL WHERE id = ?").run(round, s.id);
-  return { ok: true, round };
+  return { ok: true, round, facIn: needFac };
 });
+/** Телефон фасилитатора (с которого открыт пульт) — на нём он участвует, если понадобится. */
+function setFacDevice(s, deviceId) { if (deviceId && s.fac_device !== deviceId) db.prepare('UPDATE live_sessions SET fac_device = ? WHERE id = ?').run(deviceId, s.id); }
 
 /** Дальше, не дожидаясь: держатели без карты становятся собеседниками; собеседники без пары распределяются по свободным картам. */
 const advance = db.transaction((s) => {
@@ -364,5 +383,5 @@ function mine(userId, isAdmin) {
 
 module.exports = {
   bus, touch, version, signOut, SIGNS, pickSign, start, forFacilitator, panel, startRound, advance, startTalk, addTime, endRound, recall, setMinutes, end,
-  removeMember, selfJoin, bySlug, join, leave, participantState, holderPick, listenerPick, feedback, feedbackList, feedbackFile, mine,
+  removeMember, selfJoin, setFacDevice, bySlug, join, leave, participantState, holderPick, listenerPick, feedback, feedbackList, feedbackFile, mine,
 };

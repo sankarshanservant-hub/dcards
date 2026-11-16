@@ -493,7 +493,7 @@ r.post('/api/fac/live', fac, (req, res) => {
 });
 r.get('/api/fac/live', fac, (req, res) => res.json({ sessions: live.mine(req.user.id, req.has('admin')) }));
 const liveFac = (req, res) => { const s = live.forFacilitator(Number(req.params.id), req.user, req.has('admin')); if (!s) { bad(res, 'not_found', 404); return null; } return s; };
-r.get('/api/fac/live/:id', fac, (req, res) => { const s = liveFac(req, res); if (s) res.json(live.panel(s)); });
+r.get('/api/fac/live/:id', fac, (req, res) => { const s = liveFac(req, res); if (!s) return; const d = req.query.device; if (typeof d === 'string' && VISITOR_RE.test(d)) live.setFacDevice(s, d); res.json(live.panel(live.forFacilitator(s.id, req.user, true))); });
 const LIVE_ACTIONS = {
   start_round: (s) => live.startRound(s), advance: (s) => live.advance(s), talk: (s, b) => live.startTalk(s, b.minutes), add_time: (s, b) => live.addTime(s, b.minutes),
   end_round: (s) => live.endRound(s), recall: (s) => live.recall(s), minutes: (s, b) => live.setMinutes(s, b.minutes), end: (s) => live.end(s),
