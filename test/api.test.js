@@ -869,3 +869,19 @@ test('Игры компанией: разговор в парах — роли, 
   let swapped = 0; for (const i of L) if ((await st(i)).role === 'holder') swapped++;
   assert.equal(swapped, 2, 'во втором раунде прежние собеседники выбирают карты');
 });
+
+test('Установка на «Домой»: у Dialogue Cards своя область, имя и значки — не сайта harekrishna.info', async () => {
+  const fs2 = require('fs');
+  const m = JSON.parse(fs2.readFileSync(path.join(__dirname, '..', 'public', 'manifest.webmanifest'), 'utf8'));
+  // манифест лежит в /dialogue-cards/: относительные scope и start_url остаются внутри этой папки
+  const at = (v) => new URL(v, 'https://harekrishna.info/dialogue-cards/manifest.webmanifest').pathname;
+  assert.equal(at(m.scope), '/dialogue-cards/', 'область — только приложение, не весь сайт');
+  assert.ok(at(m.start_url).startsWith('/dialogue-cards/'), 'запуск внутри приложения');
+  assert.ok(m.name && m.short_name && !/Сарасват/.test(m.name + m.short_name), 'своё название');
+  for (const i of m.icons) assert.ok(fs2.existsSync(path.join(__dirname, '..', 'public', i.src)), 'значок есть: ' + i.src);
+  const html = await (await fetch(base + '/')).text();
+  assert.match(html, /<link rel="manifest" href="[^"]*\/manifest\.webmanifest">/, 'страница ссылается на свой манифест');
+  assert.match(html, /<meta name="apple-mobile-web-app-title" content="D-Cards">/, 'имя под значком на iPhone');
+  assert.match(html, /<link rel="apple-touch-icon" href="[^"]*\/img\/icon-180\.png/, 'свой значок для iPhone');
+  assert.ok(!/<title>[^<]*Сарасват/.test(html));
+});
