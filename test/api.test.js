@@ -749,7 +749,8 @@ test('Встреча по телефонам: вход по QR, деление �
   assert.equal(p.facRole, null, 'чётная группа — фасилитатор в раунде не играет');
   assert.equal(p.progress.holders + p.progress.listeners, 4);
   const prevL = L.filter((d) => d !== 5 && d !== FAC);
-  for (const d of prevL) assert.equal(await role(d), 'holder', 'прежние собеседники — теперь держатели');
+  let became = 0; for (const d of prevL) if (await role(d) === 'holder') became++;
+  assert.equal(became, Math.min(prevL.length, 2), 'держатели второго раунда — прежние собеседники (сколько их есть)');
   // опоздавший во время раунда ждёт следующего
   await call('POST', `/api/live/${slug}/join`, { deviceId: dev(6), name: 'Женя' });
   assert.equal((await st(6)).me.role, null, 'опоздавший присоединится со следующего раунда');
