@@ -55,7 +55,7 @@ export const QUESTION_FORMATS = [
     ],
   },
   { key: 'group', title: { ru: 'Для группы', en: 'For a group' }, lists: null,
-    pending: { ru: 'Групповой сценарий готовится.', en: 'The group scenario is being prepared.' } },
+    pending: { ru: 'Для компании есть отдельные форматы — откройте «Играть компанией».', en: 'There are separate formats for groups — open “Play with friends”.' }, link: '/group' },
 ];
 
 // START_GUIDES — «С чего начать?» (показывается под картой в общей галерее).

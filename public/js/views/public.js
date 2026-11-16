@@ -62,7 +62,7 @@ export async function library(ctx) {
   ctx.main.innerHTML = `<div class="wrap page">
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted">${esc(tt(`${cards.length} карт · новые сверху · нажмите на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
-      ${diceButtonHtml()}</div>
+      <div class="row">${diceButtonHtml()}<a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div>
     ${cards.length ? groups.map((g) => `<h2 class="month-title">${esc(g.label)}</h2><div class="grid">${g.items.map(([c, i]) => tileHtml(c, i)).join('')}</div>`).join('') : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
   </div>`;
   const openAt = (i) => openViewer({ cards, index: i, mode: 'library' });

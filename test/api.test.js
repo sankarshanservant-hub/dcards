@@ -782,3 +782,59 @@ test('Встреча по телефонам: вход по QR, деление �
   assert.equal((await st(1)).me, null, 'в новой встрече прежние участники заходят заново');
   await call('POST', `/api/fac/live/${sid2}/end`, {}, { cookie: facil.cookie });
 });
+
+test('Игры компанией: комната по коду, одна карта на всех, своя карта, угадай, карта для друга, история, вопрос от карты', async () => {
+  const D = (i) => `device-group-${String(i).padStart(4, '0')}-abc`;
+  const st = (code, i) => call('GET', `/api/group/${code}/state?device=${D(i)}`).then((r) => r.json);
+  const act = (code, i, action, body = {}) => call('POST', `/api/group/${code}/act`, { deviceId: D(i), action, ...body });
+  const room = async (format, n = 3) => {
+    const r = await call('POST', '/api/group', { format, deviceId: D(1), name: 'Ведущий' });
+    assert.equal(r.status, 201, format);
+    for (let i = 2; i <= n; i++) assert.equal((await call('POST', `/api/group/${r.json.code}/join`, { deviceId: D(i), name: 'Друг ' + i })).status, 200);
+    return r.json.code;
+  };
+  assert.equal((await call('POST', '/api/group', { format: 'nope', deviceId: D(1), name: 'x' })).json.error, 'group_bad_format');
+  // одна карта на всех: у всех одна и та же, «другая карта» — только ведущий
+  let c = await room('one');
+  assert.equal((await act(c, 2, 'start')).json.error, 'group_host_only');
+  await act(c, 1, 'start');
+  const a1 = (await st(c, 1)).card.code; assert.equal((await st(c, 3)).card.code, a1, 'одна карта у всех');
+  await act(c, 1, 'next_card'); assert.notEqual((await st(c, 2)).card.code, a1, 'другая карта');
+  // каждому своя карта: выбор скрыт, пока все не выбрали
+  c = await room('own');
+  await act(c, 1, 'start');
+  const g = (await st(c, 2)).gallery; assert.ok(g.length >= 3);
+  await act(c, 1, 'pick', { code: g[0].code }); await act(c, 2, 'pick', { code: g[0].code });
+  assert.equal((await st(c, 3)).shown, undefined, 'чужие карты скрыты до общего раскрытия');
+  await act(c, 3, 'pick', { code: g[1].code });
+  const sh = (await st(c, 2)).shown; assert.equal(sh.length, 3, 'все выбрали — карты открылись');
+  assert.ok(sh.every((x) => x.name && x.card));
+  // угадай, кто выбрал: по одной, автор открывается по кнопке
+  c = await room('guess');
+  await act(c, 1, 'start');
+  for (const i of [1, 2, 3]) await act(c, i, 'pick', { code: g[i - 1].code });
+  let s2 = await st(c, 2); assert.equal(s2.phase, 'guess'); assert.ok(s2.current && !s2.author, 'автор скрыт');
+  await act(c, 1, 'reveal'); s2 = await st(c, 2); assert.ok(s2.author, 'автор открыт');
+  await act(c, 1, 'next'); await act(c, 1, 'next'); await act(c, 1, 'next');
+  assert.equal((await st(c, 3)).phase, 'done');
+  // карта для друга: у каждого свой адресат, не он сам
+  c = await room('friend', 4);
+  await act(c, 1, 'start');
+  const targets = []; for (const i of [1, 2, 3, 4]) { const x = await st(c, i); assert.ok(x.target && x.target !== x.me.name, 'адресат — другой человек'); targets.push(x.target); }
+  assert.equal(new Set(targets).size, 4, 'каждый получает карту ровно от одного');
+  for (const i of [1, 2, 3, 4]) await act(c, i, 'pick', { code: g[0].code });
+  assert.ok((await st(c, 1)).shown.every((x) => x.for), 'видно, кому какая карта');
+  // история по кругу
+  c = await room('story');
+  await act(c, 1, 'start'); await act(c, 1, 'next_card'); await act(c, 1, 'next_card');
+  assert.equal((await st(c, 2)).cards.length, 3);
+  // вопрос от карты: каждый получает чужой вопрос
+  c = await room('question');
+  await act(c, 1, 'start');
+  for (const i of [1, 2, 3]) await act(c, i, 'write', { text: `Вопрос ${i}` });
+  await act(c, 1, 'reveal');
+  for (const i of [1, 2, 3]) { const x = await st(c, i); assert.ok(x.question && x.question !== `Вопрос ${i}`, 'чужой вопрос'); }
+  // завершение
+  await act(c, 1, 'end'); assert.equal((await st(c, 2)).status, 'ended');
+  assert.equal((await call('POST', `/api/group/${c}/join`, { deviceId: D(9), name: 'Поздно' })).json.error, 'group_not_found');
+});

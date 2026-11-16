@@ -342,7 +342,7 @@ export function openViewer(opts) {
     const f = QUESTION_FORMATS.find((x) => x.key === qs.format);
     let body;
     if (!f) body = `<p class="vb-note">${esc(tt('Выберите, как вы разговариваете: для себя, вдвоём или в группе.', 'Choose how you are talking: on your own, as two or in a group.'))}</p>`;
-    else if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}</p>`;
+    else if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}${f.link ? ` <a href="${u(f.link)}" data-q-go>${esc(tt('Играть компанией →', 'Play with friends →'))}</a>` : ''}</p>`;
     else {
       const cur = f.lists.find((x) => x.key === qs.list) || f.lists[0];
       qs.list = cur.key;
@@ -365,6 +365,8 @@ export function openViewer(opts) {
   }
   if (qpanel) {
     qpanel.addEventListener('click', (e) => {
+      const go = e.target.closest('a[data-q-go]');
+      if (go) { e.preventDefault(); const href = go.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
       const b = e.target.closest('button'); if (!b) return;
       if (b.hasAttribute('data-q-card')) return setView('card');
       if (b.dataset.qFormat) { saveScroll(); qs.format = b.dataset.qFormat; persistQ(); renderQ(); restoreScroll(); qpanel.querySelector(`[data-q-format="${qs.format}"]`).focus(); return; }

@@ -554,6 +554,33 @@ r.post('/api/live/feedback/:id', feedbackUpload.single('media'), (req, res) => {
   out(res, x, 201);
 });
 
+// ---------- игры компанией (без фасилитатора): комната по QR/коду ----------
+const group = require('./group');
+const groupDone = (res, x, status = 200) => { if (x && x.ok && x.id) group.touch(x.id); out(res, x, status); };
+r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo }), 201); });
+r.get('/api/group/:code/state', (req, res) => {
+  const d = liveDevice(req, res); if (!d) return;
+  const st = group.state(req.params.code, d, req.showDemo);
+  if (!st) return bad(res, 'group_not_found', 404);
+  res.set('Cache-Control', 'no-store'); res.json({ ...st, serverNow: new Date().toISOString() });
+});
+r.get('/api/group/:code/events', (req, res) => {
+  const rm = group.room(req.params.code); if (!rm) return bad(res, 'group_not_found', 404);
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
+  res.flushHeaders(); res.write(`data: ${group.version(rm.id)}\n\n`);
+  const on = (v) => res.write(`data: ${v}\n\n`); group.bus.on('g' + rm.id, on);
+  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+  req.on('close', () => { clearInterval(ping); group.bus.off('g' + rm.id, on); });
+});
+r.post('/api/group/:code/join', (req, res) => { const d = liveDevice(req, res); if (d) groupDone(res, group.join(req.params.code, d, (req.body || {}).name)); });
+r.post('/api/group/:code/leave', (req, res) => { const d = liveDevice(req, res); if (d) groupDone(res, group.leave(req.params.code, d)); });
+r.post('/api/group/:code/act', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; groupDone(res, group.act(req.params.code, d, String(b.action || ''), b, req.showDemo)); });
+r.get('/api/group/:code/qr.png', wrap(async (req, res) => {
+  const rm = group.room(req.params.code); if (!rm) return bad(res, 'group_not_found', 404);
+  const png = await QRCode.toBuffer(`${baseUrl(req)}${B}/g/${rm.code}`, { width: Math.min(1600, Math.max(200, Number(req.query.size) || 600)), margin: 2 });
+  res.type('png').send(png);
+}));
+
 // ---------- путь к роли фасилитатора ----------
 r.get('/api/fac/application', auth.requireUser, (req, res) => {
   const g = guide.load();

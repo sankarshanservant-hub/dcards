@@ -6,6 +6,7 @@ import * as pub from './views/public.js';
 import * as tool from './views/meeting-tool.js';
 import * as notif from './views/notify.js';
 import * as livePanel from './views/live-panel.js';
+import * as grp from './views/group.js';
 import { syncPush } from './push.js';
 import * as meet from './views/meetings.js';
 import * as acc from './views/account.js';
@@ -52,6 +53,8 @@ const routes = [
   [/^\/facilitator\/live\/(\d+)\/?$/, livePanel.panel],
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
+  [/^\/group\/?$/, grp.choose],
+  [/^\/g\/([A-Za-z0-9]{4,8})\/?$/, grp.room],
   [/^\/chats\/?$/, team.rooms],
   [/^\/chat\/?$/, (ctx) => ctx.navigate('/team/general', { replace: true })], // короткая ссылка для участников Zoom
   [/^\/me\/notifications\/?$/, notif.settings],
@@ -219,6 +222,7 @@ function openMenu() {
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}
     ${mi('/start#join', ic.people, 'Участвовать', 'Take part')}
+    ${mi('/group', ic.dice, 'Играть компанией', 'Play with friends', 'Форматы для друзей, каждый со своего телефона', 'Formats for friends, each on their own phone')}
     ${mi('/chats', ic.chats, 'Общение', 'Community', 'Общий чат и чаты команды', 'General chat and team chats', false, session.unread ? String(session.unread) : '')}
     ${s ? `${cabinets.length ? `<div class="sec">${esc(tt('Мои кабинеты', 'My spaces'))}</div>${cabinets.join('')}` : ''}
       <div class="sec">${esc(tt('Аккаунт', 'Account'))}</div>

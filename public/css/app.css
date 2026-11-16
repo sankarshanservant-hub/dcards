@@ -814,3 +814,16 @@ body.live-mode .foot, body.live-mode #demo-pill { display: none; }
 
 .back-bar { padding-top: 10px; }
 .back-bar + .page { padding-top: 10px; }
+/* игры компанией */
+.group-format { width: 100%; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.g-code { font: 700 1.05rem ui-monospace, monospace; letter-spacing: .12em; color: var(--accent-text); }
+.g-qr { width: min(240px, 70vw); height: auto; background: #fff; border-radius: 14px; padding: 8px; }
+.g-rules { margin: 6px 0 0; padding-left: 1.1em; display: grid; gap: 4px; color: var(--text-2); }
+.g-h { margin: 0; font-size: 1.25rem; }
+.g-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.g-strip img { width: 54px; border-radius: 8px; flex: none; opacity: .85; }
+.g-shown { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.g-shown figure { margin: 0; display: grid; gap: 6px; justify-items: center; text-align: center; }
+.g-shown .live-card { width: 100%; }
+.g-question { font: 600 1.2rem/1.4 var(--font-head); margin: 6px 0 0; }
+.g-author { color: var(--accent-text); }
