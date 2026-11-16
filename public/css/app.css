@@ -827,3 +827,6 @@ body.live-mode .foot, body.live-mode #demo-pill { display: none; }
 .g-shown .live-card { width: 100%; }
 .g-question { font: 600 1.2rem/1.4 var(--font-head); margin: 6px 0 0; }
 .g-author { color: var(--accent-text); }
+.g-hostbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border-radius: 14px; border: 1px dashed var(--accent); background: var(--surface); font-size: .9rem; }
+.g-hostbar b { color: var(--accent-text); }
+.g-hostbar input { min-height: 34px; padding: 2px 8px; }

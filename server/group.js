@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const db = require('./db');
 const { publicCard } = require('./cards');
+const live = require('./live'); // знаки пар — те же, что во встрече по телефонам
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS group_rooms (
@@ -21,7 +22,7 @@ CREATE TABLE IF NOT EXISTS group_picks (
   PRIMARY KEY (room_id, step, member_id)
 );`);
 
-const FORMATS = ['one', 'own', 'guess', 'friend', 'story', 'question'];
+const FORMATS = ['one', 'own', 'guess', 'friend', 'story', 'question', 'pairs'];
 const MAX = 20;
 const TTL = 12 * 3600e3;
 const bus = new EventEmitter(); bus.setMaxListeners(0);
@@ -111,12 +112,128 @@ function newRound(r, showDemo) {
   return { ok: true };
 }
 
+// ---------- «Разговор в парах»: та же механика, что во встрече фасилитатора, но ведёт один из компании ----------
+// Держатели выбирают карты (одну карту могут выбрать двое), собеседники — из выбранных; занятая карта недоступна.
+// Нечётная компания: фасилитатора нет, поэтому один собеседник — третьим в паре. Во втором раунде роли меняются.
+function pairsRound(r) {
+  const d = dataOf(r);
+  const members = R.members.all(r.id);
+  if (members.length < 2) return { error: 'live_too_few' };
+  const prev = d.roles || {};
+  const wasL = shuffle(members.filter((m) => prev[m.id] === 'listener'));
+  const fresh = shuffle(members.filter((m) => !prev[m.id]));
+  const wasH = shuffle(members.filter((m) => prev[m.id] === 'holder'));
+  const order = [...wasL, ...fresh, ...wasH];
+  const nh = Math.floor(members.length / 2);
+  const roles = {}; order.forEach((m, i) => { roles[m.id] = i < nh ? 'holder' : 'listener'; });
+  setRoom(r, { status: 'play', step: r.step + 1 });
+  save(R.byCode.get(r.code), { phase: 'holders', roles, slots: [], talkEndsAt: null, recallAt: null, minutes: d.minutes || 15 });
+  return { ok: true, id: r.id };
+}
+const placed = (slots) => slots.reduce((n, x) => n + x.listeners.length, 0);
+function pairsCheck(r) {
+  const d = dataOf(r);
+  const ids = R.members.all(r.id).map((m) => m.id);
+  const holders = ids.filter((id) => d.roles[id] === 'holder');
+  const listeners = ids.filter((id) => d.roles[id] === 'listener');
+  if (d.phase === 'holders' && holders.every((id) => d.slots.some((x) => x.holder === id))) save(r, { phase: 'listeners' });
+  else if (d.phase === 'listeners' && listeners.every((id) => d.slots.some((x) => x.listeners.includes(id)))) save(r, { phase: 'pairs' });
+}
+function pairsAct(r, me, host, action, body) {
+  const d = dataOf(r);
+  const hostOnly = !host ? { error: 'group_host_only' } : null;
+  const ids = R.members.all(r.id).map((m) => m.id);
+  switch (action) {
+    case 'start': case 'again': return hostOnly || pairsRound(r);
+    case 'pick': {
+      if (d.phase !== 'holders' || d.roles[me.id] !== 'holder') return { error: 'live_not_holder' };
+      const card = db.prepare("SELECT code FROM cards WHERE code = ? AND status = 'published'").get(String(body.code || ''));
+      if (!card) return { error: 'not_found' };
+      const slots = d.slots || [];
+      const mine = slots.find((x) => x.holder === me.id);
+      if (mine) mine.code = card.code;
+      else slots.push({ id: slots.length + 1, holder: me.id, code: card.code, sign: live.pickSign(slots.map((x) => x.sign)), listeners: [] });
+      save(r, { slots }); pairsCheck(R.byCode.get(r.code));
+      return { ok: true, id: r.id };
+    }
+    case 'partner': {
+      if (d.phase !== 'listeners' || d.roles[me.id] !== 'listener') return { error: 'live_not_listener' };
+      const slots = d.slots;
+      if (slots.some((x) => x.listeners.includes(me.id))) return { error: 'live_already_paired' };
+      const slot = slots.find((x) => x.id === Number(body.slotId)); if (!slot) return { error: 'not_found' };
+      const allTaken = slots.every((x) => x.listeners.length);
+      if (!slot.listeners.length || (allTaken && slot.listeners.length < 2)) slot.listeners.push(me.id);
+      else return { error: 'live_taken' };
+      save(r, { slots }); pairsCheck(R.byCode.get(r.code));
+      return { ok: true, id: r.id };
+    }
+    case 'advance': {
+      if (hostOnly) return hostOnly;
+      if (d.phase === 'holders') {
+        if (!d.slots.length) return { error: 'live_no_cards' };
+        const roles = { ...d.roles };
+        for (const id of ids) if (roles[id] === 'holder' && !d.slots.some((x) => x.holder === id)) roles[id] = 'listener';
+        save(r, { roles, phase: 'listeners' }); return { ok: true, id: r.id };
+      }
+      if (d.phase === 'listeners') {
+        const slots = d.slots;
+        for (const id of shuffle(ids.filter((x) => d.roles[x] === 'listener' && !slots.some((y) => y.listeners.includes(x))))) {
+          const free = slots.find((x) => !x.listeners.length) || slots.slice().sort((a, b) => a.listeners.length - b.listeners.length)[0];
+          free.listeners.push(id);
+        }
+        save(r, { slots, phase: 'pairs' }); return { ok: true, id: r.id };
+      }
+      return { error: 'live_bad_state' };
+    }
+    case 'talk': {
+      if (hostOnly) return hostOnly;
+      if (!['pairs', 'listeners'].includes(d.phase)) return { error: 'live_bad_state' };
+      const m = Math.min(90, Math.max(1, Math.round(Number(body.minutes) || d.minutes || 15)));
+      save(r, { phase: 'talk', minutes: m, talkEndsAt: new Date(Date.now() + m * 60000).toISOString() }); return { ok: true, id: r.id };
+    }
+    case 'add_time': {
+      if (hostOnly) return hostOnly;
+      if (d.phase !== 'talk') return { error: 'live_bad_state' };
+      save(r, { talkEndsAt: new Date(Math.max(Date.parse(d.talkEndsAt), Date.now()) + 5 * 60000).toISOString() }); return { ok: true, id: r.id };
+    }
+    case 'end_round': { if (hostOnly) return hostOnly; save(r, { phase: 'break', talkEndsAt: now() }); return { ok: true, id: r.id }; }
+    case 'recall': { if (hostOnly) return hostOnly; save(r, { recallAt: now() }); return { ok: true, id: r.id }; }
+    default: return { error: 'live_bad_state' };
+  }
+}
+function pairsState(r, me, out) {
+  let d = dataOf(r);
+  if (d.phase === 'talk' && d.talkEndsAt && d.talkEndsAt <= now()) { d = save(r, { phase: 'break' }); touch(r.id); }
+  const name = (id) => (db.prepare('SELECT name FROM group_members WHERE id = ?').get(id) || {}).name || '—';
+  const card = (c) => { const k = c && db.prepare('SELECT * FROM cards WHERE code = ?').get(c); return k ? publicCard(k) : null; };
+  const slots = d.slots || [];
+  Object.assign(out, { phase: d.phase, talkEndsAt: d.talkEndsAt, recallAt: d.recallAt, minutes: d.minutes || 15,
+    progress: { holders: Object.values(d.roles || {}).filter((x) => x === 'holder').length, holdersDone: slots.length,
+      listeners: Object.values(d.roles || {}).filter((x) => x === 'listener').length, listenersDone: placed(slots) } });
+  if (!me) return out;
+  const role = (d.roles || {})[me.id] || null;
+  const mine = slots.find((x) => x.holder === me.id || x.listeners.includes(me.id)) || null;
+  out.role = role; out.myCard = mine ? card(mine.code) : null;
+  if (d.phase === 'listeners' && role === 'listener') {
+    const allTaken = slots.every((x) => x.listeners.length);
+    const extra = out.progress.listeners > slots.length;
+    out.slots = slots.map((x) => ({ id: x.id, card: card(x.code), taken: allTaken && extra ? x.listeners.length >= 2 : x.listeners.length > 0 }));
+  }
+  if (mine && ['pairs', 'talk', 'break'].includes(d.phase)) {
+    const all = [mine.holder, ...mine.listeners].filter((id) => id !== me.id);
+    out.pair = { sign: live.signOut(mine.sign, slots.indexOf(mine) + 1), partners: all.map(name) };
+  }
+  if (role === 'holder' && d.phase === 'holders') out.gallery = pool(r.is_demo).map((k) => publicCard(k));
+  return out;
+}
+
 function act(code, deviceId, action, body = {}, showDemo = false) {
   const r = room(code); if (!r || r.status === 'ended') return { error: 'group_not_found' };
   const me = R.member.get(r.id, deviceId); if (!me || me.left_at) return { error: 'group_not_member' };
   const host = r.host_device === deviceId;
   const d = dataOf(r);
   const hostOnly = () => (host ? null : { error: 'group_host_only' });
+  if (r.format === 'pairs' && action !== 'end') return pairsAct(r, me, host, action, body);
   switch (action) {
     case 'start': {
       if (hostOnly()) return hostOnly();
@@ -199,6 +316,7 @@ function state(code, deviceId, showDemo) {
     host: r.host_device === deviceId, hostName: name((members.find((m) => m.device_id === r.host_device) || {}).id),
     members: members.map((m) => ({ id: m.id, name: m.name })), me: me && !me.left_at ? { id: me.id, name: me.name } : null, phase: d.phase || null };
   if (r.status !== 'play') return out;
+  if (r.format === 'pairs') return pairsState(r, me && !me.left_at ? me : null, out);
   const picks = R.picks.all(r.id, r.step);
   const mine = me ? picks.find((p) => p.member_id === me.id) : null;
   if (r.format === 'one') out.card = cardOut(d.card);

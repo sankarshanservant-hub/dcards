@@ -838,3 +838,34 @@ test('Игры компанией: комната по коду, одна кар
   await act(c, 1, 'end'); assert.equal((await st(c, 2)).status, 'ended');
   assert.equal((await call('POST', `/api/group/${c}/join`, { deviceId: D(9), name: 'Поздно' })).json.error, 'group_not_found');
 });
+
+test('Игры компанией: разговор в парах — роли, тайный выбор, занятые карты, тройка при нечётной компании, знак, таймер, смена ролей', async () => {
+  const D = (i) => `device-gpairs-${String(i).padStart(4, '0')}-abc`;
+  const st = (i) => call('GET', `/api/group/${code}/state?device=${D(i)}`).then((r) => r.json);
+  const act = (i, action, body = {}) => call('POST', `/api/group/${code}/act`, { deviceId: D(i), action, ...body });
+  const code = (await call('POST', '/api/group', { format: 'pairs', deviceId: D(1), name: 'Ведущий' })).json.code;
+  for (let i = 2; i <= 5; i++) await call('POST', `/api/group/${code}/join`, { deviceId: D(i), name: 'Друг ' + i });
+  assert.equal((await act(2, 'start')).json.error, 'group_host_only');
+  await act(1, 'start');
+  const all = [1, 2, 3, 4, 5]; const role = {}; for (const i of all) role[i] = (await st(i)).role;
+  const H = all.filter((i) => role[i] === 'holder'); const L = all.filter((i) => role[i] === 'listener');
+  assert.equal(H.length, 2); assert.equal(L.length, 3);
+  const gal = (await st(H[0])).gallery; assert.ok(gal.length > 2, 'держателю — вся галерея');
+  assert.equal((await st(L[0])).gallery, undefined, 'собеседник галерею пока не видит');
+  await act(H[0], 'pick', { code: gal[0].code }); await act(H[1], 'pick', { code: gal[0].code }); // одна карта у двоих — можно
+  const ls = await st(L[0]); assert.equal(ls.phase, 'listeners'); assert.equal(ls.slots.length, 2);
+  await act(L[0], 'partner', { slotId: ls.slots[0].id });
+  assert.equal((await act(L[1], 'partner', { slotId: ls.slots[0].id })).json.error, 'live_taken', 'занятая карта');
+  await act(L[1], 'partner', { slotId: ls.slots[1].id });
+  await act(L[2], 'partner', { slotId: ls.slots[0].id }); // нечётно — третьим
+  const states = []; for (const i of all) states.push(await st(i));
+  assert.ok(states.every((x) => x.phase === 'pairs' && x.pair), 'все в парах');
+  assert.equal(states.filter((x) => x.pair.partners.length === 2).length, 3, 'одна тройка: у троих по два собеседника');
+  const signs = new Set(states.map((x) => JSON.stringify(x.pair.sign))); assert.equal(signs.size, 2, 'две пары — два знака');
+  await act(1, 'talk', { minutes: 15 });
+  assert.ok(Date.parse((await st(3)).talkEndsAt) - Date.now() > 14 * 60000);
+  await act(1, 'end_round'); assert.equal((await st(2)).phase, 'break');
+  await act(1, 'again');
+  let swapped = 0; for (const i of L) if ((await st(i)).role === 'holder') swapped++;
+  assert.equal(swapped, 2, 'во втором раунде прежние собеседники выбирают карты');
+});
