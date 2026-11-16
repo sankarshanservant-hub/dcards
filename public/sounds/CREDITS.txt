@@ -1,2 +1,6 @@
-Звуковые сигналы встречи (bell-1, bell-2, bell-3, gather) — записи трубчатого колокола из набора FluidR3_GM (Frank Wen, лицензия MIT), сведены в mp3.
-Sound signals (bell-1/2/3, gather) are tubular-bell samples from the FluidR3_GM soundfont (Frank Wen, MIT licence), rendered to mp3.
+Звуковые сигналы встречи и игр компанией — живые записи, лицензия CC0 (общественное достояние):
+- bell-1, bell-2, bell-3 (один, два, три удара) — тибетская чаша, запись buddhassoundofsilence (Freesound, CC0); та же запись, что в «Нада-янтре» на harekrishna.info.
+- gather («соберёмся вместе») — поющие бокалы из Versilian Community Sample Library (VCSL, CC0).
+Записи обрезаны, сведены по громкости и сохранены в mp3.
+
+Meeting and group-game signals are live recordings under CC0: bell-1/2/3 — Tibetan singing bowl by buddhassoundofsilence (Freesound, CC0); gather — singing glasses from VCSL (CC0).
