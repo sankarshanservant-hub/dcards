@@ -18,7 +18,7 @@ export function signHtml(s, { big = true } = {}) {
     ${shapeSvg(s.top, 'ps-top')}<span class="ps-n">${s.n}</span>${shapeSvg(s.bottom, 'ps-bottom')}</div>`;
 }
 
-// ---------- звуки: колокол (FluidR3 GM, MIT) — 1 удар за 3 минуты, 2 — за минуту, 3 — конец; «соберёмся» — напоминание ----------
+// ---------- звуки: тибетская чаша (Freesound, CC0) — 1 удар за 3 минуты, 2 — за минуту, 3 — конец; «соберёмся» — поющие бокалы (VCSL, CC0) ----------
 const SOUND = { b1: 'bell-1.mp3', b2: 'bell-2.mp3', b3: 'bell-3.mp3', gather: 'gather.mp3' };
 const audio = {};
 let unlocked = false;
