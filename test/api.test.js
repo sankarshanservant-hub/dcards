@@ -689,3 +689,87 @@ test('Push: подписка по согласию, адресаты по отв
   const demo = await call('POST', '/api/demo/login', { as: 'guest' });
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('demo') }, { cookie: demo.cookie })).json.error, 'push_demo');
 });
+
+test('Встреча по телефонам: вход по QR, деление пополам, выбор держателей и собеседников, знак пары, раунды, отзыв', async () => {
+  const cid = (await call('POST', '/api/collections', { title: 'Телефонная встреча' }, { cookie: facil.cookie })).json.id;
+  await call('PUT', `/api/collections/${cid}/cards`, { codes: ['DC-0010', 'DC-0011', 'DC-0012', 'DC-0013'] }, { cookie: facil.cookie });
+  const slug = (await call('GET', '/api/collections', null, { cookie: facil.cookie })).json.collections.find((c) => c.id === cid).slug;
+  const dev = (i) => `device-live-${String(i).padStart(4, '0')}-xyz`;
+  const st = (i) => call('GET', `/api/live/${slug}/state?device=${dev(i)}`).then((r) => r.json.live);
+  assert.equal(await st(1), null, 'без встречи QR работает как обычная подборка');
+  assert.equal((await call('POST', `/api/live/${slug}/join`, { deviceId: dev(1), name: 'А' })).json.error, 'live_not_active');
+  assert.equal((await call('POST', '/api/fac/live', { collectionId: cid }, { cookie: curatorU.cookie })).status, 403, 'встречу открывает фасилитатор');
+  const sid = (await call('POST', '/api/fac/live', { collectionId: cid }, { cookie: facil.cookie })).json.id;
+  assert.ok(sid);
+  assert.equal((await call('POST', '/api/fac/live', { collectionId: cid }, { cookie: facil.cookie })).json.id, sid, 'по одной подборке — одна идущая встреча');
+  const act = (a, body = {}) => call('POST', `/api/fac/live/${sid}/${a}`, body, { cookie: facil.cookie });
+  assert.equal((await call('POST', `/api/live/${slug}/join`, { deviceId: dev(1), name: ' ' })).json.error, 'live_name_required');
+  for (const [i, n] of [[1, 'Аня'], [2, 'Борис'], [3, 'Вера'], [4, 'Гоша'], [5, 'Дина']]) assert.equal((await call('POST', `/api/live/${slug}/join`, { deviceId: dev(i), name: n })).status, 200);
+  assert.equal((await st(1)).status, 'lobby');
+  // раунд 1: 2 держателя, 3 собеседника (нечётно — один собеседник станет третьим в паре)
+  let p = (await act('start_round')).json;
+  assert.equal(p.status, 'holders'); assert.equal(p.progress.holders, 2); assert.equal(p.progress.listeners, 3);
+  const role = (i) => st(i).then((x) => x.me.role);
+  const roles = {}; for (let i = 1; i <= 5; i++) roles[i] = await role(i);
+  const H = Object.keys(roles).filter((k) => roles[k] === 'holder').map(Number);
+  const L = Object.keys(roles).filter((k) => roles[k] === 'listener').map(Number);
+  assert.equal((await call('POST', `/api/live/${slug}/pick`, { deviceId: dev(L[0]), code: 'DC-0010' })).json.error, 'live_not_holder', 'собеседник не выбирает в очереди держателей');
+  assert.equal((await call('POST', `/api/live/${slug}/pick`, { deviceId: dev(H[0]), code: 'DC-0099' })).json.error, 'card_not_in_collection');
+  // два держателя могут выбрать одну и ту же карту
+  await call('POST', `/api/live/${slug}/pick`, { deviceId: dev(H[0]), code: 'DC-0010' });
+  assert.equal((await st(L[0])).status, 'holders', 'ждём всех держателей');
+  await call('POST', `/api/live/${slug}/pick`, { deviceId: dev(H[1]), code: 'DC-0010' });
+  const ls = await st(L[0]);
+  assert.equal(ls.status, 'listeners'); assert.equal(ls.slots.length, 2, 'одна карта у двух держателей — две отдельные пары');
+  assert.ok(ls.slots.every((x) => !('holder' in x)), 'собеседник не видит, кто выбрал карту');
+  // собеседник занял карту — у второго она недоступна
+  assert.equal((await call('POST', `/api/live/${slug}/partner`, { deviceId: dev(L[0]), slotId: ls.slots[0].id })).status, 200);
+  assert.ok((await st(L[1])).slots.find((x) => x.id === ls.slots[0].id).taken, 'занятая карта отмечена у остальных');
+  assert.equal((await call('POST', `/api/live/${slug}/partner`, { deviceId: dev(L[1]), slotId: ls.slots[0].id })).json.error, 'live_taken');
+  await call('POST', `/api/live/${slug}/partner`, { deviceId: dev(L[1]), slotId: ls.slots[1].id });
+  // третий — к любой паре, когда все карты заняты
+  await call('POST', `/api/live/${slug}/partner`, { deviceId: dev(L[2]), slotId: ls.slots[0].id });
+  const h0 = await st(H[0]); const l0 = await st(L[0]);
+  assert.equal(h0.status, 'pairs');
+  const mine = [h0, l0, await st(L[2])].filter((x) => x.me.pair.sign.n === l0.me.pair.sign.n);
+  assert.ok(mine.length >= 2 && new Set(mine.map((x) => JSON.stringify(x.me.pair.sign))).size === 1, 'у пары одинаковый знак');
+  const sA = (await st(H[0])).me.pair.sign; const sB = (await st(H[1])).me.pair.sign;
+  assert.notDeepEqual(sA, sB, 'у разных пар разные знаки');
+  // разговор, сигнал, конец раунда
+  p = (await act('talk', { minutes: 30 })).json;
+  assert.equal(p.status, 'talk'); assert.ok(Date.parse(p.talkEndsAt) - Date.now() > 29 * 60000);
+  await act('add_time', { minutes: 5 });
+  assert.ok(Date.parse((await st(1)).talkEndsAt) - Date.now() > 34 * 60000, '+5 минут');
+  p = (await act('end_round')).json; assert.equal(p.status, 'break');
+  p = (await act('recall')).json; assert.ok(p.recallAt, '«Позвать всех»');
+  // раунд 2: роли меняются
+  p = (await act('start_round')).json; assert.equal(p.round, 2);
+  let nh2 = 0; for (const i of L) if (await role(i) === 'holder') nh2++;
+  assert.equal(nh2, 2, 'держатели второго раунда — из прежних собеседников');
+  for (const i of H) assert.equal(await role(i), 'listener', 'прежние держатели — теперь собеседники');
+  // «Дальше, не дожидаясь»: держатель без карты становится собеседником; собеседники распределяются сами
+  const H2 = []; for (let i = 1; i <= 5; i++) if (await role(i) === 'holder') H2.push(i);
+  await call('POST', `/api/live/${slug}/pick`, { deviceId: dev(H2[0]), code: 'DC-0012' });
+  await act('advance'); await act('advance');
+  p = (await call('GET', `/api/fac/live/${sid}`, null, { cookie: facil.cookie })).json;
+  assert.equal(p.status, 'pairs'); assert.equal(p.pairs.length, 1);
+  // удалить участника, включиться самому
+  await act('remove', { memberId: p.members.find((m) => m.name === 'Дина').id });
+  p = (await call('POST', `/api/fac/live/${sid}/self`, { deviceId: 'facil-device-0001', on: true }, { cookie: facil.cookie })).json;
+  assert.ok(p.members.some((m) => m.isFacilitator) && !p.members.some((m) => m.name === 'Дина'));
+  // чужой фасилитатор пульт не видит
+  const other = await emailLogin('fac-other@example.org', 'Другой');
+  assert.equal((await call('GET', `/api/fac/live/${sid}`, null, { cookie: other.cookie })).status, 403);
+  // завершение: экран благодарности, отзыв, QR свободен для новой группы
+  await act('end');
+  const fin = await st(1);
+  assert.equal(fin.status, 'ended');
+  assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(1) })).json.error, 'feedback_empty');
+  assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(1), text: 'Было тепло', mayPublish: true })).status, 201);
+  assert.equal((await st(1)).feedbackSent, true);
+  assert.equal((await call('GET', `/api/fac/live/${sid}`, null, { cookie: facil.cookie })).json.feedback[0].text, 'Было тепло');
+  const sid2 = (await call('POST', '/api/fac/live', { collectionId: cid }, { cookie: facil.cookie })).json.id;
+  assert.ok(sid2 && sid2 !== sid, 'после завершения по тому же QR — новая встреча');
+  assert.equal((await st(1)).me, null, 'в новой встрече прежние участники заходят заново');
+  await call('POST', `/api/fac/live/${sid2}/end`, {}, { cookie: facil.cookie });
+});

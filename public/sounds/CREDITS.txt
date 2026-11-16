@@ -1,0 +1,2 @@
+Звуковые сигналы встречи (bell-1, bell-2, bell-3, gather) — записи трубчатого колокола из набора FluidR3_GM (Frank Wen, лицензия MIT), сведены в mp3.
+Sound signals (bell-1/2/3, gather) are tubular-bell samples from the FluidR3_GM soundfont (Frank Wen, MIT licence), rendered to mp3.

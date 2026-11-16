@@ -2,6 +2,7 @@ import { lang } from '../i18n.js';
 // Подборки фасилитатора: «Мои подборки» → редактор одной подборки → окно выбора карт → «Готово» → ссылка и QR.
 import { esc, tt, u, api, errorText, toast, ruPlural } from '../util.js';
 import { openViewer, icons } from '../viewer.js';
+import { startFor } from './live-panel.js';
 import { session, hasRole, needLogin, noRole, loading, failed, demoPill, ic, showQr } from '../ui.js';
 
 const MAX = 40;
@@ -35,7 +36,7 @@ export async function list(ctx) {
         <a class="col-open" href="${u('/facilitator/c/' + c.id)}">${stack(c.covers || [])}<span class="col-meta"><b>${esc(c.title)} ${demoPill(c.isDemo)}</b>
           <span class="small muted">${c.cardCount ? esc(cardsWord(c.cardCount)) : esc(tt('Пока без карт — черновик', 'No cards yet — draft'))}${c.unavailableCount ? ` · <span class="warn">${esc(tt('недоступно: ', 'unavailable: '))}${c.unavailableCount}</span>` : ''}</span>
           ${c.cardCount ? `<span class="small muted col-stats">${esc(colStats(c))}</span>` : ''}</span></a>
-        ${c.cardCount ? `<button class="btn sm light" type="button" data-share="${esc(c.slug)}" data-title="${esc(c.title)}">${ic.qr} ${esc(tt('Поделиться', 'Share'))}</button>` : ''}
+        ${c.cardCount ? `<div class="row"><button class="btn sm yellow" type="button" data-live="${c.id}">${ic.people} ${esc(tt('Начать встречу по телефонам', 'Start a phone meeting'))}</button><button class="btn sm light" type="button" data-share="${esc(c.slug)}" data-title="${esc(c.title)}">${ic.qr} ${esc(tt('Поделиться', 'Share'))}</button></div>` : ''}
       </article>`).join('')}</div>` : `<p class="empty">${esc(tt('Подборок пока нет. Создайте первую — название можно изменить позже.', 'No selections yet. Create the first one — you can rename it later.'))}</p>`}
   </div>`;
   const f = ctx.main.querySelector('#newcol');
@@ -49,6 +50,7 @@ export async function list(ctx) {
     catch (x) { btn.disabled = false; err.textContent = errorText(x); }
   });
   ctx.main.querySelectorAll('[data-share]').forEach((b) => b.addEventListener('click', () => showQr(b.dataset.share, b.dataset.title, `${cols.baseUrl}/s/${b.dataset.share}`)));
+  ctx.main.querySelectorAll('[data-live]').forEach((b) => b.addEventListener('click', () => { b.disabled = true; startFor(ctx, Number(b.dataset.live)); }));
 }
 
 // ---------- Редактор одной подборки ----------
@@ -96,7 +98,7 @@ export async function editor(ctx, id) {
       ${empty ? `<button class="add-zone" type="button" data-pick>${ic.plus}<b>${esc(tt('Добавьте карты из галереи', 'Add cards from the gallery'))}</b><span class="small muted">${esc(tt(`До ${MAX} карт`, `Up to ${MAX} cards`))}</span></button>
           <p class="small muted" style="margin:0">${esc(tt('Пока в подборке нет карт — это черновик. Ссылкой и QR можно будет поделиться, когда вы добавите карты.', 'The selection has no cards yet — it is a draft. You can share the link and QR once you add cards.'))}</p>`
         : `<div class="row between"><b>${esc(tt(`${av.length} из ${MAX} карт`, `${av.length} of ${MAX} cards`))}</b>
-            <div class="row"><button class="btn yellow sm" type="button" data-pick>${ic.plus} ${esc(tt('Добавить карты', 'Add cards'))}</button>${readyBanner ? '' : `<button class="btn sm" type="button" id="share-open">${ic.qr} ${esc(tt('Поделиться', 'Share'))}</button>`}</div></div>
+            <div class="row"><button class="btn yellow sm" type="button" data-pick>${ic.plus} ${esc(tt('Добавить карты', 'Add cards'))}</button><button class="btn sm" type="button" id="live-start">${ic.people} ${esc(tt('Начать встречу по телефонам', 'Start a phone meeting'))}</button>${readyBanner ? '' : `<button class="btn sm" type="button" id="share-open">${ic.qr} ${esc(tt('Поделиться', 'Share'))}</button>`}</div></div>
           <div id="share-slot"></div>
           <div class="cells" id="sel">${av.map((code) => { const c = known.get(code); return `<div class="cell"><button class="tile" type="button" data-view="${esc(code)}" aria-label="${esc(tt(`Рассмотреть карту ${code}`, `View card ${code}`))}"><img src="${esc(c.thumb)}" alt="" loading="lazy"></button>
             <small>${esc(code)}${c.selectedCount ? ' · ' + esc(tt('всего выбрали ', 'chosen ')) + c.selectedCount : ''}</small>
@@ -127,6 +129,7 @@ export async function editor(ctx, id) {
     const d = $('#dropun'); if (d) d.onclick = async () => { try { await saveCodes(codes.filter(isAvailable)); draw(); } catch (x) { status(errorText(x), 'err'); } };
     $('#ed-title').addEventListener('change', async (e) => { status(tt('Сохраняем…', 'Saving…')); try { await api(`/api/collections/${id}`, { method: 'PATCH', body: { title: e.target.value } }); detail.title = e.target.value; status(tt('Все изменения сохранены', 'All changes saved'), 'ok'); } catch (x) { status(`${tt('Не сохранено:', 'Not saved:')} ${errorText(x)}`, 'err'); } });
     $('#ed-test').addEventListener('change', async (e) => { status(tt('Сохраняем…', 'Saving…')); try { await api(`/api/collections/${id}`, { method: 'PATCH', body: { isTest: e.target.checked } }); detail.isTest = e.target.checked; status(tt('Все изменения сохранены', 'All changes saved'), 'ok'); } catch (x) { status(`${tt('Не сохранено:', 'Not saved:')} ${errorText(x)}`, 'err'); } });
+    const ls = $('#live-start'); if (ls) ls.onclick = () => { ls.disabled = true; startFor(ctx, id); };
     const so = $('#share-open'); if (so) so.onclick = () => { $('#share-slot').innerHTML = shareBlock(tt('Поделиться подборкой', 'Share the selection')); wireShare(); $('#share').scrollIntoView({ block: 'nearest' }); };
     wireShare();
     $('#del').addEventListener('click', () => {

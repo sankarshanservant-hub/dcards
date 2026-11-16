@@ -749,3 +749,58 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 .chat-tools svg, .page-head h1 > svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .page-head h1 > svg { width: .8em; height: .8em; vertical-align: -.05em; color: var(--text-2); }
 .reply-strip svg, .mini-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- встреча по телефонам ---------- */
+body.live-mode .foot, body.live-mode #demo-pill { display: none; }
+.live { padding: 18px var(--gutter) calc(28px + var(--safe-b)); }
+.live-in { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+.live h1 { margin: 0; font-size: clamp(1.5rem, 6vw, 2rem); }
+.live .lead { margin: 0; }
+.live-count { margin: 0; font-weight: 700; color: var(--accent-text); }
+.live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.live-tile { position: relative; padding: 0; border: 2px solid transparent; border-radius: 12px; background: var(--surface); cursor: pointer; overflow: hidden; aspect-ratio: 7 / 12; }
+.live-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-tile:focus-visible { outline: 3px solid var(--focus); }
+.live-tile[disabled] { cursor: not-allowed; }
+.live-tile[disabled] img { filter: grayscale(1) brightness(.45); }
+.lt-taken { position: absolute; inset: auto 0 8px; text-align: center; font-weight: 700; font-size: .8rem; color: #fff; text-shadow: 0 1px 3px #000; }
+.lt-mark { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.lt-mark svg, .live-chosen svg, .live-recall svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.live-chosen { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; background: var(--surface); border: 1px solid var(--accent); }
+.live-chosen img { width: 56px; border-radius: 8px; }
+.live-chosen span { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; }
+.live-card { width: min(260px, 70vw); border-radius: 14px; display: block; margin: 0 auto; box-shadow: var(--shadow); }
+.live-card-btn { border: 0; background: none; padding: 0; cursor: zoom-in; }
+.live-preview { position: fixed; inset: 0; z-index: 120; background: var(--overlay); display: grid; place-items: center; padding: 16px; }
+.lp-in { display: grid; gap: 12px; max-height: 100%; }
+.lp-in img { max-width: min(420px, 92vw); max-height: calc(100vh - 140px); width: auto; border-radius: 14px; margin: 0 auto; }
+.lp-acts { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.live-recall { display: flex; gap: 10px; align-items: center; padding: 14px 16px; border-radius: 16px; background: var(--accent); color: var(--on-accent); font-weight: 700; animation: q-in .3s ease; }
+/* знак пары: две крупные контрастные фигуры и номер */
+.live-sign { position: fixed; inset: 0; z-index: 110; background: #0a0f24; color: #fff; display: grid; grid-template-rows: 1fr auto auto; gap: 14px; padding: calc(14px + env(safe-area-inset-top, 0px)) 16px calc(18px + var(--safe-b)); }
+.pair-sign { display: grid; justify-items: center; align-content: center; }
+.pair-sign.big { gap: 1.5vh; min-height: 0; overflow: hidden; padding-top: 1vh; }
+.pair-sign.big svg { width: min(26vh, 62vw); height: min(26vh, 62vw); filter: drop-shadow(0 6px 24px rgba(0,0,0,.35)); }
+.pair-sign.big .ps-n { font: 800 clamp(1.8rem, 6vh, 3.4rem)/1 var(--font-head); color: #fff; }
+.pair-sign.mini { grid-auto-flow: column; gap: 4px; align-items: center; }
+.pair-sign.mini svg { width: 26px; height: 26px; }
+.pair-sign.mini .ps-n { font: 800 .95rem var(--font-head); }
+.ls-text { display: grid; gap: 4px; text-align: center; font-size: 1.05rem; }
+.ls-text b { font-size: 1.25rem; }
+.live-sign .btn { justify-self: center; max-width: 420px; }
+.live-talk-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sign-btn { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.live-timer { font: 800 2rem/1 var(--font-head); font-variant-numeric: tabular-nums; }
+.live-timer.big { font-size: 3.4rem; }
+.live-timer.wait, .live-timer.done { font: 600 1rem var(--font-ui); color: var(--text-2); }
+.live-role { font-size: 1rem; }
+.live .qtabs [role="tab"] { font-size: .82rem; }
+.live-panel .live-qr { justify-items: center; text-align: center; }
+.live-panel .live-qr img { width: min(300px, 80vw); height: auto; background: #fff; border-radius: 16px; padding: 10px; }
+.live-panel .live-qr input { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; }
+.live-members { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.live-members li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.live-pairs { display: grid; gap: 8px; }
+.lp-row { display: flex; gap: 12px; align-items: center; }
+.live-on { display: block; text-decoration: none; color: var(--text); border-color: var(--accent); }
+.live-on svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.9; vertical-align: -3px; }

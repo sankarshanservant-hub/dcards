@@ -471,6 +471,89 @@ r.patch('/api/fac/dates/:id', fac, (req, res) => {
   out(res, meetings.setDate(Number(req.params.id), req.body || {}));
 });
 
+// ---------- встреча по телефонам (live): пульт фасилитатора и экран участника ----------
+const live = require('./live');
+const FEEDBACK_DIR = path.join(config.mediaDir, 'feedback');
+fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
+const feedbackUpload = multer({
+  storage: multer.diskStorage({ destination: FEEDBACK_DIR, filename: (req, file, cb) => cb(null, crypto.randomBytes(12).toString('hex') + path.extname(file.originalname || '').slice(0, 8).replace(/[^.\w]/g, '')) }),
+  limits: { fileSize: 80 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => (/^(audio|video)\//.test(file.mimetype) ? cb(null, true) : cb(Object.assign(new Error('bad_media_type'), { code: 'bad_media_type' }))),
+});
+const liveDevice = (req, res) => { const v = (req.body && req.body.deviceId) || req.query.device; if (typeof v !== 'string' || !VISITOR_RE.test(v)) { bad(res, 'bad_visitor'); return null; } return v; };
+const liveDone = (res, r) => { if (r && r.ok && r.sessionId) live.touch(r.sessionId); out(res, r); };
+r.post('/api/fac/live', fac, (req, res) => {
+  const cid = Number((req.body || {}).collectionId);
+  const col = db.prepare('SELECT slug FROM collections WHERE id = ?').get(cid);
+  if (!col) return bad(res, 'not_found', 404);
+  if (!ownsCollection(req, cid)) return bad(res, 'forbidden', 403);
+  const x = live.start(cid, req.user);
+  if (x.ok && !x.existing) live.bus.emit('col' + col.slug); // открытые страницы QR узнают о новой встрече
+  out(res, x, 201);
+});
+r.get('/api/fac/live', fac, (req, res) => res.json({ sessions: live.mine(req.user.id, req.has('admin')) }));
+const liveFac = (req, res) => { const s = live.forFacilitator(Number(req.params.id), req.user, req.has('admin')); if (!s) { bad(res, 'not_found', 404); return null; } return s; };
+r.get('/api/fac/live/:id', fac, (req, res) => { const s = liveFac(req, res); if (s) res.json(live.panel(s)); });
+const LIVE_ACTIONS = {
+  start_round: (s) => live.startRound(s), advance: (s) => live.advance(s), talk: (s, b) => live.startTalk(s, b.minutes), add_time: (s, b) => live.addTime(s, b.minutes),
+  end_round: (s) => live.endRound(s), recall: (s) => live.recall(s), minutes: (s, b) => live.setMinutes(s, b.minutes), end: (s) => live.end(s),
+  remove: (s, b) => live.removeMember(s, b.memberId),
+};
+r.post('/api/fac/live/:id/:action(start_round|advance|talk|add_time|end_round|recall|minutes|end|remove)', fac, (req, res) => {
+  const s = liveFac(req, res); if (!s) return;
+  const x = LIVE_ACTIONS[req.params.action](s, req.body || {});
+  if (x.error) return bad(res, x.error);
+  live.touch(s.id); res.json(live.panel(live.forFacilitator(s.id, req.user, true)));
+});
+r.post('/api/fac/live/:id/self', fac, (req, res) => {
+  const s = liveFac(req, res); if (!s) return;
+  const d = liveDevice(req, res); if (!d) return;
+  live.selfJoin(s, req.user, d, !!(req.body || {}).on); live.touch(s.id); res.json(live.panel(live.forFacilitator(s.id, req.user, true)));
+});
+r.get('/api/fac/live/:id/feedback/:fid/file', fac, (req, res) => {
+  const s = liveFac(req, res); if (!s) return;
+  const f = live.feedbackFile(s.id, req.params.fid);
+  if (!f || !f.file) return bad(res, 'not_found', 404);
+  res.set('Cache-Control', 'private, no-cache'); res.type(f.mime || 'application/octet-stream');
+  res.sendFile(path.join(FEEDBACK_DIR, path.basename(f.file)));
+});
+// Поток событий: при каждом изменении — номер версии; клиент перечитывает состояние. Буферизацию nginx отключаем заголовком.
+function liveStream(req, res, sessionId) {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
+  res.flushHeaders();
+  const send = (v) => res.write(`data: ${v}\n\n`);
+  send(live.version(sessionId));
+  const on = (v) => send(v);
+  live.bus.on('s' + sessionId, on);
+  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+  req.on('close', () => { clearInterval(ping); live.bus.off('s' + sessionId, on); });
+}
+r.get('/api/fac/live/:id/events', fac, (req, res) => { const s = liveFac(req, res); if (s) liveStream(req, res, s.id); });
+r.get('/api/live/:slug/state', (req, res) => {
+  const d = liveDevice(req, res); if (!d) return;
+  const st = live.participantState(req.params.slug, d);
+  if (!st) return bad(res, 'not_found', 404);
+  res.set('Cache-Control', 'no-store'); res.json(st);
+});
+r.get('/api/live/:slug/events', (req, res) => {
+  const { s, last } = live.bySlug(req.params.slug);
+  const id = s ? s.id : last ? last.id : 0;
+  liveStream(req, res, id);
+  // новая встреча по этому QR: слушаем и её
+  if (!s) { const on = () => res.write('data: new\n\n'); live.bus.on('col' + req.params.slug, on); req.on('close', () => live.bus.off('col' + req.params.slug, on)); }
+});
+r.post('/api/live/:slug/join', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.join(req.params.slug, d, (req.body || {}).name, req.user)); });
+r.post('/api/live/:slug/leave', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.leave(req.params.slug, d)); });
+r.post('/api/live/:slug/pick', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.holderPick(req.params.slug, d, (req.body || {}).code)); });
+r.post('/api/live/:slug/partner', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.listenerPick(req.params.slug, d, (req.body || {}).slotId)); });
+r.post('/api/live/feedback/:id', feedbackUpload.single('media'), (req, res) => {
+  const d = liveDevice(req, res); if (!d) return;
+  const b = req.body || {};
+  const x = live.feedback(Number(req.params.id), d, { text: b.text, file: req.file ? req.file.filename : null, mime: req.file ? req.file.mimetype : null, mayPublish: b.mayPublish === '1' || b.mayPublish === true });
+  if (x.ok) live.touch(Number(req.params.id));
+  out(res, x, 201);
+});
+
 // ---------- путь к роли фасилитатора ----------
 r.get('/api/fac/application', auth.requireUser, (req, res) => {
   const g = guide.load();
@@ -670,6 +753,7 @@ r.get('*', (req, res) => {
 
 r.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err && err.code === 'bad_image_type') return bad(res, 'bad_image_type');
+  if (err && err.code === 'bad_media_type') return bad(res, 'bad_media_type');
   console.error(err);
   if (err instanceof multer.MulterError) return bad(res, err.code === 'LIMIT_FILE_SIZE' ? 'file_too_large' : 'upload_error');
   bad(res, 'server_error', 500);

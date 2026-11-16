@@ -5,6 +5,7 @@ import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } fr
 import * as pub from './views/public.js';
 import * as tool from './views/meeting-tool.js';
 import * as notif from './views/notify.js';
+import * as livePanel from './views/live-panel.js';
 import { syncPush } from './push.js';
 import * as meet from './views/meetings.js';
 import * as acc from './views/account.js';
@@ -48,6 +49,7 @@ const routes = [
   [/^\/facilitator\/collections\/?$/, coll.list],
   [/^\/facilitator\/meetings\/?$/, fac.meetingsList],
   [/^\/facilitator\/c\/(\d+)\/?$/, coll.editor],
+  [/^\/facilitator\/live\/(\d+)\/?$/, livePanel.panel],
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
   [/^\/chats\/?$/, team.rooms],

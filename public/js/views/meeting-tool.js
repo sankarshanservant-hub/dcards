@@ -3,8 +3,9 @@ import { t, lang } from '../i18n.js';
 import { esc, tt, api, errorText, storage, visitorId, toast } from '../util.js';
 import { openViewer, refreshViewer, icons, notCountedText, demoSavedText } from '../viewer.js';
 import { tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
-// Памятка участника — дословно из «Руководства фасилитатора Dialogue Flow» (приложение 5).
-const MEMO = { ru: ["Сегодня вы участвуете в Dialogue Flow — формате для разговора чуть более глубокого, чем это обычно бывает при первой встрече.", "Карта, которую вы выберете, — не тест и не предсказание. У неё нет правильного значения: то, что вы в ней увидите, то она и означает. Она нужна лишь для того, чтобы разговору было с чего начать — и если через несколько минут вы забудете о самой карте, значит, она уже выполнила свою работу.", "Карточка с вопросами — это помощь, а не экзамен. Можно идти по вопросам по порядку, можно пропускать, можно вообще отложить её в сторону, если разговор потёк сам.", "Никто не обязан отвечать на каждый вопрос или рассказывать больше, чем хочется. Если какая-то тема пока не хочется — вполне достаточно сказать: «Я пока не готов об этом говорить».", "Всё, чем вы поделитесь друг с другом, остаётся между вами — если вы сами не договоритесь иначе.", "Если что-то понадобится — фасилитатор всегда рядом, его можно позвать в любой момент."], en: ["Today you are taking part in Dialogue Flow — a format for a conversation a little deeper than usual when people first meet.", "The card you choose is not a test or a prediction. It has no correct meaning: whatever you see in it is what it means. It is only there so the conversation has somewhere to start — and if after a few minutes you forget about the card itself, it has done its job.", "The question card is a help, not an exam. You can go through the questions in order, skip some, or put the card aside altogether if the conversation flows on its own.", "Nobody has to answer every question or share more than they want to. If you would rather not talk about something yet, it is enough to say: “I’m not ready to talk about this yet.”", "Everything you share with each other stays between you — unless you agree otherwise.", "If you need anything, the facilitator is always nearby — you can call them at any moment."] };
+import { MEMO } from '../content.js';
+import { participant } from './live.js';
+import { subscribe } from '../live-common.js';
 
 export async function collection(ctx, slug) {
   loading(ctx.main);
@@ -16,6 +17,13 @@ export async function collection(ctx, slug) {
   }
   if (!ctx.alive()) return;
   const vid = visitorId();
+  // Идёт встреча по телефонам — экран встречи; иначе обычная подборка (и ждём, не начнётся ли встреча).
+  try {
+    const ls = await api(`/api/live/${slug}/state?device=${encodeURIComponent(vid)}`);
+    if (!ctx.alive()) return;
+    if (ls.live) return participant(ctx, slug, col, ls);
+  } catch { /* без встречи */ }
+  subscribe(`/api/live/${slug}/events`, async () => { try { const ls = await api(`/api/live/${slug}/state?device=${encodeURIComponent(vid)}`); if (ls.live && ctx.alive()) ctx.rerender(); } catch { /* */ } }, ctx.alive);
   const roundKey = `dc_round_${slug}`;
   const st = { selections: [], counts: {}, round: Math.max(1, Number(storage.get(roundKey)) || 1) };
   const applyState = (s) => {

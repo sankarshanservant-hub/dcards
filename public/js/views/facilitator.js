@@ -49,12 +49,14 @@ export async function cabinet(ctx) {
   if (!hasRole('facilitator')) { ctx.navigate('/facilitator/apply', { replace: true }); return; }
   loading(ctx.main);
   let cols; let mts;
-  try { [cols, mts] = await Promise.all([api('/api/collections'), api('/api/fac/meetings')]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  let lv = { sessions: [] };
+  try { [cols, mts, lv] = await Promise.all([api('/api/collections'), api('/api/fac/meetings'), api('/api/fac/live').catch(() => ({ sessions: [] }))]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   const occ = occurrences(mts.meetings);
   const kpi = (href, n, label) => `<a class="kpi kpi-link" href="${u(href)}"><b>${n}</b><span>${esc(label)}</span></a>`;
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><h1>${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</h1><p class="sub">${esc(session.user.publicName)}</p></div>
+    ${lv.sessions.filter((x) => x.status !== 'ended').map((x) => `<a class="notice live-on" href="${u('/facilitator/live/' + x.id)}">${ic.people} <b>${esc(tt('Идёт встреча по телефонам', 'A phone meeting is on'))}: ${esc(x.title)}</b> · ${esc(tt(`участников: ${x.people}`, `participants: ${x.people}`))} · ${esc(tt('открыть пульт', 'open console'))} →</a>`).join('')}
     <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
       <a class="btn" href="${u('/facilitator/collections?new=1')}">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</a></div>
     <div><a class="chat-link" href="${u('/chats')}">${ic.chat}<span>${esc(tt('Написать в чат', 'Write in a chat'))}</span></a></div>
