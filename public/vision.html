@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>D-Cards: куда расти</title>
+<meta name="description" content="Предложение: как сделать Dialogue Cards приложением, которым хочется делиться. С живым прототипом «Что ты видишь?».">
+<meta name="theme-color" content="#060c1e">
+<link rel="icon" type="image/png" href="img/favicon-64.png">
+<style>
+@font-face { font-family: 'Rubik'; font-weight: 800; font-display: swap; src: url('fonts/rubik-cyrillic-800-normal.woff2') format('woff2'); unicode-range: U+0400-045F, U+2116; }
+@font-face { font-family: 'Rubik'; font-weight: 800; font-display: swap; src: url('fonts/rubik-latin-800-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: 'Onest'; font-weight: 400; font-display: swap; src: url('fonts/onest-cyrillic-400-normal.woff2') format('woff2'); unicode-range: U+0400-045F, U+2116; }
+@font-face { font-family: 'Onest'; font-weight: 400; font-display: swap; src: url('fonts/onest-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: 'Onest'; font-weight: 600; font-display: swap; src: url('fonts/onest-cyrillic-600-normal.woff2') format('woff2'); unicode-range: U+0400-045F, U+2116; }
+@font-face { font-family: 'Onest'; font-weight: 600; font-display: swap; src: url('fonts/onest-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+:root {
+  --bg: #060c1e; --surface: #0c122a; --surface-2: #121a38; --line: rgba(241, 230, 200, .16);
+  --text: #f1e6c8; --text-2: rgba(241, 230, 200, .72); --accent: #f6c23c; --on-accent: #1a1405; --accent-text: #f6c23c; --soft: rgba(246, 194, 60, .12);
+  --head: 'Rubik', 'Arial Black', system-ui, sans-serif; --ui: 'Onest', system-ui, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --bg: #f5f5f2; --surface: #ffffff; --surface-2: #f0efe9; --line: rgba(10, 14, 30, .14); --text: #0c1226; --text-2: rgba(12, 18, 38, .7); --accent-text: #7a5200; --soft: rgba(246, 194, 60, .22); }
+}
+:root[data-theme="light"] { --bg: #f5f5f2; --surface: #ffffff; --surface-2: #f0efe9; --line: rgba(10, 14, 30, .14); --text: #0c1226; --text-2: rgba(12, 18, 38, .7); --accent-text: #7a5200; --soft: rgba(246, 194, 60, .22); }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 17px/1.55 var(--ui); }
+a { color: var(--accent-text); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+header.top { border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; gap: 10px; min-height: 58px; }
+header.top b { font: 800 1rem var(--head); }
+header.top span { color: var(--text-2); font-size: .9rem; }
+h1, h2, h3 { font-family: var(--head); font-weight: 800; line-height: 1.12; letter-spacing: -.01em; margin: 0 0 .4em; text-wrap: balance; }
+h1 { font-size: clamp(2rem, 6vw, 3.4rem); }
+h2 { font-size: clamp(1.4rem, 3.6vw, 2rem); }
+h3 { font-size: 1.12rem; }
+.eyebrow { color: var(--accent-text); font-weight: 600; font-size: .9rem; margin: 0 0 8px; letter-spacing: .02em; }
+.lead { font-size: 1.15rem; color: var(--text-2); max-width: 40em; }
+section { padding: 44px 0; border-bottom: 1px solid var(--line); }
+.hero { padding: 48px 0 36px; }
+.two { display: grid; gap: 28px; align-items: start; }
+@media (min-width: 900px) { .two { grid-template-columns: 1fr 380px; } }
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+.steps li::before { content: counter(s); width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font: 800 1rem var(--head); }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+.box p { margin: 6px 0 0; color: var(--text-2); font-size: .97rem; }
+.box.no { border-style: dashed; }
+.tag { display: inline-block; font-size: .78rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--accent-text); margin-bottom: 8px; }
+.note { font-size: .9rem; color: var(--text-2); }
+.quote { border-left: 4px solid var(--accent); padding: 4px 0 4px 16px; margin: 18px 0; color: var(--text); font-style: italic; max-width: 40em; }
+/* телефон с прототипом */
+.phone { width: min(380px, 100%); margin: 0 auto; background: var(--surface); border: 1px solid var(--line); border-radius: 34px; padding: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); position: sticky; top: 16px; }
+.phone .bar { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; color: var(--text-2); padding: 2px 8px 10px; }
+.screen { background: var(--bg); border-radius: 24px; padding: 16px; min-height: 620px; display: grid; align-content: start; gap: 12px; }
+.screen .who { font-size: .8rem; font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: .06em; }
+.screen h3 { margin: 0; }
+.card { width: 100%; aspect-ratio: 7 / 12; max-height: 330px; object-fit: contain; border-radius: 14px; background: var(--surface-2); display: block; margin: 0 auto; }
+.card.sm { max-height: 210px; }
+.card.blur { filter: blur(0); }
+textarea { width: 100%; font: inherit; font-size: 1rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; min-height: 62px; resize: vertical; }
+textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text); font: 600 1rem var(--ui); cursor: pointer; text-decoration: none; }
+.btn.y { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn.w { width: 100%; }
+.btn[disabled] { opacity: .45; cursor: default; }
+.link { background: none; border: 0; color: var(--text-2); font: inherit; font-size: .9rem; text-decoration: underline; cursor: pointer; padding: 6px; }
+.msg { background: var(--surface); border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; padding: 10px; display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; font-size: .92rem; }
+.msg img { width: 64px; aspect-ratio: 7 / 12; object-fit: cover; border-radius: 8px; }
+.locked { position: relative; border-radius: 14px; border: 1px dashed var(--line); padding: 14px; text-align: center; color: var(--text-2); font-size: .92rem; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pair div { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; font-size: .92rem; }
+.pair b { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--accent-text); margin-bottom: 4px; }
+.muted { color: var(--text-2); font-size: .85rem; margin: 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.dots { display: flex; gap: 6px; justify-content: center; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.dots i.on { background: var(--accent); }
+.story-prev { width: 100%; border-radius: 12px; display: block; }
+.theme { margin-left: auto; }
+footer { padding: 30px 0 50px; color: var(--text-2); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><img src="img/emblem-cream.webp" alt="" width="58" height="16" id="em"><b>D-Cards</b><span>· набросок для обсуждения</span>
+  <button class="btn theme" type="button" id="theme" aria-label="Сменить тему">Тема</button></div></header>
+<main>
+  <section class="hero"><div class="wrap">
+    <p class="eyebrow">Для Майи · 17 ноября 2026</p>
+    <h1>Приложение, которым хочется делиться</h1>
+    <p class="lead">Сейчас D-Cards устроено как сайт проекта: роли, кабинеты, встречи, руководства. Чтобы им пользовались и пересылали люди, которые ничего не знают о Dialogue Flow, оно должно с первой секунды быть игрой на двоих — а всё о проекте остаётся глубже, для тех, кому интересно.</p>
+    <p class="note">Ниже — идея, живой прототип на настоящих картах галереи и план. Это предложение, а не решение: всё можно менять.</p>
+  </div></section>
+
+  <section><div class="wrap two">
+    <div>
+      <p class="eyebrow">Главная механика</p>
+      <h2>«Что ты здесь видишь?»</h2>
+      <p>В твоём тексте о живой метафоре уже есть ответ, чем люди будут обмениваться:</p>
+      <blockquote class="quote">«Но самое удивительное, что он может увидеть в этом изображении совершенно другую историю. Ту, о которой мы даже не думали, создавая его».</blockquote>
+      <ol class="steps">
+        <li><div><b>Человек выбирает карту</b> и одной строкой пишет, что видит (или записывает голос на 30 секунд).</div></li>
+        <li><div><b>Отправляет ссылку другу.</b> Она открывается без установки и регистрации — друг видит только карту.</div></li>
+        <li><div><b>Чтобы увидеть ответ, друг сначала отвечает сам.</b> Так никто не подстраивается под чужое прочтение.</div></li>
+        <li><div><b>Оба видят ответы рядом:</b> «ты увидел одиночество, я — свободу». Дальше — «Ответить своей картой» или «Задать вопрос».</div></li>
+      </ol>
+      <p>Почему это работает: хочется узнать, что увидел другой, а ответить — минутное дело. Каждый ответ рождает новую отправку. И при этом нет толкований и «правильного» ответа — принцип живой метафоры сохраняется.</p>
+      <p class="note">Попробуйте справа: прототип проходит весь путь за двоих на одном телефоне. Ничего никуда не отправляется и не сохраняется; картинку для сторис можно скачать.</p>
+    </div>
+    <div class="phone" aria-label="Прототип приложения"><div class="bar"><span>D-Cards</span><span>прототип</span></div>
+      <div class="screen" id="app" aria-live="polite"><p class="muted">Загружаем карты…</p></div></div>
+  </div></section>
+
+  <section><div class="wrap">
+    <p class="eyebrow">Что ещё добавить</p>
+    <h2>Поводы открыть и переслать</h2>
+    <div class="grid">
+      <div class="box"><span class="tag">то, что видят другие</span><h3>Картинка для сторис</h3><p>«История из трёх карт» и пара ответов «я вижу / ты видишь» сохраняются вертикальной картинкой: карты, слова человека, имена художников и ссылка. Так о приложении узнают те, кто его ещё не видел.</p></div>
+      <div class="box"><span class="tag">за столом</span><h3>Телефон по кругу</h3><p>Сейчас в игре компанией каждый заходит по QR — лишний шаг. Нужен режим «один телефон, передаём по кругу». QR остаётся для большой компании.</p></div>
+      <div class="box"><span class="tag">повод позвать</span><h3>Наборы под ситуацию</h3><p>«Первое свидание», «семейный ужин», «старые друзья», «новая команда», «наедине с собой». Человек ищет, чем занять вечер, а не «метафорические карты». Тексты наборов — с тобой.</p></div>
+      <div class="box"><span class="tag">каждый день</span><h3>Карта дня</h3><p>Одна для всех. По желанию — несколько коротких прочтений других людей (после проверки кураторами): видно, как по-разному смотрят. В приложении из App Store — виджет на экране «Домой».</p></div>
+      <div class="box"><span class="tag">художники</span><h3>Страница автора</h3><p>И сообщение художнику: «вашу карту выбрали для разговора 120 раз за неделю». Художники будут этим делиться — каждый приводит свою аудиторию.</p></div>
+      <div class="box"><span class="tag">встречи</span><h3>Память о встрече</h3><p>Какая карта была у тебя, пара слов о разговоре — только для себя — и «позвать друга на следующую встречу».</p></div>
+    </div>
+  </div></section>
+
+  <section><div class="wrap two" style="align-items:stretch">
+    <div>
+      <p class="eyebrow">Что убрать с первого экрана</p>
+      <h2>Сначала — удовольствие</h2>
+      <ul>
+        <li><b>Роли, кабинеты, курсы, длинные тексты.</b> Открыл приложение — сразу карта и одна кнопка «Сыграть с другом».</li>
+        <li><b>Пустой поиск встреч.</b> Если в городе встреч нет — не «пока нет», а «устройте у себя дома» и сразу режим компании.</li>
+        <li><b>Регистрацию до первой игры.</b> Вход нужен, только чтобы сохранить историю или подать работу.</li>
+      </ul>
+    </div>
+    <div class="box no">
+      <p class="eyebrow">Чего не делать</p>
+      <h3>Без соревнования и без толкований</h3>
+      <p>Серии дней подряд, очки, рейтинги, лайки, счётчики подписчиков — превращают разговор в соревнование. Расклады, «значения карт» и толкования через ИИ — против принципа, что никто не объясняет карту за другого.</p>
+      <p>Отсутствие этого можно подавать как достоинство: <b>без ленты и без оценок — только разговор</b>.</p>
+    </div>
+  </div></section>
+
+  <section><div class="wrap">
+    <p class="eyebrow">План</p>
+    <h2>Три шага</h2>
+    <ol class="steps">
+      <li><div><b>«Что ты видишь?» по ссылке + картинка для сторис.</b> В нынешнем веб-приложении, примерно неделя-две. Сразу смотрим: сколько присланных ссылок получают ответ и сколько ответивших отправляют свою.</div></li>
+      <li><div><b>«Телефон по кругу» и наборы под ситуацию.</b></div></li>
+      <li><div><b>Карта дня и приложение в App Store</b> — с виджетом и уведомлением «друг ответил». Это обёртка поверх нынешнего кода, переписывать не нужно. Идём туда, когда первый шаг покажет, что ссылки пересылают.</div></li>
+    </ol>
+    <h3 style="margin-top:30px">Что нужно решить</h3>
+    <ul>
+      <li>Можно ли показывать короткие прочтения других людей (с проверкой кураторами)?</li>
+      <li>Нравятся ли наборы под ситуацию и какие нужны первыми?</li>
+      <li>Нужен ли аккаунт разработчика Apple и на кого его оформлять?</li>
+    </ul>
+  </div></section>
+</main>
+<footer><div class="wrap">Dialogue Cards · набросок для обсуждения. Карты в прототипе — из галереи, авторы указаны на картинке для сторис. <a href="./">Открыть D-Cards</a></div></footer>
+<script src="js/vision.js"></script>
+</body>
+</html>
