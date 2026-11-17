@@ -251,6 +251,7 @@ function openMenu() {
     ${s ? `<button class="btn light sm" type="button" data-logout style="margin-top:14px">${esc(tt('Выйти', 'Sign out'))}</button>` : ''}
   </div>`;
   document.body.appendChild(el); document.body.classList.add('no-scroll');
+  menuFeel(el);
   el.addEventListener('click', async (e) => {
     if (e.target === el || e.target.closest('[data-close]')) { closeMenu(); return; }
     const d = e.target.closest('[data-demo]');
@@ -273,8 +274,47 @@ function openMenu() {
   el._opener = opener;
   el.querySelector('[data-close]').focus();
 }
-function closeMenu() {
+// новое поведение (скилл apple-design, vendor/hk-feel; прежнее — html[data-feel="old"]): меню выезжает справа на пружине,
+// затемнение идёт вместе с ним, смахивание вправо закрывает (бросок по скорости), уходит тем же путём вправо
+function menuFeel(el) {
+  const F = window.HKFeel;
+  if (!F || !F.on() || F.reduced()) return;
+  const panel = el.querySelector('.panel');
+  let x = 0, anim = null, drag = null;
+  const W = () => panel.getBoundingClientRect().width || 360;
+  const paint = (v) => { x = v; panel.style.transform = `translate3d(${v.toFixed(1)}px,0,0)`; el.style.setProperty('--menu-a', String(Math.max(0, 1 - v / W()))); };
+  const to = (target, vel, done) => { if (anim) anim.stop(); anim = F.spring({ from: x, to: target, velocity: vel || 0, response: vel ? 0.3 : 0.36, damping: 1, onUpdate: paint, onDone: () => { anim = null; if (done) done(); } }); };
+  el.classList.add('menu-feel');
+  paint(W()); to(0);
+  panel.style.touchAction = 'pan-y';
+  panel.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') return; drag = { x0: e.clientX, y0: e.clientY, base: x, on: false, h: [[e.clientX, e.timeStamp]] }; if (anim) { anim.stop(); anim = null; } });
+  panel.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if (!drag.on) { if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; } if (dx < 10) return; drag.on = true; drag.x0 = e.clientX; panel.setPointerCapture(e.pointerId); }
+    const raw = drag.base + (e.clientX - drag.x0);
+    paint(raw < 0 ? -F.rubber(-raw, W()) : raw);
+    drag.h.push([e.clientX, e.timeStamp]); while (drag.h.length > 2 && e.timeStamp - drag.h[0][1] > 100) drag.h.shift();
+  });
+  const up = (e) => {
+    const d = drag; drag = null; if (!d || !d.on) return;
+    const h = d.h; let v = 0;
+    if (h.length > 1 && e.timeStamp - h[h.length - 1][1] < 80 && h[h.length - 1][1] > h[0][1]) v = (h[h.length - 1][0] - h[0][0]) / (h[h.length - 1][1] - h[0][1]) * 1000;
+    if (x + F.project(v) > W() * 0.4) closeMenu(v); else to(0, v);
+  };
+  panel.addEventListener('pointerup', up); panel.addEventListener('pointercancel', up);
+  el._feelClose = (vel, done) => to(W(), vel, done);
+}
+function closeMenu(vel) {
   const el = document.getElementById('sheet-menu');
+  if (el && el._feelClose && !el._closing && window.HKFeel && window.HKFeel.on()) {
+    el._closing = true; el.style.pointerEvents = 'none'; el.removeAttribute('id');
+    el._off && el._off(); document.body.classList.remove('no-scroll');
+    el._feelClose(typeof vel === 'number' ? vel : 0, () => el.remove());
+    const back = el._opener && document.contains(el._opener) ? el._opener : document.querySelector('#acct [data-menu]');
+    if (back && getComputedStyle(back).display !== 'none') back.focus({ preventScroll: true });
+    return;
+  }
   if (el) {
     el._off && el._off(); el.remove(); document.body.classList.remove('no-scroll');
     const back = el._opener && document.contains(el._opener) ? el._opener : document.querySelector('#acct [data-menu]');

@@ -5,6 +5,10 @@ import { esc, api, u, tt, toast, visitorId, errorText } from './util.js';
 import { QUESTION_FORMATS, START_GUIDES } from './content.js';
 
 let current = null; // открытый просмотр
+// новое поведение (скилл apple-design, vendor/hk-feel): карта листается за пальцем 1:1, бросок по скорости, пружины;
+// касание срабатывает сразу; просмотр и лист «О карте» уходят тем же путём, что пришли. Прежнее — html[data-feel="old"].
+const FEEL = () => !!(window.HKFeel && window.HKFeel.on());
+const REDUCED = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function isViewerOpen() { return !!current; }
 
@@ -147,7 +151,8 @@ export function openViewer(opts) {
       const [a, b] = [...pointers.values()];
       gesture = { type: 'pinch', d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: z.s };
     } else if (pointers.size === 1) {
-      gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, x: z.x, y: z.y, moved: false, edge: e.clientX < EDGE || e.clientX > window.innerWidth - EDGE };
+      if (slide) { slide.stop(); slide = null; }  // поймали летящую карту
+      gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, x: z.x, y: z.y, bx: z.s > 1.01 ? 0 : z.x, h: [[e.clientX, e.timeStamp]], moved: false, edge: e.clientX < EDGE || e.clientX > window.innerWidth - EDGE };
     }
   });
   stage.addEventListener('pointermove', (e) => {
@@ -162,7 +167,11 @@ export function openViewer(opts) {
       const dx = e.clientX - gesture.sx; const dy = e.clientY - gesture.sy;
       if (Math.abs(dx) + Math.abs(dy) > 6) gesture.moved = true;
       if (z.s > 1.01) { z.x = gesture.x + dx; z.y = gesture.y + dy; clamp(); apply(false); }
-      else if (canFlip() && !gesture.edge) { z.x = dx * 0.5; apply(false); } // лёгкий отклик на свайп
+      else if (canFlip() && !gesture.edge) {
+        if (FEEL()) { z.x = gesture.bx + dx; gesture.h.push([e.clientX, e.timeStamp]); while (gesture.h.length > 2 && e.timeStamp - gesture.h[0][1] > 100) gesture.h.shift(); }
+        else z.x = dx * 0.5;  // прежнее: лёгкий отклик на свайп
+        apply(false);
+      }
     }
   });
   const end = (e) => {
@@ -178,6 +187,7 @@ export function openViewer(opts) {
     const g = gesture; gesture = null;
     const dx = e.clientX - g.sx; const dy = e.clientY - g.sy;
     if (z.s <= 1.01 && g.moved) {
+      if (FEEL() && canFlip() && !g.edge && Math.abs(dx) > Math.abs(dy) && e.type !== 'pointercancel') { flick(g, e); return; }
       const horiz = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2;
       if (horiz && canFlip() && !g.edge) { go(dx < 0 ? 1 : -1); return; }
       z.x = 0; apply(true); return;
@@ -191,9 +201,26 @@ export function openViewer(opts) {
       zoomTo(z.s > 1.01 ? 1 : 2.5, px, py, true);
     } else {
       lastTap = now;
-      tapTimer = setTimeout(() => { if (z.s > 1.01) return; if (!mode.full) setFull(true); else el.classList.toggle('chrome-hidden'); }, 280);
+      const act = () => { if (z.s > 1.01) return; if (!mode.full) setFull(true); else el.classList.toggle('chrome-hidden'); };
+      if (FEEL()) act(); else tapTimer = setTimeout(act, 280);  // новое: сразу, без ожидания второго касания
     }
   };
+  // бросок карты: куда «долетит» по скорости — туда и листаем; карта уходит, продолжая движение пальца, новая входит с той же скоростью
+  let slide = null;
+  function flick(g, e) {
+    const F = window.HKFeel, W = stage.clientWidth || window.innerWidth, h = g.h; let v = 0;
+    if (h.length > 1 && e.timeStamp - h[h.length - 1][1] < 80 && h[h.length - 1][1] > h[0][1]) v = (h[h.length - 1][0] - h[0][0]) / (h[h.length - 1][1] - h[0][1]) * 1000;
+    const proj = z.x + F.project(v);
+    const d = Math.abs(proj) > W * 0.3 ? (proj < 0 ? 1 : -1) : 0;
+    const move = (x) => { z.x = x; apply(false); };
+    if (REDUCED()) { if (d) go(d); else move(0); return; }
+    if (!d) { slide = F.spring({ from: z.x, to: 0, velocity: v, response: 0.35, damping: 1, onUpdate: move, onDone: () => { slide = null; } }); return; }
+    slide = F.spring({ from: z.x, to: -d * W, velocity: v, response: 0.24, damping: 1, onUpdate: move,
+      onDone: () => {
+        go(d); move(d * W);
+        slide = F.spring({ from: d * W, to: 0, velocity: v, response: 0.34, damping: 1, onUpdate: move, onDone: () => { slide = null; } });
+      } });
+  }
   stage.addEventListener('pointerup', end);
   stage.addEventListener('pointercancel', end);
   stage.addEventListener('wheel', (e) => {
@@ -501,9 +528,19 @@ export function openViewer(opts) {
       try { d = await fetchDetails(code); draw(d); } catch { /* показываем то, что есть */ }
     }
   }
+  let sheetCtl = null;
   function toggleSheet(force) {
-    const open = force ?? sheet.hidden;
+    const open = force ?? (sheet.hidden || (sheetCtl && !sheetCtl.open));
+    if (FEEL() && !REDUCED()) {
+      // лист «О карте» — на пружине: выезжает, тянется за пальцем вниз, закрывается броском и уходит вниз
+      sheetCtl = sheetCtl || window.HKFeel.sheet({ el: sheet, scroller: () => sheet, onClosed: () => { if (!sheetCtl.open) { sheet.hidden = true; sheetSync(false); } } });
+      if (open) { sheet.hidden = false; sheetSync(true); sheetCtl.show(); } else if (!sheet.hidden && sheetCtl.open) sheetCtl.hide();
+      return;
+    }
     sheet.hidden = !open;
+    sheetSync(open);
+  }
+  function sheetSync(open) {
     const ib = $('[data-info]'); if (ib && ib.closest('.viewer-top')) ib.setAttribute('aria-expanded', String(open));
     el.classList.toggle('sheet-open', open);
     if (open) renderSheet();
@@ -559,7 +596,8 @@ function teardown() {
   const { el, opener, cleanup, opts } = current;
   cleanup && cleanup();
   current = null;
-  el.remove();
+  if (FEEL() && !REDUCED()) { el.classList.remove('is-open'); el.style.pointerEvents = 'none'; setTimeout(() => el.remove(), 200); }  // гаснет, как появлялся
+  else el.remove();
   document.body.classList.remove('no-scroll');
   if (opener && opener.focus && document.contains(opener)) opener.focus({ preventScroll: true });
   if (opts.onClose) opts.onClose();
