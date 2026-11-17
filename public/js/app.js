@@ -1,6 +1,6 @@
 import { lang, setLang } from './i18n.js';
 import { esc, tt, u, api, BASE, toast, errorText } from './util.js';
-import { isViewerOpen, handleViewerPopState } from './viewer.js';
+import { isViewerOpen, handleViewerPopState, closeViewer } from './viewer.js';
 import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } from './ui.js';
 import * as pub from './views/public.js';
 import * as tool from './views/meeting-tool.js';
@@ -47,6 +47,7 @@ const routes = [
   [/^\/curator\/works\/(\d+)\/?$/, cur.review],
   [/^\/facilitator\/?$/, fac.cabinet],
   [/^\/facilitator\/apply\/?$/, fac.apply],
+  [/^\/facilitator\/quiz\/?$/, fac.quiz],
   [/^\/facilitator\/collections\/?$/, coll.list],
   [/^\/facilitator\/meetings\/?$/, fac.meetingsList],
   [/^\/facilitator\/c\/(\d+)\/?$/, coll.editor],
@@ -54,6 +55,7 @@ const routes = [
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
   [/^\/group\/?$/, grp.choose],
+  [/^\/group\/solo\/?$/, grp.solo],
   [/^\/g\/([A-Za-z0-9]{4,8})\/?$/, grp.room],
   [/^\/chats\/?$/, team.rooms],
   [/^\/chat\/?$/, (ctx) => ctx.navigate('/team/general', { replace: true })], // короткая ссылка для участников Zoom
@@ -61,20 +63,33 @@ const routes = [
   [/^\/team\/(general|curators|facilitators)\/?$/, team.chat],
   [/^\/print\/?$/, team.print],
   [/^\/admin\/?$/, adm.overview],
-  [/^\/admin\/(users|applications|meetings|cards|comments|criteria|guide|letters)\/?$/, adm.section],
+  [/^\/admin\/(users|works|applications|meetings|cards|comments|criteria|guide|letters)\/?$/, adm.section],
 ];
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
 
-// «← Назад» вверху на всех страницах, кроме главной и экрана встречи. Если в этой вкладке уже были переходы по сайту —
-// возвращает на предыдущую страницу; если человек пришёл по ссылке извне — ведёт на главную («← На главную»).
+// Вверху внутренних страниц — две разные ссылки: локальная «← Назад» (или «← К играм», «← К чатам»… — к родительскому
+// экрану) и «На главную» (всегда на главную, своим маршрутом). Главная и экран встречи по телефонам — без этой полосы.
 const depth = () => (history.state && history.state.depth) || 0;
+const PARENTS = [
+  [/^\/g\//, '/group', 'К играм', 'To games'],
+  [/^\/group\/solo/, '/library#play', 'К играм', 'To games'],
+  [/^\/team\//, '/chats', 'К чатам', 'To chats'],
+  [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
+  [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
+  [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
+  [/^\/admin\/./, '/admin', 'Администрирование', 'Administration'],
+  [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
+];
 function addBackLink(path, ctx) {
-  if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back]')) return;
-  // у страницы уже есть своя ссылка «← …» наверху (например, «← Встречи: город») — не дублируем
-  if ([...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'))) return;
-  const back = depth() > 0;
-  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar"><a class="back-home" data-back href="${u('/')}">← ${esc(back ? tt('Назад', 'Back') : tt('На главную', 'Home'))}</a></div>`);
+  if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back], [data-home]')) return;
+  // у страницы уже есть своя ссылка «← …» наверху (например, «← К работам») — её не дублируем, добавляем только «На главную»
+  const own = [...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'));
+  const par = PARENTS.find(([re]) => re.test(path));
+  let local = '';
+  if (!own && par) local = `<a class="back-home" data-local href="${u(par[1])}">← ${esc(tt(par[2], par[3]))}</a>`;
+  else if (!own && depth() > 0) local = `<a class="back-home" data-back href="${u('/')}">← ${esc(tt('Назад', 'Back'))}</a>`;
+  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar">${local}<a class="back-home to-home" data-home href="${u('/')}">${ic.home}${esc(tt('На главную', 'Home'))}</a></div>`);
 }
 main.addEventListener('click', (e) => {
   const a = e.target.closest('[data-back]');
@@ -154,16 +169,16 @@ function renderChrome() {
     + `<a href="${u('/chats')}" class="${p.startsWith('/chats') || p.startsWith('/team') ? 'on' : ''}">${esc(tt('Общение', 'Community'))}<span class="nav-badge" data-unread hidden></span></a>`;
   refreshUnread();
   const acct = document.getElementById('acct');
+  // Одна круглая кнопка открывает полное меню — и с инициалом, и у гостя (там же «Войти»).
   acct.innerHTML = session.user
-    ? `<button class="acct" type="button" data-menu><span class="ava">${avatar(session.user.publicName)}</span><span class="nm">${esc(session.user.publicName)}</span></button>`
-    : `<a class="signin" href="${u('/login')}">${esc(tt('Войти', 'Sign in'))}</a>`;
+    ? `<button class="acct" type="button" data-menu aria-label="${esc(tt('Меню: ', 'Menu: ') + session.user.publicName)}" title="${esc(session.user.publicName)}"><span class="ava">${avatar(session.user.publicName)}</span></button>`
+    : `<button class="acct guest" type="button" data-menu aria-label="${esc(tt('Меню и вход', 'Menu and sign in'))}" title="${esc(tt('Меню и вход', 'Menu and sign in'))}"><span class="ava">${ic.user}</span></button>`;
   drawThemeBtn();
-  document.getElementById('burger').setAttribute('aria-label', tt('Меню', 'Menu'));
   const ls = document.getElementById('lang');
   ls.textContent = lang === 'ru' ? 'EN' : 'RU';
   ls.setAttribute('aria-label', lang === 'ru' ? 'Switch to English' : 'Переключить на русский');
   document.getElementById('foot').innerHTML = `<span>© Dialogue Cards · Dialogue Flow</span>
-    <a href="${u('/start#join')}">${esc(tt('Участвовать', 'Take part'))}</a>
+    ${p.startsWith('/library') ? '' : `<a href="${u('/start#join')}">${esc(tt('Участвовать', 'Take part'))}</a>`}
     <a href="${u('/terms')}">${esc(tt('Условия публикации', 'Publication terms'))}</a>
     ${session.config.demoMode ? `<span>${esc(tt('Прототип в демо-режиме', 'Prototype in demo mode'))}</span>` : ''}`;
   const pill = document.getElementById('demo-pill');
@@ -189,8 +204,7 @@ document.getElementById('theme').addEventListener('click', () => {
   const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.setAttribute('content', next === 'light' ? '#f5f5f2' : '#060c1e');
   drawThemeBtn();
 });
-document.getElementById('lang').addEventListener('click', () => { setLang(lang === 'ru' ? 'en' : 'ru'); if (isViewerOpen()) history.back(); render(); });
-document.getElementById('burger').addEventListener('click', openMenu);
+document.getElementById('lang').addEventListener('click', () => { setLang(lang === 'ru' ? 'en' : 'ru'); if (isViewerOpen()) closeViewer(); render(); });
 document.getElementById('demo-pill').addEventListener('click', openMenu);
 document.getElementById('acct').addEventListener('click', (e) => { if (e.target.closest('[data-menu]')) openMenu(); });
 
@@ -207,9 +221,9 @@ function openMenu() {
   // Рабочие кабинеты — только те, что доступны этому человеку. Администратор входит через обычный вход; в демо его кнопка — на экране «Демо-роли».
   const cabinets = [];
   if (s) {
-    if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет художника', 'Artist space', 'Мои работы и карты', 'My works and cards'));
-    if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space', 'Подборки и встречи', 'Selections and meetings'));
-    if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space', 'Работы на рассмотрении', 'Works under review'));
+    if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет художника', 'Artist space'));
+    if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space'));
+    if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space'));
   }
   const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Художник', 'Artist'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
   el.innerHTML = `<div class="panel" aria-label="${esc(tt('Меню', 'Menu'))}">
@@ -218,18 +232,17 @@ function openMenu() {
         : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Иллюстрации для живого разговора', 'Illustrations for real conversation'))}</span></div>`}
       <button class="icon-btn" type="button" data-close aria-label="${esc(tt('Закрыть', 'Close'))}">${ic.close}</button>
     </div>
-    <div class="sec">${esc(tt('Обзор', 'Explore'))}</div>
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
+    ${mi('/library#play', ic.dice, 'Играть', 'Play')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}
     ${mi('/start#join', ic.people, 'Участвовать', 'Take part')}
-    ${mi('/group', ic.dice, 'Играть компанией', 'Play with friends', 'Форматы для друзей, каждый со своего телефона', 'Formats for friends, each on their own phone')}
-    ${mi('/chats', ic.chats, 'Общение', 'Community', 'Общий чат и чаты команды', 'General chat and team chats', false, session.unread ? String(session.unread) : '')}
+    ${mi('/chats', ic.chats, 'Общение в чатах', 'Chats', '', '', false, session.unread ? String(session.unread) : '')}
     ${s ? `${cabinets.length ? `<div class="sec">${esc(tt('Мои кабинеты', 'My spaces'))}</div>${cabinets.join('')}` : ''}
       <div class="sec">${esc(tt('Аккаунт', 'Account'))}</div>
-      ${mi('/me', ic.user, 'Профиль', 'Profile', 'Имя и публичное имя', 'Name and public name')}
-      ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications', 'Ответы и упоминания на телефон', 'Replies and mentions on your phone')}
-      ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', 'Роли, встречи, заявки, модерация', 'Roles, meetings, applications, moderation', true) : ''}`
-    : `<div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', 'Без пароля — код в письме или аккаунт сайта', 'No password — an emailed code or the site account', true)}`}
+      ${mi('/me', ic.user, 'Профиль', 'Profile')}
+      ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications')}
+      ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', '', '', true) : ''}`
+    : `<div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
     ${session.config.demoMode ? `<div class="demo-box">
       <p>${esc(tt('Демо-режим прототипа: войдите под тестовой ролью, чтобы пройти её путь. Права проверяются на сервере. Демо-данные помечены и не смешиваются с настоящими.', 'Prototype demo mode: sign in as a test role to walk through its path. Permissions are checked on the server. Demo data is labelled and kept apart from real data.'))}</p>
       <div class="chips">${demoRoles.map(([k, ru, en]) => `<button class="chip" type="button" data-demo="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
@@ -264,7 +277,7 @@ function closeMenu() {
   const el = document.getElementById('sheet-menu');
   if (el) {
     el._off && el._off(); el.remove(); document.body.classList.remove('no-scroll');
-    const back = el._opener && document.contains(el._opener) ? el._opener : document.getElementById('burger');
+    const back = el._opener && document.contains(el._opener) ? el._opener : document.querySelector('#acct [data-menu]');
     if (back && getComputedStyle(back).display !== 'none') back.focus({ preventScroll: true });
   }
 }

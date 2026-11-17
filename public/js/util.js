@@ -33,6 +33,24 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   return data;
 }
 
+/** Отправка файлов с ходом загрузки (fetch его не сообщает). onProgress(0..1) — пока файлы уходят; потом — обработка на сервере. */
+export function upload(path, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', BASE + path); x.withCredentials = true; x.responseType = 'text';
+    x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    x.upload.onload = () => onProgress && onProgress(1);
+    x.onerror = () => reject(new ApiError(0, 'network'));
+    x.ontimeout = () => reject(new ApiError(0, 'network'));
+    x.onload = () => {
+      let data = null; try { data = JSON.parse(x.responseText); } catch { /* пустой ответ */ }
+      if (x.status >= 200 && x.status < 300) resolve(data);
+      else reject(new ApiError(x.status, (data && data.error) || (x.status === 413 ? 'too_large' : 'server_error'), data));
+    };
+    x.send(form);
+  });
+}
+
 const ERRORS = {
   network: ['Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.', 'Could not reach the server. Check your connection and try again.'],
   auth_required: ['Нужно войти.', 'Please sign in.'],
@@ -41,6 +59,9 @@ const ERRORS = {
   replacement_type_required: ['Укажите тип изменения: исправление той же карты или новая карта.', 'Choose the change type: fix of the same card or a new card.'],
   terms_required: ['Нужно принять условия публикации.', 'Please accept the publication terms.'],
   no_images: ['Добавьте хотя бы одно изображение.', 'Add at least one image.'],
+  file_too_large: ['Один из файлов больше 60 МБ. Уменьшите его и отправьте ещё раз.', 'One of the files is larger than 60 MB. Make it smaller and send again.'],
+  upload_error: ['Файлы не удалось принять. Попробуйте ещё раз.', 'The files could not be received. Please try again.'],
+  too_large: ['Файлы слишком большие для одной отправки. Отправьте их по частям.', 'The files are too large for one submission. Send them in parts.'],
   bad_images: ['Файлы не похожи на изображения.', 'These files do not look like images.'],
   full: ['Места на эту дату закончились.', 'No seats left for this date.'],
   already_registered: ['Этот email уже записан на эту дату.', 'This email is already registered for this date.'],
@@ -74,6 +95,10 @@ const ERRORS = {
   group_not_member: ['Сначала войдите в игру.', 'Join the game first.'],
   group_host_only: ['Это делает ведущий — тот, кто открыл игру.', 'Only the host — the person who opened the game — can do this.'],
   group_need_two: ['Нужно хотя бы два вопроса.', 'At least two questions are needed.'],
+  forward_not_allowed: ['Пересылать можно только из общего чата.', 'Only messages from the general chat can be forwarded.'],
+  bad_room: ['Такого чата нет.', 'There is no such chat.'],
+  group_not_all_picked: ['Ещё не все выбрали карту.', 'Not everyone has chosen a card yet.'],
+  group_spot_busy: ['Сейчас показывает карту другой игрок — дождитесь, пока он закончит.', 'Another player is showing a card now — wait until they finish.'],
   live_not_active: ['Встреча по этому QR сейчас не идёт.', 'No meeting is running on this QR code right now.'],
   live_name_required: ['Напишите имя.', 'Enter your name.'],
   live_full: ['В группе уже максимум участников.', 'The group is full.'],
@@ -98,6 +123,7 @@ const ERRORS = {
   capacity_below_registrations: ['Записей уже больше, чем новое число мест.', 'There are already more registrations than the new capacity.'],
   course_not_finished: ['Отметьте все главы курса.', 'Mark all course chapters as read.'],
   quiz_not_passed: ['Ответы на вопросы проверки пока не верны.', 'Some quiz answers are not correct yet.'],
+  manual_not_available: ['Ручная проверка откроется после попыток с подсказками.', 'Manual review becomes available after the attempts with hints.'],
   not_editable: ['Эту работу сейчас нельзя изменить.', 'This work cannot be changed now.'],
   too_many_cards: ['В подборке не больше 40 карт.', 'A selection holds at most 40 cards.'],
   empty: ['Напишите текст.', 'Please write something.'],

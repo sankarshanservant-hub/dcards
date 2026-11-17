@@ -29,8 +29,9 @@ export function unlockSound() {
     if (!audio[k]) { audio[k] = new Audio(u('/sounds/' + f)); audio[k].preload = 'auto'; }
   }
   if (unlocked) return;
-  const a = audio.b1; const v = a.volume;
-  a.volume = 0; a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = v; unlocked = true; }).catch(() => { a.volume = v; });
+  // Беззвучно: на iPhone громкость (volume) из кода не меняется, поэтому — muted (иначе при нажатии слышен удар чаши).
+  const a = audio.b1;
+  a.muted = true; a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; unlocked = true; }).catch(() => { a.muted = false; });
 }
 export function play(kind) {
   const a = audio[kind]; if (!a) return;

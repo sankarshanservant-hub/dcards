@@ -55,13 +55,13 @@ export async function search(ctx, country, city) {
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><p class="eyebrow" style="margin:0">Dialogue Flow</p><h1>${esc(tt('Найти встречу', 'Find a meeting'))}</h1>
       <p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))}</p></div>
-    <details class="about-df card-ui flat"><summary><span class="grow">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</span><span class="chev" aria-hidden="true">▾</span></summary>
+    <details class="about-df card-ui flat accent-line"><summary><span class="grow">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="about-body">
-        <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече. Начать просто: выберите иллюстрацию и расскажите, что вас в ней зацепило. Дальше можно говорить о том, что вам интересно.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet. It is easy to start: choose an illustration and say what caught your eye in it. From there you can talk about whatever interests you.'))}</p>
+        <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet.'))}</p>
         <h3>${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h3>
         <ol class="steps">
           <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
-          <li>${esc(tt('Участники выбирают карты и общаются вдвоём или в группе. Вопросы помогают начать разговор.', 'Participants choose cards and talk in pairs or in a group. Questions help to start the conversation.'))}</li>
+          <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в живом потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a living flow.'))}</li>
           <li>${esc(tt('В конце встречи участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
         </ol></div></details>
     <form class="filters card-ui flat" id="flt" style="padding:14px">

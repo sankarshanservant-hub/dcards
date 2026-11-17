@@ -66,6 +66,7 @@ function chat(room, showDemo, viewer = null) {
       deleted: gone, moderated: !!m.moderated, text: gone ? '' : m.text,
       hiddenText: gone && m.moderated && isAdmin ? m.text : undefined,
       replyTo, mentions: parseIds(m.mentions).map((id) => ({ id, name: userName(id) })),
+      forwardOf: m.forward_of ? (() => { const o = db.prepare('SELECT id, room, user_id, created_at, deleted_at FROM chat_messages WHERE id = ?').get(m.forward_of); return o ? { id: o.id, room: o.room, author: userName(o.user_id), createdAt: o.created_at, deleted: !!o.deleted_at } : null; })() : null,
       attachments: gone ? [] : atts.filter((a) => a.message_id === m.id).map(attOut(room)),
     };
   });
@@ -96,6 +97,27 @@ function post(room, user, text, { files = [], category = '', clientId = '', repl
     // своё сообщение прочитано
     db.prepare(`INSERT INTO chat_reads (user_id, room, last_id) VALUES (?, ?, ?) ON CONFLICT(user_id, room) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`).run(user.id, room, id);
     return { ok: true, id };
+  })();
+}
+/**
+ * Переслать сообщение из общего чата в другой чат, куда человек может писать (права — на сервере). Оригинал остаётся
+ * на месте; в пересланном — автор оригинала и ссылка на него. Из закрытых чатов в общий не пересылается (только из общего).
+ */
+const FORWARD_FROM = ['general'];
+function forward(fromRoom, id, user, toRoom) {
+  if (!FORWARD_FROM.includes(fromRoom)) return { error: 'forward_not_allowed' };
+  if (!ROOMS[toRoom] || toRoom === fromRoom) return { error: 'bad_room' };
+  if (!userCanRoom(toRoom, user.id)) return { error: 'forbidden' };
+  const m = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND room = ?').get(id, fromRoom);
+  if (!m || m.deleted_at) return { error: 'not_found' };
+  const atts = db.prepare('SELECT * FROM chat_attachments WHERE message_id = ?').all(m.id);
+  return db.transaction(() => {
+    const info = db.prepare('INSERT INTO chat_messages (room, user_id, text, is_demo, forward_of) VALUES (?, ?, ?, ?, ?)')
+      .run(toRoom, user.id, m.text, user.is_demo || m.is_demo ? 1 : 0, m.id);
+    const nid = Number(info.lastInsertRowid);
+    for (const a of atts) db.prepare('INSERT INTO chat_attachments (message_id, room, file, width, height, category) VALUES (?, ?, ?, ?, ?, ?)').run(nid, toRoom, a.file, a.width, a.height, a.category);
+    db.prepare(`INSERT INTO chat_reads (user_id, room, last_id) VALUES (?, ?, ?) ON CONFLICT(user_id, room) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)`).run(user.id, toRoom, nid);
+    return { ok: true, id: nid, room: toRoom };
   })();
 }
 /**
@@ -180,45 +202,45 @@ const COURSE = [
   'Глава 8. Dialogue Flow — это только начало',
 ];
 // Вопросы проверки знаний по «Руководству фасилитатора Dialogue Flow» — согласованы с владельцем 16.11.2026.
-// answer — номер верного варианта в options (на странице варианты перемешиваются).
+// answer — номер верного варианта в options (на странице варианты перемешиваются); ch — главы курса (с нуля), где об этом сказано.
 const QUESTIONS = [
-  { id: 'q1', text: 'Участник спрашивает: «А что означает эта карта?» Что ответит фасилитатор?', answer: 1, options: [
+  { id: 'q1', ch: [1, 5], text: 'Участник спрашивает: «А что означает эта карта?» Что ответит фасилитатор?', answer: 1, options: [
     'Коротко расскажет, что задумывал художник, чтобы человеку было от чего оттолкнуться',
     'Спросит: «А что вы сами в ней увидели?»',
     'Предложит пару возможных толкований на выбор'] },
-  { id: 'q2', text: 'Разговор пары ушёл далеко от карты. Что делать?', answer: 2, options: [
+  { id: 'q2', ch: [4, 5], text: 'Разговор пары ушёл далеко от карты. Что делать?', answer: 2, options: [
     'Мягко вернуть пару к карте, чтобы разговор не потерял опору',
     'Подойти и предложить вопрос из карточки, чтобы вернуть структуру',
     'Ничего — значит, карта уже выполнила свою задачу'] },
-  { id: 'q3', text: 'В паре наступила долгая пауза. Как поступить?', answer: 0, options: [
+  { id: 'q3', ch: [1, 5], text: 'В паре наступила долгая пауза. Как поступить?', answer: 0, options: [
     'Не вмешиваться — дать тишине сделать свою работу',
     'Аккуратно подойти и предложить следующий вопрос из карточки',
     'Тихо спросить пару, всё ли в порядке'] },
-  { id: 'q4', text: 'Участник расплакался во время разговора. Что делать?', answer: 2, options: [
+  { id: 'q4', ch: [1, 5], text: 'Участник расплакался во время разговора. Что делать?', answer: 2, options: [
     'Мягко остановить разговор пары и предложить небольшой перерыв',
     'Подойти и бережно перевести разговор на более лёгкую тему',
     'Спокойно принести салфетки и воду, дать почувствовать поддержку и не мешать, если человек хочет продолжать'] },
-  { id: 'q5', text: 'Участников нечётное число. Как быть?', answer: 1, options: [
+  { id: 'q5', ch: [4], text: 'Участников нечётное число. Как быть?', answer: 1, options: [
     'Предложить одному из участников понаблюдать за этим раундом',
     'Фасилитатор сам становится одним из участников',
     'Сделать одну пару из трёх человек'] },
-  { id: 'q6', text: 'Нужно ли проходить вопросы карточки по порядку и отвечать на каждый?', answer: 1, options: [
+  { id: 'q6', ch: [4], text: 'Нужно ли проходить вопросы карточки по порядку и отвечать на каждый?', answer: 1, options: [
     'Желательно по порядку: вопросы выстроены так, чтобы разговор постепенно углублялся',
     'Нет: вопросы — помощь, их можно пропускать или задавать свои',
     'Достаточно ответить хотя бы на первые три, дальше — по желанию'] },
-  { id: 'q7', text: 'Участник не хочет отвечать на вопрос. Как правильно поступить?', answer: 1, options: [
+  { id: 'q7', ch: [1, 5], text: 'Участник не хочет отвечать на вопрос. Как правильно поступить?', answer: 1, options: [
     'Мягко поддержать его и предложить попробовать ответить хотя бы коротко',
     'Это его право: можно сказать «я пока не готов об этом говорить», объяснять ничего не нужно',
     'Предложить заменить вопрос на похожий, но менее личный'] },
-  { id: 'q8', text: 'Пара закончила разговор через 15 минут. Что делать?', answer: 2, options: [
+  { id: 'q8', ch: [2, 5], text: 'Пара закончила разговор через 15 минут. Что делать?', answer: 2, options: [
     'Предложить продолжить до конца раунда с новыми вопросами',
     'Деликатно предложить им присоединиться к другой паре',
     'Спросить, завершился ли разговор: если да — уважать это; если пара просто потерялась — предложить вопросы или деталь карты'] },
-  { id: 'q9', text: 'Что важно сказать участникам о конфиденциальности?', answer: 1, options: [
+  { id: 'q9', ch: [1, 4], text: 'Что важно сказать участникам о конфиденциальности?', answer: 1, options: [
     'Что лучше не называть имён и подробностей, чтобы истории оставались анонимными',
     'Всё, чем участники делятся, остаётся между ними, если они сами не договорились иначе',
     'Что интересными историями собеседника можно делиться с друзьями, не называя автора'] },
-  { id: 'q10', text: 'Планируется фото- или видеосъёмка. Что важно?', answer: 1, options: [
+  { id: 'q10', ch: [4], text: 'Планируется фото- или видеосъёмка. Что важно?', answer: 1, options: [
     'Снимать ненавязчиво, чтобы не сбивать атмосферу, а согласие спросить после встречи',
     'Предупредить заранее, не записывать звук самих разговоров и дать каждому отказаться без объяснений',
     'Снимать только общие планы, а тех, кто против, потом размыть на видео'] },
@@ -227,7 +249,41 @@ function application(userId) {
   const a = db.prepare('SELECT * FROM fac_applications WHERE user_id = ?').get(userId);
   if (!a) return null;
   return { status: a.status, courseDone: JSON.parse(a.course_done), answers: JSON.parse(a.answers), about: a.about, city: a.city,
-    decisionNote: a.decision_note, decidedAt: a.decided_at, createdAt: a.created_at, updatedAt: a.updated_at };
+    decisionNote: a.decision_note, decidedAt: a.decided_at, createdAt: a.created_at, updatedAt: a.updated_at,
+    quiz: quizInfo(a), manualReview: !!a.manual_review };
+}
+// Попытки проверки (решение владельца 17.11.2026): три попытки — только сколько верно; после третьей неудачной — номера
+// вопросов с ошибками; после четвёртой — ещё и главы руководства к этим вопросам; после пятой — можно отправить на ручную
+// проверку (и попробовать ещё). Ни проверка, ни ручная отправка роль не дают — только решение администратора.
+const QUIZ = { numbersAfter: 3, chaptersAfter: 4, manualAfter: 5 };
+function quizInfo(a) {
+  const n = a.quiz_attempts || 0; const wrong = JSON.parse(a.quiz_wrong || '[]'); const passed = !!a.quiz_passed;
+  const out = { attempts: n, passed, total: QUESTIONS.length, correct: n ? QUESTIONS.length - wrong.length : null };
+  if (!passed && n >= QUIZ.numbersAfter) out.wrongNumbers = wrong.map((id) => QUESTIONS.findIndex((q) => q.id === id) + 1).filter((x) => x > 0);
+  if (!passed && n >= QUIZ.chaptersAfter) out.chapters = Object.fromEntries(wrong.map((id) => [QUESTIONS.findIndex((q) => q.id === id) + 1, (QUESTIONS.find((q) => q.id === id) || {}).ch || []]));
+  out.canManual = !passed && n >= QUIZ.manualAfter && wrong.length > 0;
+  return out;
+}
+function checkQuiz(user, answers) {
+  const a = db.prepare('SELECT * FROM fac_applications WHERE user_id = ?').get(user.id);
+  if (!a) return { error: 'not_started' };
+  if (!['in_progress', 'rejected'].includes(a.status)) return { error: 'locked', status: a.status };
+  if (JSON.parse(a.course_done).length < COURSE.length) return { error: 'course_not_finished' };
+  const ans = { ...JSON.parse(a.answers), ...(answers && typeof answers === 'object' ? answers : {}) };
+  const wrong = QUESTIONS.filter((q) => Number(ans[q.id]) !== q.answer || ans[q.id] === undefined || ans[q.id] === null).map((q) => q.id);
+  db.prepare(`UPDATE fac_applications SET answers = ?, quiz_attempts = quiz_attempts + 1, quiz_wrong = ?, quiz_passed = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
+    .run(JSON.stringify(ans), JSON.stringify(wrong), wrong.length ? 0 : 1, a.id);
+  return { ok: true, quiz: quizInfo(db.prepare('SELECT * FROM fac_applications WHERE id = ?').get(a.id)) };
+}
+/** Ручная проверка: после всех попыток с подсказками заявку с ответами можно отправить администратору. */
+function manualReview(user, { about, city } = {}) {
+  const a = db.prepare('SELECT * FROM fac_applications WHERE user_id = ?').get(user.id);
+  if (!a) return { error: 'not_started' };
+  if (!['in_progress', 'rejected'].includes(a.status)) return { error: 'locked', status: a.status };
+  if (!quizInfo(a).canManual) return { error: 'manual_not_available' };
+  db.prepare(`UPDATE fac_applications SET status = 'submitted', manual_review = 1, about = ?, city = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
+    .run(String(about ?? a.about).slice(0, 2000), String(city ?? a.city).slice(0, 100), a.id);
+  return { ok: true };
 }
 function startApplication(user) {
   db.prepare('INSERT OR IGNORE INTO fac_applications (user_id, is_demo) VALUES (?, ?)').run(user.id, user.is_demo ? 1 : 0);
@@ -248,13 +304,16 @@ function submitApplication(user) {
   if (!a) return { error: 'not_started' };
   if (JSON.parse(a.course_done).length < COURSE.length) return { error: 'course_not_finished' };
   if (!quizPassed(JSON.parse(a.answers))) return { error: 'quiz_not_passed' };
-  db.prepare(`UPDATE fac_applications SET status = 'submitted', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(a.id);
+  db.prepare(`UPDATE fac_applications SET status = 'submitted', manual_review = 0, quiz_passed = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(a.id);
   return { ok: true };
 }
 function applications(showDemo) {
   return db.prepare(`SELECT * FROM fac_applications WHERE ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC`).all()
     .map((a) => ({ userId: a.user_id, name: userName(a.user_id), status: a.status, city: a.city, about: a.about,
-      courseDone: JSON.parse(a.course_done).length, quizPassed: quizPassed(JSON.parse(a.answers)), updatedAt: a.updated_at, isDemo: !!a.is_demo }));
+      courseDone: JSON.parse(a.course_done).length, quizPassed: quizPassed(JSON.parse(a.answers)), updatedAt: a.updated_at, isDemo: !!a.is_demo,
+      manualReview: !!a.manual_review, quizAttempts: a.quiz_attempts || 0,
+      // для ручной проверки администратор видит ответы: вопрос, выбранный вариант, верен ли он
+      answers: a.manual_review ? QUESTIONS.map((q, i) => { const v = JSON.parse(a.answers)[q.id]; return { n: i + 1, text: q.text, chosen: v != null && q.options[v] ? q.options[v] : null, right: Number(v) === q.answer }; }) : undefined }));
 }
 function decideApplication(adminId, userId, approve, note = '') {
   const a = db.prepare('SELECT * FROM fac_applications WHERE user_id = ?').get(userId);
@@ -294,7 +353,8 @@ function decideCuratorApplication(adminId, userId, approve, note = '') {
 }
 
 module.exports = {
+  forward,
   curatorApplication, submitCuratorApplication, curatorApplications, decideCuratorApplication,
   comments, addComment, deleteComment, recentComments, ROOMS, CATEGORIES, canRoom, userCanRoom, chat, people, post, deleteMessage, restoreMessage, modLog, markRead, excerpt, media, attachmentFile, rooms, members,
-  COURSE, QUESTIONS, application, startApplication, saveApplication, submitApplication, applications, decideApplication,
+  COURSE, QUESTIONS, application, startApplication, saveApplication, submitApplication, checkQuiz, manualReview, applications, decideApplication,
 };

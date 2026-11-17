@@ -278,7 +278,7 @@ r.post('/api/registrations/:token/cancel', (req, res) => out(res, meetings.cance
 r.get('/api/artist/works', auth.requireUser, (req, res) => res.json({ works: works.myWorks(req.user.id), cards: works.myCards(req.user.id), criteria: works.criteriaList() }));
 r.post('/api/artist/works', auth.requireUser, artistUpload.array('images', 20), wrap(async (req, res) => {
   const notes = [].concat(req.body.notes || []);
-  const result = await works.submit(req.user, req.files || [], { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, notes });
+  const result = await works.submit(req.user, req.files || [], { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, notes, clientKey: req.body.clientKey });
   if (!result.error) auth.grant(req.user.id, 'artist');
   out(res, result, 201);
 }));
@@ -301,7 +301,11 @@ r.get('/api/works/:id', auth.requireUser, (req, res) => {
 const curator = auth.requireRole('curator');
 r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queue(req.showDemo), recent: works.recentDecided(req.showDemo), criteria: works.criteriaList(), me: req.user.id }));
 r.use('/api/curation/works/:id', (req, res, next) => (demoOnly(req, res, isDemoRow('works', 'id', Number(req.params.id))) ? next() : undefined));
-r.post('/api/curation/works/:id/decide', curator, (req, res) => out(res, works.decide(req.user, Number(req.params.id), req.body || {})));
+r.post('/api/curation/works/:id/decide', curator, (req, res) => {
+  const result = works.decide(req.user, Number(req.params.id), req.body || {});
+  if (result.decisionId && !result.recommended) push.onWorkDecision(result.decisionId).catch(() => {}); // автору — о возврате или отклонении
+  out(res, result);
+});
 r.post('/api/curation/works/:id/discuss', curator, (req, res) => out(res, works.discuss(req.user, Number(req.params.id), req.body.question ?? req.body.comment)));
 r.post('/api/curation/works/:id/vote', curator, (req, res) => out(res, works.vote(req.user, Number(req.params.id), req.body.vote, req.body.comment)));
 
@@ -346,12 +350,17 @@ r.post('/api/chats/:room/messages/:id/restore', auth.requireUser, roomGuard, (re
   if (!req.has('admin')) return bad(res, 'forbidden', 403);
   out(res, community.restoreMessage(req.params.room, Number(req.params.id), req.user));
 });
+r.post('/api/chats/:room/messages/:id/forward', auth.requireUser, roomGuard, (req, res) => {
+  const r0 = community.forward(req.params.room, Number(req.params.id), req.user, String((req.body || {}).to || ''));
+  if (r0.ok) push.onMessage(r0.id).catch(() => {});
+  out(res, r0, 201);
+});
 r.get('/api/admin/chat-log', auth.requireUser, (req, res) => (req.has('admin') ? res.json({ log: community.modLog() }) : bad(res, 'forbidden', 403)));
 // ---------- push-уведомления: подписка по согласию, настройки, проверка ----------
 r.get('/api/push', auth.requireUser, (req, res) => res.json({ ...push.status(req.user), demo: !!req.user.is_demo }));
 r.post('/api/push/subscribe', auth.requireUser, (req, res) => out(res, push.subscribe(req.user, (req.body || {}).subscription, req.get('user-agent') || '')));
 r.post('/api/push/unsubscribe', auth.requireUser, (req, res) => out(res, push.unsubscribe(req.user, (req.body || {}).endpoint)));
-r.put('/api/push/prefs', auth.requireUser, (req, res) => { const b = req.body || {}; const v = (x) => (typeof x === 'boolean' ? x : undefined); res.json({ prefs: push.setPrefs(req.user.id, { enabled: v(b.enabled), replies: v(b.replies), mentions: v(b.mentions) }) }); });
+r.put('/api/push/prefs', auth.requireUser, (req, res) => { const b = req.body || {}; const v = (x) => (typeof x === 'boolean' ? x : undefined); res.json({ prefs: push.setPrefs(req.user.id, { enabled: v(b.enabled), replies: v(b.replies), mentions: v(b.mentions), works: v(b.works) }) }); });
 r.post('/api/push/test', auth.requireUser, wrap(async (req, res) => { const sent = await push.test(req.user); res.json({ sent }); }));
 r.post('/api/chats/:room', auth.requireUser, roomGuard, chatUpload.array('images', 6), wrap(async (req, res) => {
   const b = req.body || {};
@@ -608,6 +617,8 @@ r.post('/api/fac/print-request', fac, (req, res) => {
   res.status(201).json({ ok: true, already: !!dup });
 });
 r.post('/api/fac/application/submit', auth.requireUser, (req, res) => out(res, community.submitApplication(req.user)));
+r.post('/api/fac/application/quiz', auth.requireUser, (req, res) => out(res, community.checkQuiz(req.user, (req.body || {}).answers)));
+r.post('/api/fac/application/manual', auth.requireUser, (req, res) => out(res, community.manualReview(req.user, req.body || {})));
 
 // ---------- печатное направление ----------
 r.get('/api/print', auth.requireUser, (req, res) => {
@@ -703,6 +714,13 @@ admin.post('/meetings/:id/remove', (req, res) => out(res, meetings.removeByAdmin
 admin.post('/meetings/:id/restore', (req, res) => out(res, meetings.restoreByAdmin(Number(req.params.id))));
 admin.get('/comments', (req, res) => res.json({ comments: community.recentComments(req.showDemo) }));
 admin.put('/criteria', (req, res) => out(res, works.setCriteria(req.body && req.body.criteria)));
+// Работы: очередь «Одобрено кураторами» (только рекомендации) и обзор всех решений; окончательное решение — администратор.
+admin.get('/works', (req, res) => res.json({ recommended: works.recommendedQueue(req.showDemo), decisions: works.decisionsLog(req.showDemo), criteria: works.criteriaList() }));
+admin.post('/works/:id/decide', (req, res) => {
+  const result = works.adminDecide(req.user, Number(req.params.id), req.body || {});
+  if (result.decisionId) push.onWorkDecision(result.decisionId).catch(() => {}); // автору — о публикации, возврате или отклонении
+  out(res, result);
+});
 admin.get('/outbox', (req, res) => res.json({ letters: db.prepare('SELECT id, to_email AS "to", subject, status, created_at AS createdAt FROM outbox ORDER BY id DESC LIMIT 50').all() }));
 admin.post('/demo/seed', wrap(async (req, res) => { if (!config.demoMode) return bad(res, 'demo_disabled', 403); res.json(await demo.seed()); }));
 admin.post('/demo/clear', (req, res) => { if (!config.demoMode) return bad(res, 'demo_disabled', 403); res.json(demo.clear()); });

@@ -436,11 +436,35 @@ function wireDatePicker(f, onChange) {
 }
 
 // ---------- путь к роли фасилитатора ----------
+// Порядок (17.11.2026): вход по email → руководство → проверка (отдельный экран) и заявка → решение администратора.
+async function loadApplication(ctx) {
+  let d = await api('/api/fac/application');
+  // после входа — сразу руководство: заявка заводится сама, без вступления и кнопки «Начать»
+  if (!d.application && !d.isFacilitator) { await api('/api/fac/application', { method: 'POST' }); d = await api('/api/fac/application'); }
+  return d;
+}
+function facPath(d) {
+  const a = d.application; const N = d.course.length;
+  const stage = !a ? 1 : a.status === 'submitted' ? 3 : a.status === 'approved' ? 4 : a.courseDone.length === N ? 2 : 1;
+  return timeline([
+    { title: tt('Вход по email', 'Sign in with email'), state: 'done' },
+    { title: tt('Руководство фасилитатора', 'Facilitator guide'), note: a ? esc(tt(`прочитано глав: ${a.courseDone.length} из ${N}`, `chapters read: ${a.courseDone.length} of ${N}`)) : '', state: stage > 1 ? 'done' : 'now' },
+    { title: tt('Проверка знаний и заявка', 'Quiz and application'), note: a && a.quiz && a.quiz.passed && stage === 2 ? esc(tt('проверка пройдена', 'quiz passed')) : '', state: stage > 2 ? 'done' : stage === 2 ? 'now' : 'todo' },
+    { title: tt('Решение администратора', 'Administrator’s decision'), note: a && a.status === 'rejected' ? esc(tt('Не одобрено: ', 'Not approved: ') + (a.decisionNote || '—')) : a && a.status === 'approved' ? esc(tt('Одобрено — роль выдана', 'Approved — role granted')) : '', state: stage === 4 ? 'done' : stage === 3 ? 'now' : a && a.status === 'rejected' ? 'bad' : 'todo' },
+  ]);
+}
+const facHead = (d) => `<div class="page-head"><p class="eyebrow" style="margin:0">${esc(tt('Путь фасилитатора', 'Facilitator path'))}</p><h1>${esc(tt('Стать фасилитатором Dialogue Flow', 'Become a Dialogue Flow facilitator'))}</h1></div>
+    <div class="card-ui flat" id="path">${facPath(d)}</div>`;
+function facStatusBody(a) {
+  if (a.status === 'submitted') return `<div class="card-ui stack"><span class="pill mint" style="justify-self:start">${esc(a.manualReview ? tt('Отправлено на ручную проверку', 'Sent for manual review') : tt('Заявка отправлена', 'Application sent'))}</span><h2 style="margin:0">${esc(tt('Решение администратора', 'Administrator’s decision'))}</h2>
+      <p class="muted" style="margin:0">${esc(tt('Администратор рассмотрит заявку. Роль фасилитатора появится только после его одобрения — тогда в меню будет «Кабинет фасилитатора». Руководство остаётся доступным для чтения.', 'An administrator will review it. The facilitator role appears only after approval — then “Facilitator space” shows in the menu. The guide stays available to read.'))}</p></div>`;
+  return `<div class="card-ui stack"><h2>${esc(tt('Роль выдана', 'Role granted'))}</h2><a class="btn yellow" href="${u('/facilitator')}">${esc(tt('Открыть кабинет фасилитатора', 'Open the facilitator space'))}</a></div>`;
+}
 export async function apply(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Чтобы стать фасилитатором, войдите по email.', 'Sign in with email to become a facilitator.'));
   loading(ctx.main);
   let d;
-  try { d = await api('/api/fac/application'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  try { d = await loadApplication(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   if (d.isFacilitator && !d.application) {
     ctx.main.innerHTML = `<div class="wrap page narrow"><div class="card-ui stack"><h2>${esc(tt('Вы уже фасилитатор', 'You are already a facilitator'))}</h2><a class="btn dark" href="${u('/facilitator')}">${esc(tt('В кабинет', 'Open the space'))}</a></div></div>`;
@@ -452,9 +476,6 @@ export async function apply(ctx) {
   // Служебные пометки автора «[Ожидает правки…]» читателю не показываем; заглушку карточки с вопросами заменяем
   // утверждёнными вопросами «Для двоих»; место для ссылки на группу иллюстраторов — ссылка «Предложить иллюстрацию».
   const pairQ = () => ((QUESTION_FORMATS.find((f) => f.key === 'pair') || {}).lists || []).map((l) => `<h4>${esc(l.title[lang] || l.title.ru)}</h4><ul>${(l.items[lang] || l.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>`).join('');
-  // Варианты ответа перемешиваются при каждом открытии страницы (верный не стоит всегда на одном месте).
-  const order = {};
-  const shuffled = (q) => order[q.id] || (order[q.id] = q.options.map((_, i) => i).sort(() => Math.random() - 0.5));
   const block = (b) => {
     const t = String(b.text || '').trim();
     if (/^\[Ожидает списка вопросов/.test(t)) return pairQ();
@@ -462,48 +483,27 @@ export async function apply(ctx) {
     if (/^\[Ожидает/.test(t)) return '';
     return b.t === 'h' ? `<h4>${esc(t)}</h4>` : b.t === 'li' ? `<ul><li>${esc(t)}</li></ul>` : `<p>${esc(t)}</p>`;
   };
-  // Путь (один индикатор): 1 — руководство, 2 — проверка знаний и о себе, 3 — рассмотрение заявки.
-  const stage = !a ? 0 : a.status === 'submitted' ? 3 : a.status === 'approved' ? 4 : a.courseDone.length === N ? 2 : 1;
-  const path = timeline([
-    { title: tt('Вход по email', 'Sign in with email'), state: 'done' },
-    { title: tt('Руководство фасилитатора', 'Facilitator guide'), note: a ? esc(tt(`прочитано глав: ${a.courseDone.length} из ${N}`, `chapters read: ${a.courseDone.length} of ${N}`)) : '', state: stage > 1 ? 'done' : 'now' },
-    { title: tt('Проверка знаний и заявка', 'Quiz and application'), state: stage > 2 ? 'done' : stage === 2 ? 'now' : 'todo' },
-    { title: tt('Одобрение заявки', 'Approval'), note: a && a.status === 'rejected' ? esc(tt('Не одобрено: ', 'Not approved: ') + (a.decisionNote || '—')) : a && a.status === 'approved' ? esc(tt('Одобрено — роль выдана', 'Approved — role granted')) : '', state: stage === 4 ? 'done' : stage === 3 ? 'now' : a && a.status === 'rejected' ? 'bad' : 'todo' },
-  ]);
   let body = '';
-  if (!a) {
-    body = `<div class="card-ui stack"><p style="margin:0">${esc(tt('Фасилитатор знакомит участников с форматом, создаёт условия для разговора и проводит завершающий круг. Сначала вы читаете руководство фасилитатора, затем проходите проверку знаний и подаёте заявку, после одобрения сможете создавать встречи и подборки карт.', 'A facilitator introduces the format, creates the conditions for conversation and leads the closing circle. First you read the facilitator guide, then take the quiz and apply; once approved, you can create meetings and card selections.'))}</p>
-      <div><button class="btn yellow" type="button" id="start">${esc(tt('Начать', 'Start'))}</button></div></div>`;
-  } else if (a.status === 'in_progress' || a.status === 'rejected') {
+  if (a.status === 'in_progress' || a.status === 'rejected') {
     const done = new Set(a.courseDone);
     const nextUnread = d.course.findIndex((_, i) => !done.has(i));
-    body = `<section class="stack" aria-labelledby="s1"><h2 id="s1" style="margin:0">${esc(tt('Шаг 2. Прочитайте руководство фасилитатора', 'Step 2. Read the facilitator guide'))}</h2>
-        <p class="small muted" style="margin:0">${esc(tt('Откройте главу, чтобы прочитать её. Отметку «Я прочитал(а)» ставите вы сами — простое открытие главы её не ставит. Прогресс сохраняется.', 'Open a chapter to read it. You mark “I have read it” yourself — opening a chapter does not. Progress is saved.'))}</p>
+    const allRead = done.size === N;
+    body = `<section class="stack" aria-labelledby="s1"><h2 id="s1" style="margin:0">${esc(tt('Руководство фасилитатора', 'Facilitator guide'))}</h2>
+        <p class="small muted" style="margin:0">${esc(tt('Откройте главу и прочитайте её.', 'Open a chapter and read it.'))}</p>
+        <p class="small muted" style="margin:0">${esc(tt('Когда дочитаете, нажмите «Я прочитал(а)» в конце главы — само открытие главы отметку не ставит.', 'When you finish, press “I have read it” at the end of the chapter — opening a chapter does not mark it.'))}</p>
+        <p class="small muted" style="margin:0">${esc(tt('Отметки сохраняются в вашем аккаунте: можно закрыть страницу и вернуться позже — на этом или другом устройстве, войдя по тому же email.', 'Marks are saved in your account: you can close the page and come back later — on this or another device, signed in with the same email.'))}</p>
         ${d.guideMissing ? `<div class="notice">${esc(tt('Тексты глав ещё не загружены администратором — пока видны только названия.', 'Chapter texts have not been uploaded yet — only titles are shown.'))}</div>` : ''}
         <div class="row between"><b id="prog">${esc(tt(`Прочитано ${done.size} из ${N}`, `Read ${done.size} of ${N}`))}</b>${nextUnread >= 0 && done.size ? `<button class="btn sm" type="button" id="cont">${esc(tt(`Продолжить с главы ${nextUnread + 1}`, `Continue with chapter ${nextUnread + 1}`))}</button>` : ''}</div>
-        <div class="stack" style="gap:8px">${d.course.map((title, i) => `<details class="chapter ${done.has(i) ? 'read' : ''}" data-chapter="${i}"><summary><span class="state" aria-hidden="true">${done.has(i) ? icons.check : ''}</span><span class="grow"><b>${esc(title)}</b><br><span class="small muted" data-chstate>${esc(done.has(i) ? tt('Прочитано', 'Read') : tt('Не прочитано', 'Not read'))}</span></span></summary>
+        <div class="stack" style="gap:8px">${d.course.map((title, i) => `<details class="chapter ${done.has(i) ? 'read' : ''}" data-chapter="${i}" id="ch-${i + 1}"><summary><span class="state" aria-hidden="true">${done.has(i) ? icons.check : ''}</span><span class="grow"><b>${esc(title)}</b><br><span class="small muted" data-chstate>${esc(done.has(i) ? tt('Прочитано', 'Read') : tt('Не прочитано', 'Not read'))}</span></span></summary>
           <div class="ch-body">${d.chapters ? d.chapters[i].map(block).join('') : `<p class="muted">${esc(tt('Текст этой главы пока не загружен.', 'This chapter’s text is not uploaded yet.'))}</p>`}
             <div class="row" style="margin-top:10px"><button class="btn ${done.has(i) ? 'light' : 'yellow'} sm" type="button" data-read="${i}" aria-pressed="${done.has(i)}">${esc(done.has(i) ? tt('Отметить как непрочитанную', 'Mark as unread') : tt('Я прочитал(а)', 'I have read it'))}</button></div></div></details>`).join('')}
-          ${d.extra.map((x) => `<details class="chapter"><summary><span class="state" aria-hidden="true"></span><span class="grow"><b>${esc(x.title)}</b><br><span class="small muted">${esc(tt('дополнительно', 'extra reading'))}</span></span></summary><div class="ch-body">${x.blocks.map(block).join('')}</div></details>`).join('')}</div></section>
-      <section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${esc(tt('Шаг 3. Пройдите проверку знаний и подайте заявку', 'Step 3. Take the quiz and apply'))}</h2>
-        ${d.questionsPlaceholder ? `<p class="small" style="margin:0"><span class="pill demo">${esc(tt('временные вопросы', 'placeholder questions'))}</span> ${esc(tt('Вопросы проверки пока тестовые — их заменят утверждённые.', 'Quiz questions are temporary and will be replaced by approved ones.'))}</p>` : ''}
-        ${d.questions.map((q) => `<fieldset class="fs quiz-q"><legend>${esc(q.text)}</legend><div class="radio-list" role="radiogroup">${shuffled(q).map((i) => `<label class="radio"><input type="radio" name="${q.id}" value="${i}" ${String(a.answers[q.id]) === String(i) ? 'checked' : ''}><span>${esc(q.options[i])}</span></label>`).join('')}</div></fieldset>`).join('')}
-        <label class="field">${esc(tt('Город', 'City'))}<input type="text" id="city" maxlength="100" value="${esc(a.city)}"></label>
-        <label class="field">${esc(tt('О себе и опыте встреч', 'About you and your meeting experience'))}<textarea id="about" maxlength="2000">${esc(a.about)}</textarea></label>
-        <p class="form-error" id="err" role="alert"></p>
-        <div><button class="btn yellow" type="button" id="submit">${esc(tt('Отправить заявку', 'Send application'))}</button></div>
-        <p class="small muted" style="margin:0">${esc(tt('Шаг 4: дождитесь одобрения заявки. После одобрения вы сможете создавать встречи и подборки карт для них.', 'Step 4: wait for approval. Once approved, you can create meetings and card selections for them.'))}</p></section>`;
-  } else if (a.status === 'submitted') {
-    body = `<div class="card-ui stack"><span class="pill mint" style="justify-self:start">${esc(tt('Заявка отправлена', 'Application sent'))}</span><h2 style="margin:0">${esc(tt('Шаг 4. Одобрение заявки', 'Step 4. Approval'))}</h2>
-      <p class="muted" style="margin:0">${esc(tt('Администратор рассмотрит заявку. Когда роль выдадут, в меню появится «Кабинет фасилитатора». Руководство остаётся доступным для чтения.', 'An administrator will review it. Once the role is granted, “Facilitator space” appears in the menu. The guide stays available to read.'))}</p></div>`;
-  } else {
-    body = `<div class="card-ui stack"><h2>${esc(tt('Роль выдана', 'Role granted'))}</h2><a class="btn yellow" href="${u('/facilitator')}">${esc(tt('Открыть кабинет фасилитатора', 'Open the facilitator space'))}</a></div>`;
-  }
-  ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><p class="eyebrow" style="margin:0">${esc(tt('Путь фасилитатора', 'Facilitator path'))}</p><h1>${esc(tt('Стать фасилитатором Dialogue Flow', 'Become a Dialogue Flow facilitator'))}</h1></div>
-    <div class="card-ui flat" id="path">${path}</div>${body}</div>`;
-  const st = ctx.main.querySelector('#start');
-  if (st) st.addEventListener('click', async () => { try { await api('/api/fac/application', { method: 'POST' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
+          ${d.extra.map((x) => `<details class="chapter optional"><summary><span class="state" aria-hidden="true"></span><span class="grow"><b>${esc(x.title)}</b><br><span class="small muted">${esc(tt('Приложение · необязательно, на проверку не влияет', 'Appendix · optional, not part of the quiz'))}</span></span></summary><div class="ch-body">${x.blocks.map(block).join('')}</div></details>`).join('')}</div></section>
+      ${allRead ? `<section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${icons.check} ${esc(tt('Всё прочитано', 'All read'))}</h2>
+        <p class="muted" style="margin:0">${esc(a.quiz && a.quiz.passed ? tt('Проверка пройдена — осталось отправить заявку.', 'The quiz is passed — now send the application.') : tt('Теперь пройдите короткую проверку знаний по руководству. После неё — заявка.', 'Now take a short quiz on the guide. The application comes after it.'))}</p>
+        <div><a class="btn yellow" href="${u('/facilitator/quiz')}">${esc(a.quiz && a.quiz.passed ? tt('К заявке', 'To the application') : tt('Пройти проверку', 'Take the quiz'))}</a></div></section>` : ''}`;
+  } else body = facStatusBody(a);
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">${facHead(d)}${body}</div>`;
+  const hashCh = /^#ch-(\d+)$/.exec(location.hash); if (hashCh) { const det = ctx.main.querySelector(`#ch-${hashCh[1]}`); if (det) det.open = true; }
   const cont = ctx.main.querySelector('#cont');
   if (cont) cont.addEventListener('click', () => { const det = ctx.main.querySelector(`[data-chapter="${d.course.findIndex((_, i) => !a.courseDone.includes(i))}"]`); if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'start' }); det.querySelector('summary').focus({ preventScroll: true }); } });
   ctx.main.querySelectorAll('[data-read]').forEach((b) => b.addEventListener('click', async () => {
@@ -514,9 +514,8 @@ export async function apply(ctx) {
     const wasAll = a.courseDone.length === N;
     try { await save({ courseDone: next }); } catch (x) { b.disabled = false; toast(errorText(x)); return; }
     a.courseDone = next;
-    // Все главы прочитаны (или отметку сняли с последней) — открывается/закрывается шаг 3: перерисовываем, сохранив место на странице.
-    if ((next.length === N) !== wasAll) { const y = window.scrollY; await ctx.rerender(); window.scrollTo(0, y); return; }
-    // Иначе — только эта глава и счётчик, без перерисовки: читать можно дальше с того же места.
+    if ((next.length === N) !== wasAll) { const y = window.scrollY; await ctx.rerender(); window.scrollTo(0, y); if (next.length === N) { const s2 = ctx.main.querySelector('#s2'); if (s2) s2.scrollIntoView({ behavior: 'smooth', block: 'center' }); } return; }
+    // Иначе — только эта глава и счётчик, без перерисовки. Прочитанная глава сворачивается; открыть её снова можно.
     const on = set.has(i); const det = b.closest('details.chapter');
     det.classList.toggle('read', on);
     det.querySelector('.state').innerHTML = on ? icons.check : '';
@@ -524,19 +523,91 @@ export async function apply(ctx) {
     b.className = `btn ${on ? 'light' : 'yellow'} sm`; b.setAttribute('aria-pressed', String(on));
     b.textContent = on ? tt('Отметить как непрочитанную', 'Mark as unread') : tt('Я прочитал(а)', 'I have read it');
     b.disabled = false;
+    if (on) { det.open = false; det.scrollIntoView({ block: 'nearest' }); det.querySelector('summary').focus({ preventScroll: true }); }
     const pr = ctx.main.querySelector('#prog'); if (pr) pr.textContent = tt(`Прочитано ${next.length} из ${N}`, `Read ${next.length} of ${N}`);
     if (on) toast(tt('Глава отмечена как прочитанная', 'Chapter marked as read'));
   }));
-  ctx.main.querySelectorAll('fieldset.quiz-q input[type=radio]').forEach((r) => r.addEventListener('change', async () => {
+}
+
+// ---------- проверка знаний: отдельный экран, попытки с подсказками, затем заявка ----------
+export async function quiz(ctx) {
+  if (!session.user) return needLogin(ctx.main, tt('Чтобы стать фасилитатором, войдите по email.', 'Sign in with email to become a facilitator.'));
+  loading(ctx.main);
+  let d;
+  try { d = await loadApplication(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  if (!ctx.alive()) return;
+  const a = d.application;
+  if (!a) { ctx.navigate('/facilitator/apply', { replace: true }); return; }
+  const N = d.course.length;
+  const back = `<a class="small" href="${u('/facilitator/apply')}">← ${esc(tt('К руководству', 'To the guide'))}</a>`;
+  if (!['in_progress', 'rejected'].includes(a.status)) { ctx.main.innerHTML = `<div class="wrap page narrow stack">${back}${facHead(d)}${facStatusBody(a)}</div>`; return; }
+  if (a.courseDone.length < N) {
+    ctx.main.innerHTML = `<div class="wrap page narrow stack">${back}${facHead(d)}<div class="card-ui stack"><p style="margin:0">${esc(tt(`Проверка откроется, когда все главы руководства будут отмечены как прочитанные (сейчас ${a.courseDone.length} из ${N}).`, `The quiz opens once all guide chapters are marked as read (now ${a.courseDone.length} of ${N}).`))}</p><div><a class="btn yellow" href="${u('/facilitator/apply')}">${esc(tt('К руководству', 'To the guide'))}</a></div></div></div>`;
+    return;
+  }
+  const q = a.quiz || { attempts: 0 };
+  const order = {};
+  const shuffled = (x) => order[x.id] || (order[x.id] = x.options.map((_, i) => i).sort(() => Math.random() - 0.5));
+  const save = async (patch) => { await api('/api/fac/application', { method: 'PUT', body: patch }); };
+  const appForm = (manual) => `<label class="field">${esc(tt('Город', 'City'))}<input type="text" id="city" maxlength="100" value="${esc(a.city)}"></label>
+      <label class="field">${esc(tt('О себе и опыте встреч', 'About you and your meeting experience'))}<textarea id="about" maxlength="2000">${esc(a.about)}</textarea></label>
+      <p class="form-error" id="err" role="alert"></p>
+      <div><button class="btn ${manual ? 'light' : 'yellow'}" type="button" id="${manual ? 'manual' : 'submit'}">${esc(manual ? tt('Отправить на ручную проверку', 'Send for manual review') : tt('Отправить заявку', 'Send application'))}</button></div>`;
+  let body;
+  if (q.passed) {
+    body = `<section class="card-ui stack" aria-labelledby="qs"><span class="pill mint" style="justify-self:start">${icons.check} ${esc(tt('Проверка пройдена', 'Quiz passed'))}</span>
+      <h2 id="qs" style="margin:0">${esc(tt('Заявка', 'Application'))}</h2>
+      <p class="muted" style="margin:0">${esc(tt('Расскажите немного о себе. Роль фасилитатора выдаёт администратор после рассмотрения заявки.', 'Tell us a little about yourself. The administrator grants the facilitator role after reviewing the application.'))}</p>
+      ${appForm(false)}</section>`;
+  } else {
+    const wrong = new Set(q.wrongNumbers || []);
+    const chName = (i) => d.course[i] || tt(`Глава ${i + 1}`, `Chapter ${i + 1}`);
+    let fb = '';
+    if (q.attempts) {
+      fb = `<div class="notice" role="status" id="qfb"><b>${esc(tt(`Верно ${q.correct} из ${q.total}.`, `${q.correct} of ${q.total} correct.`))}</b>
+        ${q.wrongNumbers ? ` ${esc(tt('Ошибки в вопросах:', 'Mistakes in questions:'))} <b>${q.wrongNumbers.join(', ')}</b>.` : ''}
+        ${esc(tt(' Ответы сохранены — исправьте и проверьте ещё раз.', ' Your answers are saved — fix them and check again.'))}
+        ${q.chapters ? `<ul class="small" style="margin:8px 0 0">${Object.entries(q.chapters).map(([n, chs]) => `<li>${esc(tt(`Вопрос ${n}`, `Question ${n}`))}: ${chs.map((i) => `<a href="${u('/facilitator/apply#ch-' + (i + 1))}">${esc(chName(i))}</a>`).join(', ')}</li>`).join('')}</ul>` : ''}</div>`;
+    }
+    body = `<section class="stack" aria-labelledby="qs"><h2 id="qs" style="margin:0">${esc(tt('Проверка знаний', 'Quiz'))}</h2>
+      <p class="small muted" style="margin:0">${esc(tt(`${d.questions.length} вопросов по руководству. Ответы сохраняются сразу — можно вернуться позже.`, `${d.questions.length} questions on the guide. Answers are saved right away — you can come back later.`))}</p>
+      ${fb}
+      <ol class="quiz">${d.questions.map((x, n) => `<li class="quiz-item ${wrong.has(n + 1) ? 'wrong' : ''}" id="q-${n + 1}"><p class="quiz-q" id="ql-${x.id}">${esc(x.text)}${wrong.has(n + 1) ? ` <span class="pill bad">${esc(tt('ошибка', 'mistake'))}</span>` : ''}</p>
+        <div class="radio-list" role="radiogroup" aria-labelledby="ql-${x.id}">${shuffled(x).map((i) => `<label class="radio"><input type="radio" name="${x.id}" value="${i}" ${String(a.answers[x.id]) === String(i) ? 'checked' : ''}><span>${esc(x.options[i])}</span></label>`).join('')}</div></li>`).join('')}</ol>
+      <p class="form-error" id="qerr" role="alert"></p>
+      <div><button class="btn yellow big" type="button" id="check">${esc(tt('Проверить ответы', 'Check answers'))}</button></div></section>
+      ${q.canManual ? `<section class="card-ui stack" aria-labelledby="mr"><h2 id="mr" style="margin:0">${esc(tt('Ручная проверка', 'Manual review'))}</h2>
+        <p class="muted" style="margin:0">${esc(tt('Можно отправить ваши ответы и заявку администратору — он посмотрит их сам. Роль выдаётся только после его решения.', 'You can send your answers and application to the administrator, who will review them. The role is granted only after that decision.'))}</p>${appForm(true)}</section>` : ''}`;
+  }
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">${back}${facHead(d)}${body}</div>`;
+  ctx.main.querySelectorAll('.quiz input[type=radio]').forEach((r) => r.addEventListener('change', async () => {
     a.answers[r.name] = Number(r.value);
     try { await save({ answers: a.answers }); } catch (x) { toast(errorText(x)); }
   }));
+  const ck = ctx.main.querySelector('#check');
+  if (ck) ck.addEventListener('click', async () => {
+    const miss = d.questions.findIndex((x) => a.answers[x.id] === undefined || a.answers[x.id] === null);
+    if (miss >= 0) { ctx.main.querySelector('#qerr').textContent = tt(`Ответьте на вопрос ${miss + 1}.`, `Answer question ${miss + 1}.`); ctx.main.querySelector(`#q-${miss + 1}`).scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    ck.disabled = true;
+    try {
+      const r = await api('/api/fac/application/quiz', { method: 'POST', body: { answers: a.answers } });
+      await ctx.rerender();
+      const target = ctx.main.querySelector(r.quiz.passed ? '#qs' : '#qfb'); if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (r.quiz.passed) toast(tt('Проверка пройдена', 'Quiz passed'));
+    } catch (x) { ck.disabled = false; ctx.main.querySelector('#qerr').textContent = errorText(x); }
+  });
+  const fields = () => ({ about: ctx.main.querySelector('#about').value, city: ctx.main.querySelector('#city').value });
   const sb = ctx.main.querySelector('#submit');
   if (sb) sb.addEventListener('click', async () => {
     sb.disabled = true;
-    try {
-      await save({ about: ctx.main.querySelector('#about').value, city: ctx.main.querySelector('#city').value, answers: a.answers });
-      await api('/api/fac/application/submit', { method: 'POST' }); await refreshSession(); toast(tt('Заявка отправлена', 'Application sent')); ctx.rerender();
-    } catch (x) { sb.disabled = false; ctx.main.querySelector('#err').textContent = errorText(x); }
+    try { await save({ ...fields(), answers: a.answers }); await api('/api/fac/application/submit', { method: 'POST' }); await refreshSession(); toast(tt('Заявка отправлена', 'Application sent')); ctx.rerender(); }
+    catch (x) { sb.disabled = false; ctx.main.querySelector('#err').textContent = errorText(x); }
+  });
+  const mb = ctx.main.querySelector('#manual');
+  if (mb) mb.addEventListener('click', async () => {
+    if (!confirm(tt('Отправить ответы и заявку на ручную проверку администратору?', 'Send your answers and application to the administrator for manual review?'))) return;
+    mb.disabled = true;
+    try { await api('/api/fac/application/manual', { method: 'POST', body: fields() }); toast(tt('Отправлено на ручную проверку', 'Sent for manual review')); ctx.rerender(); }
+    catch (x) { mb.disabled = false; ctx.main.querySelector('#err').textContent = errorText(x); }
   });
 }

@@ -69,15 +69,19 @@ export async function chat(ctx, room) {
       <div class="msg-head"><span class="msg-ava" aria-hidden="true">${esc(initial(m.author))}</span><b>${esc(m.author)}</b><time datetime="${esc(m.createdAt)}">${esc(when(m.createdAt))}</time></div>
       ${m.deleted ? `<p class="msg-hidden">${esc(m.moderated ? tt('Сообщение скрыто модератором.', 'Message hidden by a moderator.') : tt('Сообщение удалено автором.', 'Message deleted by its author.'))}${isAdmin && m.hiddenText != null ? `<br><span class="small">${esc(tt('Видно только администратору:', 'Visible to admins only:'))} «${esc(m.hiddenText)}»</span>` : ''}</p>
         ${isAdmin && m.moderated ? `<div class="msg-acts"><button class="linkbtn" type="button" data-restore="${m.id}">${esc(tt('Восстановить', 'Restore'))}</button></div>` : ''}`
-      : `${m.replyTo ? `<button type="button" class="msg-quote" data-goto="${m.replyTo.id}"><b>${esc(m.replyTo.author)}</b> · ${esc(m.replyTo.deleted ? tt('сообщение удалено', 'message deleted') : m.replyTo.text || tt('изображение', 'image'))}</button>` : ''}
+      : `${m.forwardOf ? `<a class="msg-fwd small" href="${u('/team/' + m.forwardOf.room + '?m=' + m.forwardOf.id)}">${ic.reply} ${esc(tt('Переслано из общего чата', 'Forwarded from the general chat'))} · <b>${esc(m.forwardOf.author)}</b>${m.forwardOf.deleted ? ` · ${esc(tt('оригинал удалён', 'original deleted'))}` : ''}</a>` : ''}
+      ${m.replyTo ? `<button type="button" class="msg-quote" data-goto="${m.replyTo.id}"><b>${esc(m.replyTo.author)}</b> · ${esc(m.replyTo.deleted ? tt('сообщение удалено', 'message deleted') : m.replyTo.text || tt('изображение', 'image'))}</button>` : ''}
       ${m.text ? `<p>${textHtml(m)}</p>` : ''}
       ${m.attachments.length ? `<div class="msg-imgs">${m.attachments.map((a) => `<button type="button" class="msg-img" data-att="${m.id}:${a.id}" aria-label="${esc(tt('Открыть изображение', 'Open image'))}"><img src="${esc(u(a.thumb))}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}
       ${m.workId ? `<a class="btn sm" href="${u('/curator/works/' + m.workId)}">${esc(tt(`Открыть работу №${m.workId}`, `Open work #${m.workId}`))} →</a>` : ''}
       <div class="msg-acts"><button class="linkbtn" type="button" data-reply="${m.id}">${esc(tt('Ответить', 'Reply'))}</button>
+        ${room === 'general' && fwdTargets.length ? `<button class="linkbtn" type="button" data-fwd="${m.id}">${esc(tt('Переслать', 'Forward'))}</button>` : ''}
         ${m.userId !== session.user.id ? `<button class="linkbtn" type="button" data-mention="${m.userId}">${esc(tt('Упомянуть', 'Mention'))}</button>` : ''}
         ${m.userId === session.user.id ? `<button class="linkbtn" type="button" data-del="${m.id}">${esc(tt('Удалить', 'Delete'))}</button>` : isAdmin ? `<button class="linkbtn" type="button" data-hide="${m.id}">${esc(tt('Скрыть (модерация)', 'Hide (moderation)'))}</button>` : ''}</div>`}
     </article>`;
   const zoomUrl = `${location.origin}${u('/chat')}`;
+  // куда можно переслать из общего чата: закрытые чаты, доступные этому человеку (сервер проверяет права ещё раз)
+  const fwdTargets = (d.rooms || []).map((r) => r.room).filter((r) => r !== 'general');
   const draw = async () => {
     const tabs = `<div class="seg" role="tablist" aria-label="${esc(tt('Раздел чата', 'Chat section'))}"><button role="tab" type="button" data-tab="msgs" aria-selected="${tab === 'msgs'}">${esc(tt('Сообщения', 'Messages'))}</button><button role="tab" type="button" data-tab="media" aria-selected="${tab === 'media'}">${esc(tt('Медиа', 'Media'))}</button></div>`;
     let body = '';
@@ -85,20 +89,20 @@ export async function chat(ctx, room) {
       const rep = draft.replyTo && d.messages.find((m) => m.id === draft.replyTo);
       const ppl = (d.people || []).filter((p) => p.id !== session.user.id);
       body = `<div class="chat card-ui flat" id="msgs" aria-live="polite">${d.messages.map(msgHtml).join('') || `<p class="muted">${esc(tt('Сообщений пока нет. Напишите первым — представьтесь или задайте вопрос.', 'No messages yet. Be the first — introduce yourself or ask a question.'))}</p>`}</div>
-        <form class="card-ui flat stack composer" id="cf" novalidate>
+        <form class="composer" id="cf" novalidate>
           ${rep ? `<div class="reply-strip">${ic.reply}<span class="grow">${esc(tt('Ответ', 'Reply to'))} <b>${esc(rep.author)}</b>: ${esc((rep.text || '').slice(0, 80))}</span><button type="button" class="mini-btn" data-unreply aria-label="${esc(tt('Отменить ответ', 'Cancel reply'))}">${ic.x}</button></div>` : ''}
           ${draft.mentions.length ? `<div class="ment-chips">${draft.mentions.map((id) => { const p = ppl.find((x) => x.id === id); return p ? `<span class="chip on">@${esc(p.name)} <button type="button" class="mini-btn" data-unment="${id}" aria-label="${esc(tt('Убрать упоминание', 'Remove mention'))}">${ic.x}</button></span>` : ''; }).join('')}</div>` : ''}
           <label class="sr-only" for="ct">${esc(tt('Сообщение', 'Message'))}</label>
-          <textarea id="ct" name="text" maxlength="4000" placeholder="${esc(tt('Сообщение', 'Message'))}" style="min-height:64px">${esc(draft.text)}</textarea>
+          <div class="cf-main"><label class="cf-photo" title="${esc(tt('Фото', 'Photos'))}">${ic.plus}<span>${esc(tt('Фото', 'Photos'))}</span><input type="file" id="cfile" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
+            <textarea id="ct" name="text" maxlength="4000" placeholder="${esc(tt('Сообщение', 'Message'))}" rows="2">${esc(draft.text)}</textarea>
+            <button class="btn yellow" type="submit" id="csend">${esc(tt('Отправить', 'Send'))}</button></div>
           <div class="cf-files" id="cf-files">${draft.files.map((f, i) => `<span class="cf-file"><img src="${esc(f.url)}" alt=""><button type="button" class="mini-btn r" data-unfile="${i}" aria-label="${esc(tt('Убрать изображение', 'Remove image'))}">${ic.x}</button></span>`).join('')}</div>
           ${draft.files.length ? `<label class="field small">${esc(tt('Категория изображений', 'Image category'))} <span class="hint">${esc(tt('необязательно', 'optional'))}</span><select name="category">${Object.entries(CAT).map(([k, v]) => `<option value="${k}" ${k === draft.category ? 'selected' : ''}>${esc(k ? tt(...v) : tt('Без категории', 'No category'))}</option>`).join('')}</select></label>
             ${draft.category === 'meetings' ? `<p class="small muted" style="margin:0">${esc(tt('Публикуйте фото со встреч только с согласия тех, кто на них есть. Сами разговоры не снимаются — фото показывают атмосферу встречи.', 'Post meeting photos only with the consent of the people in them. The conversations themselves are not recorded — photos show the atmosphere.'))}</p>` : ''}
             ${draft.category === 'illustrations' ? `<p class="small muted" style="margin:0">${esc(tt('Изображения из чата не публикуются в галерее. Чтобы предложить карту, используйте «Предложить иллюстрацию».', 'Chat images are not published in the gallery. To suggest a card, use “Suggest an illustration”.'))}</p>` : ''}` : ''}
           <p class="form-error" id="cerr" role="alert"></p>
-          <div class="row between"><div class="row"><label class="btn sm light" style="cursor:pointer">${ic.plus} ${esc(tt('Фото', 'Photos'))}<input type="file" id="cfile" accept="image/jpeg,image/png,image/webp" multiple hidden></label>
-            ${ppl.length ? `<label class="sr-only" for="cment">${esc(tt('Упомянуть участника', 'Mention someone'))}</label><select id="cment" class="btn sm light" style="max-width:12em"><option value="">@ ${esc(tt('Упомянуть', 'Mention'))}</option>${ppl.filter((p) => !draft.mentions.includes(p.id)).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>` : ''}</div>
-            <button class="btn yellow" type="submit" id="csend">${esc(tt('Отправить', 'Send'))}</button></div>
-          <p class="small muted" style="margin:0">${esc(tt('JPEG, PNG или WebP, до 6 изображений, каждое до 15 МБ. В сообщениях видно ваше публичное имя, email не показывается.', 'JPEG, PNG or WebP, up to 6 images, up to 15 MB each. Messages show your public name; your email is not shown.'))}</p></form>`;
+          <div class="cf-sub">${ppl.length ? `<label class="sr-only" for="cment">${esc(tt('Упомянуть участника', 'Mention someone'))}</label><select id="cment" class="cf-ment"><option value="">@ ${esc(tt('Упомянуть', 'Mention'))}</option>${ppl.filter((p) => !draft.mentions.includes(p.id)).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>` : ''}
+            <span class="small muted">${esc(tt('Фото: JPEG, PNG или WebP, до 6, каждое до 15 МБ. Видно ваше публичное имя, email — нет.', 'Photos: JPEG, PNG or WebP, up to 6, up to 15 MB each. Your public name is shown, not your email.'))}</span></div></form>`;
     } else {
       let media = [];
       try { ({ media } = await api(`/api/chats/${room}/media${cat ? '?category=' + cat : ''}`)); } catch (e) { body = `<p class="error-box">${esc(errorText(e))}</p>`; }
@@ -113,8 +117,9 @@ export async function chat(ctx, room) {
         <div class="stack" style="min-width:0">
           <div class="page-head"><h1>${ROOM_TITLE[room] && room !== 'general' ? `${ic.lock} ` : ''}${esc(rt(room))}</h1><p class="sub">${esc(tt(...ROOM_NOTE[room]))}${d.members ? ` ${esc(tt('Сейчас в доступе:', 'Currently:'))} ${d.members.map((m) => esc(m.name)).join(', ')}.` : ''}</p></div>
           <div class="chat-tools">${tabs}
-            <label class="small">${ic.bell} <span class="sr-only">${esc(tt('Уведомления этого чата', 'Notifications for this chat'))}</span><select id="cnotify" aria-label="${esc(tt('Уведомления этого чата', 'Notifications for this chat'))}">${Object.entries(MODE_LABEL).map(([k, v]) => `<option value="${k}" ${d.notify === k ? 'selected' : ''}>${esc(tt(...v))}</option>`).join('')}</select>
-              <a class="small" href="${u('/me/notifications')}">${esc(tt('Настройки', 'Settings'))}</a></label></div>
+            <label class="small cnotify">${ic.bell} <span>${esc(tt('Уведомления для этого чата', 'Notifications for this chat'))}</span><select id="cnotify">${Object.entries(MODE_LABEL).map(([k, v]) => `<option value="${k}" ${d.notify === k ? 'selected' : ''}>${esc(tt(...v))}</option>`).join('')}</select>
+              </label><a class="small" href="${u('/me/notifications')}">${esc(tt('Настройки', 'Settings'))}</a></div>
+          <p class="small muted" style="margin:-4px 0 0">${esc(tt('Это только о том, что приходит на телефон: в ленте видны все сообщения при любом выборе.', 'This only affects what reaches your phone: the feed shows all messages whatever you choose.'))}</p>
           ${canShareZoom ? `<details class="small zoom-link"><summary>${esc(tt('Ссылка на общий чат для участников Zoom', 'General chat link for Zoom participants'))}</summary><input type="text" readonly value="${esc(zoomUrl)}" id="zoomurl"><span class="muted">${esc(tt('Гость увидит вход и после него вернётся в общий чат.', 'A guest sees sign-in and returns to the general chat afterwards.'))}</span></details>` : ''}
           ${body}</div></div></div>`;
     wire();
@@ -153,6 +158,21 @@ export async function chat(ctx, room) {
       const gt = e.target.closest('[data-goto]'); if (gt) { if (!flash(gt.dataset.goto)) toast(tt('Исходное сообщение старше показанных.', 'The original message is older than those shown.')); return; }
       const rp = e.target.closest('[data-reply]'); if (rp) { draft.replyTo = Number(rp.dataset.reply); await draw(); ctx.main.querySelector('#ct').focus(); return; }
       const mn = e.target.closest('[data-mention]'); if (mn) { addMention(Number(mn.dataset.mention)); return; }
+      const fw = e.target.closest('[data-fwd]');
+      if (fw) {
+        const msg = fw.closest('.msg'); const old = msg.querySelector('.fwd-pick'); if (old) { old.remove(); return; }
+        msg.insertAdjacentHTML('beforeend', `<div class="fwd-pick" role="group" aria-label="${esc(tt('Куда переслать', 'Forward to'))}"><span class="small">${esc(tt('Переслать в:', 'Forward to:'))}</span>${fwdTargets.map((r) => `<button class="btn sm light" type="button" data-fwd-to="${r}" data-fwd-id="${fw.dataset.fwd}">${ic.lock} ${esc(rt(r))}</button>`).join('')}<button class="linkbtn small" type="button" data-fwd-x>${esc(tt('Отмена', 'Cancel'))}</button></div>`);
+        return;
+      }
+      if (e.target.closest('[data-fwd-x]')) { e.target.closest('.fwd-pick').remove(); return; }
+      const ft = e.target.closest('[data-fwd-to]');
+      if (ft) {
+        const m = d.messages.find((x) => x.id === Number(ft.dataset.fwdId));
+        if (!confirm(tt(`Переслать сообщение ${m ? m.author : ''} в «${rt(ft.dataset.fwdTo)}»? Оригинал останется здесь.`, `Forward ${m ? m.author : ''}’s message to “${rt(ft.dataset.fwdTo)}”? The original stays here.`))) return;
+        try { await api(`/api/chats/${room}/messages/${ft.dataset.fwdId}/forward`, { method: 'POST', body: { to: ft.dataset.fwdTo } }); toast(tt(`Переслано в «${rt(ft.dataset.fwdTo)}»`, `Forwarded to “${rt(ft.dataset.fwdTo)}”`)); ft.closest('.fwd-pick').remove(); }
+        catch (x) { toast(errorText(x)); }
+        return;
+      }
       const del = e.target.closest('[data-del]');
       if (del) { if (!confirm(tt('Удалить сообщение? Текст и изображения скроются у всех.', 'Delete the message? Its text and images will be hidden for everyone.'))) return; try { await api(`/api/chats/${room}/messages/${del.dataset.del}`, { method: 'DELETE' }); await load(); draw(); } catch (x) { toast(errorText(x)); } return; }
       const hide = e.target.closest('[data-hide]');

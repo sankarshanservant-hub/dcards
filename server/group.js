@@ -101,7 +101,7 @@ function leave(code, deviceId) {
 function newRound(r, showDemo) {
   const step = r.step + 1;
   const members = R.members.all(r.id);
-  const patch = { phase: 'pick', order: [], index: 0, revealed: false };
+  const patch = { phase: 'pick', order: [], index: 0, revealed: false, spot: null };
   if (r.format === 'friend') {
     if (members.length < 2) return { error: 'live_too_few' };
     const m = derange(members.map((x) => x.id));
@@ -255,7 +255,7 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
       const ex = db.prepare('SELECT * FROM group_picks WHERE room_id = ? AND step = ? AND member_id = ?').get(r.id, r.step, me.id);
       if (ex) db.prepare('UPDATE group_picks SET code = ? WHERE room_id = ? AND step = ? AND member_id = ?').run(card.code, r.id, r.step, me.id);
       else db.prepare('INSERT INTO group_picks (room_id, step, member_id, code) VALUES (?, ?, ?, ?)').run(r.id, r.step, me.id, card.code);
-      maybeReveal(R.byCode.get(r.code));
+      // карты открывает ведущий кнопкой «Все выбрали — открыть карты» — сами по себе они не открываются
       return { ok: true, id: r.id };
     }
     case 'write': { // «Вопрос от карты»: свой вопрос
@@ -274,8 +274,22 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
         return { ok: true, id: r.id };
       }
       if (r.format === 'guess' && d.phase === 'guess') { save(r, { revealed: true }); return { ok: true, id: r.id }; }
-      if (d.phase === 'pick') { if (!R.picks.all(r.id, r.step).some((p) => p.code)) return { error: 'live_no_cards' }; toShow(r); return { ok: true, id: r.id }; }
+      if (d.phase === 'pick') {
+        const picked = R.picks.all(r.id, r.step).filter((p) => p.code).map((p) => p.member_id);
+        if (!picked.length) return { error: 'live_no_cards' };
+        // открыть раньше, чем выбрали все, — только явно (body.force), когда кто-то не может выбрать
+        if (!body.force && R.members.all(r.id).some((m) => !picked.includes(m.id))) return { error: 'group_not_all_picked' };
+        if (r.format === 'friend' && picked.length < 2) return { error: 'live_too_few' };
+        toShow(r); return { ok: true, id: r.id };
+      }
       return { error: 'live_bad_state' };
+    }
+    case 'spot': { // «Каждому своя карта»: показать свою карту всем (крупно на всех экранах); одновременно — только одна
+      if (r.format !== 'own' || d.phase !== 'show') return { error: 'live_bad_state' };
+      if (body.on === false) { if (d.spot && d.spot !== me.id && !host) return { error: 'group_host_only' }; save(r, { spot: null }); return { ok: true, id: r.id }; }
+      if (!R.picks.all(r.id, r.step).some((p) => p.member_id === me.id && p.code)) return { error: 'not_found' };
+      if (d.spot && d.spot !== me.id && R.members.all(r.id).some((m) => m.id === d.spot)) return { error: 'group_spot_busy' };
+      save(r, { spot: me.id }); return { ok: true, id: r.id };
     }
     case 'next': { // «Угадай»: следующая карта
       if (hostOnly()) return hostOnly();
@@ -292,12 +306,7 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
     default: return { error: 'live_bad_state' };
   }
 }
-/** Все выбрали — показываем (own/friend) или начинаем угадывание (guess). */
-function maybeReveal(r) {
-  const members = R.members.all(r.id);
-  const picked = R.picks.all(r.id, r.step).filter((p) => p.code).map((p) => p.member_id);
-  if (members.every((m) => picked.includes(m.id))) toShow(r);
-}
+/** Ведущий открыл карты: показываем (own/friend) или начинаем угадывание (guess). */
 function toShow(r) {
   const d = dataOf(r);
   if (r.format === 'guess') save(r, { phase: 'guess', order: shuffle(R.picks.all(r.id, r.step).filter((p) => p.code).map((p) => p.member_id)), index: 0, revealed: false });
@@ -323,10 +332,15 @@ function state(code, deviceId, showDemo) {
   if (r.format === 'story') out.cards = (d.cards || []).map(cardOut).filter(Boolean);
   if (['own', 'guess', 'friend'].includes(r.format)) {
     out.picked = picks.filter((p) => p.code).length;
+    out.ready = picks.filter((p) => p.code).map((p) => p.member_id); // кто уже выбрал (без самих карт)
     out.myCard = mine && mine.code ? cardOut(mine.code) : null;
     if (r.format === 'friend' && mine) out.target = name(mine.target_id);
     if (d.phase === 'pick') out.gallery = pool(showDemo || r.is_demo).map((k) => publicCard(k));
-    if (d.phase === 'show') out.shown = picks.filter((p) => p.code).map((p) => ({ name: name(p.member_id), for: r.format === 'friend' ? name(p.target_id) : null, card: cardOut(p.code) }));
+    if (d.phase === 'show') {
+      out.shown = picks.filter((p) => p.code).map((p) => ({ id: p.member_id, name: name(p.member_id), for: r.format === 'friend' ? name(p.target_id) : null, card: cardOut(p.code) }));
+      const sp = d.spot && out.shown.find((x) => x.id === d.spot);
+      out.spot = sp && members.some((m) => m.id === d.spot) ? sp : null;
+    }
     if (d.phase === 'guess' || d.phase === 'done') {
       out.total = d.order.length; out.index = d.index;
       const p = picks.find((x) => x.member_id === d.order[d.index]);

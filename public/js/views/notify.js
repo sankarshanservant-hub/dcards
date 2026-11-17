@@ -42,6 +42,7 @@ export async function settings(ctx) {
         ${sw('enabled', 'Получать уведомления', 'Receive notifications')}
         ${sw('replies', 'Ответы на мои сообщения', 'Replies to my messages', !p.enabled)}
         ${sw('mentions', 'Упоминания меня', 'Mentions of me', !p.enabled)}
+        ${sw('works', 'Решения по моим работам', 'Decisions on my works', !p.enabled)}
         <label class="switch-row muted"><span>${esc(tt('Личные сообщения', 'Direct messages'))}<small>${esc(tt('Личной переписки пока нет — это следующий этап.', 'There are no direct messages yet — this is the next stage.'))}</small></span><input type="checkbox" role="switch" disabled></label>
         <p class="small muted" style="margin:6px 0 0">${esc(tt('Если сообщение — и ответ, и упоминание, придёт одно уведомление. Настройки действуют, когда уведомления включены на устройстве.', 'A message that is both a reply and a mention sends one notification. Settings apply once notifications are on for a device.'))}</p></section>
       <section class="card-ui flat stack" style="gap:8px"><h2 style="margin:0 0 4px;font-size:1.1rem">${esc(tt('Чаты', 'Chats'))}</h2>

@@ -10,7 +10,14 @@ export function isViewerOpen() { return !!current; }
 
 /** Вызывается из общего обработчика popstate. */
 export function handleViewerPopState() {
-  if (current && !(history.state && history.state.viewer)) teardown();
+  if (!current) return;
+  if (!(history.state && history.state.viewer)) teardown();
+  else if (!history.state.q && current.onCardState) current.onCardState(); // «назад» из вопросов (кнопка или жест iPhone) — к карте
+}
+/** Закрыть просмотр: шаг назад по истории (из вопросов — сразу два, мимо карты). */
+export function closeViewer() {
+  if (!current) return;
+  history.go(history.state && history.state.q ? -2 : -1);
 }
 
 /** Почему выбор сохранён, но не идёт в общий счёт. */
@@ -55,12 +62,12 @@ export function openViewer(opts) {
         <button type="button" role="tab" data-view="card" aria-selected="true">${esc(tt('Карта', 'Card'))}</button>
         <button type="button" role="tab" data-view="questions" aria-selected="false">${esc(tt('Вопросы', 'Questions'))}</button></div>` : '<span class="viewer-counter" data-counter></span>'}
       <span class="vt-end">
-        <button class="full-btn" type="button" data-full><span aria-hidden="true">${icons.expand}</span><span class="fb-text">${esc(tt('На весь экран', 'Full screen'))}</span></button>
+        <button class="icon-btn vt-nav" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
+        <button class="icon-btn vt-nav" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>
+        <button class="icon-btn full-btn" type="button" data-full aria-label="${esc(tt('На весь экран', 'Full screen'))}" title="${esc(tt('На весь экран', 'Full screen'))}">${icons.expand}</button>
         ${withQ ? '' : `<button class="icon-btn" type="button" data-info aria-label="${esc(t('viewer.info'))}" aria-expanded="false">${icons.info}</button>`}
       </span>
     </div>
-    <button class="viewer-nav viewer-nav--prev chrome" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
-    <button class="viewer-nav viewer-nav--next chrome" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>
     ${withQ ? '<div class="viewer-bottom chrome" data-bottom></div>' : ''}
     <div class="viewer-sheet" data-sheet hidden></div>
     ${withQ ? `<section class="qpanel" data-qpanel hidden aria-labelledby="qp-title" tabindex="-1"></section>` : ''}`;
@@ -87,6 +94,7 @@ export function openViewer(opts) {
     el, opts, opener,
     get code() { return opts.cards[index].code; },
     refreshBottom: renderBottom,
+    onCardState: () => { if (mode.view === 'questions') setView('card', true, true); },
   };
   current = state;
 
@@ -122,10 +130,13 @@ export function openViewer(opts) {
     clamp(); apply(animate);
   }
   const rel = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2]; };
-  // Свайп по карте влево — вопросы (16.11.2026); листать карты — стрелками по бокам (в режиме разговора карты не листаются).
-  // В просмотре без вопросов (кабинеты) свайп листает карты, как раньше.
+  // 17.11.2026: свайп «карта ↔ вопросы» убран — на iPhone он путался с системным жестом «назад» от края экрана и закрывал
+  // просмотр. Переключение — кнопками «Карта / Вопросы»; системный «назад» из вопросов возвращает к карте (своя запись в истории).
+  // Горизонтальный свайп по карте листает галерею, только если начат не у края экрана (у края — жест браузера).
+  // В экране разговора карта одна и не листается.
   const canFlip = () => opts.cards.length > 1 && !mode.talk;
-  const swipeToQuestions = () => withQ;
+  const swipeToQuestions = () => false;
+  const EDGE = 28;
 
   const pointers = new Map();
   let gesture = null; let lastTap = 0; let tapTimer = null;
@@ -136,7 +147,7 @@ export function openViewer(opts) {
       const [a, b] = [...pointers.values()];
       gesture = { type: 'pinch', d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: z.s };
     } else if (pointers.size === 1) {
-      gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, x: z.x, y: z.y, moved: false };
+      gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, x: z.x, y: z.y, moved: false, edge: e.clientX < EDGE || e.clientX > window.innerWidth - EDGE };
     }
   });
   stage.addEventListener('pointermove', (e) => {
@@ -151,7 +162,7 @@ export function openViewer(opts) {
       const dx = e.clientX - gesture.sx; const dy = e.clientY - gesture.sy;
       if (Math.abs(dx) + Math.abs(dy) > 6) gesture.moved = true;
       if (z.s > 1.01) { z.x = gesture.x + dx; z.y = gesture.y + dy; clamp(); apply(false); }
-      else if (swipeToQuestions() ? dx < 0 : canFlip()) { z.x = dx * 0.5; apply(false); } // лёгкий отклик на свайп
+      else if (canFlip() && !gesture.edge) { z.x = dx * 0.5; apply(false); } // лёгкий отклик на свайп
     }
   });
   const end = (e) => {
@@ -168,12 +179,11 @@ export function openViewer(opts) {
     const dx = e.clientX - g.sx; const dy = e.clientY - g.sy;
     if (z.s <= 1.01 && g.moved) {
       const horiz = Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2;
-      if (horiz && swipeToQuestions()) { z.x = 0; apply(true); if (dx < 0) setView('questions'); return; }
-      if (horiz && canFlip()) { go(dx < 0 ? 1 : -1); return; }
+      if (horiz && canFlip() && !g.edge) { go(dx < 0 ? 1 : -1); return; }
       z.x = 0; apply(true); return;
     }
     if (g.moved || e.type === 'pointercancel') return;
-    // касание: двойное — увеличить/уменьшить, одиночное — спрятать/показать элементы управления (не на весь экран)
+    // касание: двойное — увеличить/уменьшить; одиночное — на весь экран (в полноэкранном — спрятать/показать кнопки)
     const now = Date.now();
     if (now - lastTap < 300) {
       clearTimeout(tapTimer); lastTap = 0;
@@ -181,7 +191,7 @@ export function openViewer(opts) {
       zoomTo(z.s > 1.01 ? 1 : 2.5, px, py, true);
     } else {
       lastTap = now;
-      tapTimer = setTimeout(() => { if (!mode.full) el.classList.toggle('chrome-hidden'); }, 280);
+      tapTimer = setTimeout(() => { if (z.s > 1.01) return; if (!mode.full) setFull(true); else el.classList.toggle('chrome-hidden'); }, 280);
     }
   };
   stage.addEventListener('pointerup', end);
@@ -208,7 +218,7 @@ export function openViewer(opts) {
     if (!sheet.hidden) renderSheet();
     if (opts.onChange) opts.onChange(c.code);
   }
-  function syncNav() { $('[data-prev]').hidden = $('[data-next]').hidden = !canFlip(); }
+  function syncNav() { $('[data-prev]').hidden = $('[data-next]').hidden = !canFlip() || (mode.view === 'questions' && !el.classList.contains('q-side')); }
   function go(d) {
     if (!canFlip()) return;
     index = (index + d + opts.cards.length) % opts.cards.length;
@@ -218,8 +228,13 @@ export function openViewer(opts) {
 
   // ---------- режимы: «Карта / Вопросы», на весь экран, разговор ----------
   const wide = () => window.matchMedia('(min-width: 980px)').matches;
-  function setView(v, focus = true) {
+  function setView(v, focus = true, fromHistory = false) {
     if (!withQ) return;
+    // вопросы — своя запись в истории: «назад» (кнопка браузера, жест iPhone) возвращает к карте, а не закрывает просмотр
+    if (!fromHistory) {
+      if (v === 'questions' && !(history.state && history.state.q)) history.pushState({ viewer: true, q: true }, '', location.href);
+      else if (v === 'card' && history.state && history.state.q) { history.back(); return; }
+    }
     if (v === 'questions' && !qpanel.innerHTML) renderQ();
     mode.view = v;
     el.classList.toggle('view-questions', v === 'questions');
@@ -230,6 +245,7 @@ export function openViewer(opts) {
       restoreScroll();
       if (focus) qpanel.focus({ preventScroll: true });
     } else if (focus) { const b = el.querySelector('.vt-seg [data-view="card"]'); if (b) b.focus({ preventScroll: true }); }
+    syncNav();
     requestAnimationFrame(syncBottom);
   }
   async function setFull(on) {
@@ -298,7 +314,7 @@ export function openViewer(opts) {
       if (mode.talk && info && !info.chosenByMe) { mode.talk = false; el.classList.remove('is-talk'); syncNav(); }
       if (mode.talk) {
         bottom.innerHTML = `${talkBadge()}${questionsBtn(true)}
-          <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-lib-unchoose', t('viewer.cancel'), t('viewer.cancel'))}<a class="link-btn" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Комментарии', 'Comments'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a></div>
+          <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-lib-unchoose', t('viewer.cancel'), t('viewer.cancel'))}</div>
           ${ui.note ? `<p class="vb-note">${esc(ui.note)}</p>` : ''}`;
       } else {
         const g = START_GUIDES.find((x) => x.key === ui.guideKey);
@@ -380,15 +396,6 @@ export function openViewer(opts) {
         group[(i + (e.key === 'ArrowRight' ? 1 : -1) + group.length) % group.length].click();
       }
     });
-    // Свайп вправо по вопросам — обратно к карте; вертикальный жест прокручивает список (touch-action: pan-y).
-    let qsw = null;
-    qpanel.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') qsw = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
-    qpanel.addEventListener('pointercancel', () => { qsw = null; });
-    qpanel.addEventListener('pointerup', (e) => {
-      if (!qsw || qsw.id !== e.pointerId) return;
-      const dx = e.clientX - qsw.x; const dy = e.clientY - qsw.y; qsw = null;
-      if (dx > 60 && Math.abs(dx) > Math.abs(dy) * 1.2 && !el.classList.contains('q-side')) setView('card');
-    });
     qpanel.addEventListener('scroll', () => saveScroll(), true);
   }
   el.querySelectorAll('.vt-seg [data-view]').forEach((b) => b.addEventListener('click', () => (b.dataset.view === 'questions' ? openQ() : setView('card'))));
@@ -424,7 +431,7 @@ export function openViewer(opts) {
       const a = e.target.closest('a[data-discuss]');
       if (a) { e.preventDefault(); const href = a.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
       const btn = e.target.closest('button'); if (!btn) return;
-      if (btn.hasAttribute('data-questions')) { openQ(qs.format || (opts.mode === 'collection' ? 'pair' : ui.guideKey)); return; }
+      if (btn.hasAttribute('data-questions')) { openQ(opts.mode === 'collection' ? (qs.format || 'pair') : (ui.guideKey || qs.format)); return; }
       if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); focusIn('[data-guide]'); return; }
       if (btn.dataset.g) { ui.guideKey = btn.dataset.g; ui.err = ''; renderBottom(); focusIn(`[data-g="${ui.guideKey}"]`); return; }
       if (btn.hasAttribute('data-copy')) { copyLink(); return; }
@@ -503,7 +510,7 @@ export function openViewer(opts) {
   }
 
   // ---------- кнопки и клавиатура ----------
-  $('[data-close]').addEventListener('click', () => history.back());
+  $('[data-close]').addEventListener('click', () => closeViewer());
   $('[data-full]').addEventListener('click', () => setFull(true));
   $('[data-unfull]').addEventListener('click', () => setFull(false));
   const topInfo = el.querySelector('.viewer-top [data-info]'); if (topInfo) topInfo.addEventListener('click', () => toggleSheet());
@@ -521,7 +528,7 @@ export function openViewer(opts) {
       if (!sheet.hidden) toggleSheet(false);
       else if (mode.view === 'questions') setView('card');
       else if (mode.full) setFull(false);
-      else history.back();
+      else closeViewer();
       return;
     }
     if (inQ || e.target.closest('.vt-seg') || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;

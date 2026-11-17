@@ -5,7 +5,7 @@ import { openViewer } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, rolesText, demoPill, WORK_STATUS, statusPill } from '../ui.js';
 import { langName } from './meetings.js';
 
-const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
+const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['works', 'Работы', 'Works'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
   ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters']];
 const tabs = (cur) => `<div class="chips" style="margin-bottom:18px">${TABS.map(([k, ru, en]) => `<a class="chip ${cur === k ? 'on' : ''}" href="${u('/admin' + (k ? '/' + k : ''))}">${esc(tt(ru, en))}</a>`).join('')}</div>`;
 const guard = (ctx) => {
@@ -53,7 +53,39 @@ export async function section(ctx, name) {
   try { await SECTIONS[name](ctx); } catch (e) { if (ctx.alive()) failed(ctx.main, e, ctx.rerender); }
 }
 
+const ACTION_LABEL = { recommend: () => tt('Рекомендована кураторами', 'Recommended by curators'), approve: () => tt('Опубликована', 'Published'), return: () => tt('Возвращена на доработку', 'Returned for changes'), reject: () => tt('Отклонена', 'Declined') };
 const SECTIONS = {
+  // Работы: «Одобрено кураторами» — только рекомендации, окончательное решение здесь; ниже — все решения (автор, дата, причины).
+  async works(ctx) {
+    const d = await api('/api/admin/works');
+    if (!ctx.alive()) return;
+    const when = (x) => fmtDate(x, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const sec = shell(ctx, 'works', tt('Работы', 'Works'), `
+      <h2 style="margin:0">${esc(tt('Одобрено кураторами', 'Approved by curators'))} · ${d.recommended.length}</h2>
+      <p class="small muted" style="margin:4px 0 12px">${esc(tt('Кураторы рекомендовали эти работы к публикации. В галерее работа (или новая версия карты) появится только после вашего решения, тогда же автор получит уведомление.', 'Curators recommended these works for publication. A work (or a new card version) appears in the gallery only after your decision; the artist is notified then.'))}</p>
+      ${d.recommended.length ? `<div class="list">${d.recommended.map((w) => `<div class="work" data-w="${w.id}">
+        <div class="thumb">${w.version ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</div>
+        <div class="body stack" style="gap:6px"><div class="row" style="gap:6px">${demoPill(w.isDemo)}${w.kind === 'replacement' ? `<span class="pill">${esc(tt('Новая версия', 'New version'))} ${esc(w.targetCard.code)} · ${esc(w.recommendedType === 'fix' ? tt('исправление той же карты', 'fix of the same card') : tt('новая карта', 'new card'))}</span>` : ''}</div>
+          <b>${esc(tt('Работа', 'Work'))} №${w.id} · ${esc(w.artist)}</b>
+          <span class="small muted">${esc(tt('рекомендовал(а)', 'recommended by'))} ${esc(w.recommendedBy || '—')} · ${esc(when(w.recommendedAt))}</span>
+          <div class="row"><button class="btn yellow sm" type="button" data-publish="${w.id}">${esc(tt('Опубликовать', 'Publish'))}</button>
+            <a class="btn light sm" href="${u('/curator/works/' + w.id)}">${esc(tt('Открыть работу и обсуждение', 'Open the work and discussion'))}</a></div></div></div>`).join('')}</div>`
+        : `<p class="empty">${esc(tt('Рекомендаций, ждущих решения, нет.', 'No recommendations are waiting.'))}</p>`}
+      <h2 style="margin:26px 0 0">${esc(tt('Решения по работам', 'Decisions on works'))}</h2>
+      <p class="small muted" style="margin:4px 0 12px">${esc(tt('Рекомендации, публикации, возвраты и отклонения — последние 100. Возвраты и отклонения кураторы делают сами, подтверждать их не нужно.', 'Recommendations, publications, returns and declines — the last 100. Curators return and decline on their own; no confirmation is needed.'))}</p>
+      ${d.decisions.length ? `<div class="list">${d.decisions.map((x) => `<a class="work" href="${u('/curator/works/' + x.workId)}" style="text-decoration:none;color:inherit">
+        <div class="thumb">${x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy">` : ''}</div>
+        <div class="body"><div class="row" style="gap:6px"><span class="pill ${x.action === 'approve' ? 'mint' : x.action === 'recommend' ? 'yellow' : 'red'}">${esc((ACTION_LABEL[x.action] || (() => x.action))())}</span>${demoPill(x.isDemo)}</div>
+          <b>${esc(tt('Работа', 'Work'))} №${x.workId} · ${esc(x.artist)}</b>
+          <span class="small muted">${esc(x.actor)} · ${esc(when(x.createdAt))} · ${esc(tt('версия', 'version'))} ${x.versionN}</span>
+          ${x.criteria.length ? `<ul class="reasons small">${x.criteria.map((c) => `<li><b>${c.number}.</b> ${esc(c.text)}</li>`).join('')}</ul>` : ''}
+          ${x.comment ? `<span class="small">${esc(x.comment)}</span>` : ''}</div></a>`).join('')}</div>` : `<p class="empty">${esc(tt('Решений пока нет.', 'No decisions yet.'))}</p>`}`);
+    sec.querySelectorAll('[data-publish]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { const r = await api(`/api/admin/works/${b.dataset.publish}/decide`, { method: 'POST', body: { action: 'publish' } }); toast(tt(`Опубликовано: ${r.cardCode}`, `Published: ${r.cardCode}`)); ctx.rerender(); }
+      catch (x) { b.disabled = false; toast(errorText(x)); }
+    }));
+  },
   async users(ctx) {
     const { users } = await api('/api/admin/users');
     if (!ctx.alive()) return;
@@ -91,7 +123,9 @@ const SECTIONS = {
         ${decide('c', a, tt('Одобрить и выдать роль куратора', 'Approve and grant the curator role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль куратора нет.', 'No curator applications.'))}</p>`}
       <h3 style="margin-top:22px">${esc(tt('Заявки на роль фасилитатора', 'Facilitator applications'))}</h3>
       ${applications.length ? `<div class="list">${applications.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
-        <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.city || '—')} · ${esc(tt('глав', 'chapters'))}: ${a.courseDone}/8 · ${esc(tt('проверка', 'quiz'))}: ${a.quizPassed ? '✓' : '—'}</span>
+        <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.city || '—')} · ${esc(tt('глав', 'chapters'))}: ${a.courseDone}/8 · ${esc(tt('проверка', 'quiz'))}: ${a.quizPassed ? '✓' : '—'}${a.quizAttempts ? ` · ${esc(tt('попыток', 'attempts'))}: ${a.quizAttempts}` : ''}</span>
+        ${a.manualReview ? `<span class="pill demo" style="justify-self:start;margin-top:4px">${esc(tt('ручная проверка ответов', 'manual review of answers'))}</span>
+          <ol class="small" style="margin:6px 0 0;padding-left:1.3em">${(a.answers || []).map((x) => `<li>${esc(x.text)}<br><span class="${x.right ? '' : 'warn'}">${x.right ? '✓' : '✗'} ${esc(x.chosen || tt('нет ответа', 'no answer'))}</span></li>`).join('')}</ol>` : ''}
         ${a.about ? `<p class="small" style="margin:4px 0 0">${esc(a.about)}</p>` : ''}
         ${decide('f', a, tt('Одобрить и выдать роль', 'Approve and grant role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль фасилитатора нет.', 'No facilitator applications.'))}</p>`}
       <h3 style="margin-top:22px">${esc(tt('Запросы печатной колоды', 'Printed deck requests'))}</h3>

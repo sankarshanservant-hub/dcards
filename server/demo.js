@@ -34,9 +34,9 @@ async function seed() {
   for (let i = 0; i < 5; i++) files.push({ buffer: await placeholder(i), originalname: `demo-${i + 1}.png` });
   const r = await works.submit(artist, files, { termsAccepted: true, termsVersion: require('./config').termsVersion });
   const [w1, w2, w3, w4, w5] = r.ids;
-  works.decide(curator, w1, { action: 'approve' });
-  works.decide(curator, w2, { action: 'approve' });
-  works.decide(curator, w3, { action: 'approve' });
+  works.decide(curator, w1, { action: 'recommend' }); works.adminDecide(curator, w1, { action: 'publish' });
+  works.decide(curator, w2, { action: 'recommend' }); works.adminDecide(curator, w2, { action: 'publish' });
+  works.decide(curator, w3, { action: 'recommend' }); works.adminDecide(curator, w3, { action: 'publish' });
   works.decide(curator, w4, { action: 'return', criteria: [2], comment: 'Пример возврата: укажите, что нужно поправить.' });
   works.decide(curator, w5, { action: 'return', criteria: [1, 3] });
   // Ещё две работы в очереди: одна новая, одна вынесена на обсуждение кураторов.

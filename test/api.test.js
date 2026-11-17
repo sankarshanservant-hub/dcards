@@ -108,16 +108,29 @@ test('Сценарий 1: подача, возврат по критерию, и
   assert.equal(sub.status, 201);
   const [w1, w2, w3, w4, w5] = sub.json.ids;
   const decide = (id, body, cookie = curatorU.cookie) => call('POST', `/api/curation/works/${id}/decide`, body, { cookie });
+  const publish = (id, body = {}) => call('POST', `/api/admin/works/${id}/decide`, { action: 'publish', ...body }, { cookie: owner.cookie });
   // возврат без критерия нельзя
   assert.equal((await decide(w4, { action: 'return' })).json.error, 'criteria_required');
   // три одобрены, две возвращены — статусы независимы
-  for (const id of [w1, w2, w3]) assert.equal((await decide(id, { action: 'approve' })).status, 200);
+  // куратор только рекомендует: работа уходит в очередь администратора и в галерею пока не попадает
+  for (const id of [w1, w2, w3]) assert.equal((await decide(id, { action: 'recommend' })).status, 200);
+  assert.equal((await decide(w1, { action: 'recommend' })).json.error, 'already_recommended');
+  assert.equal((await call('GET', `/api/artist/works`, null, { cookie: artist.cookie })).json.works.find((w) => w.id === w1).status, 'recommended');
+  assert.equal((await call('POST', `/api/admin/works/${w1}/decide`, { action: 'publish' }, { cookie: curatorU.cookie })).status, 403, 'куратор не публикует напрямую');
+  const aq = (await call('GET', '/api/admin/works', null, { cookie: owner.cookie })).json;
+  assert.deepEqual(aq.recommended.map((w) => w.id).sort(), [w1, w2, w3].sort(), 'в очереди администратора — только рекомендации');
+  assert.ok(!(await call('GET', '/api/curation/queue', null, { cookie: curatorU.cookie })).json.queue.some((w) => w.id === w1), 'из очереди кураторов ушла');
+  const sentPush = []; require('../server/push').setSender(async (sub, payload) => { sentPush.push(JSON.parse(payload)); });
+  for (const id of [w1, w2, w3]) assert.equal((await publish(id)).status, 200);
   assert.equal((await decide(w4, { action: 'return', criteria: [2], comment: 'Поправьте поля' })).status, 200);
   assert.equal((await decide(w5, { action: 'reject', criteria: [1, 3] })).status, 200);
   const mine = await call('GET', '/api/artist/works', null, { cookie: artist.cookie });
   const st = Object.fromEntries(mine.json.works.map((w) => [w.id, w.status]));
   assert.deepEqual([st[w1], st[w2], st[w3], st[w4], st[w5]], ['published', 'published', 'published', 'needs_changes', 'rejected']);
   const w4data = mine.json.works.find((w) => w.id === w4);
+  const log = (await call('GET', '/api/admin/works', null, { cookie: owner.cookie })).json.decisions;
+  assert.ok(log.some((x) => x.workId === w4 && x.action === 'return' && x.criteria[0].number === 2 && x.artist), 'администратор видит возвраты с причиной и автором');
+  assert.ok(log.some((x) => x.workId === w5 && x.action === 'reject'), 'и отклонения');
   assert.equal(w4data.lastResult.criteria[0].number, 2, 'художник видит номер критерия');
   assert.ok(w4data.lastResult.criteria[0].text.length > 0, 'и его расшифровку');
   // исправление в ту же заявку → снова на рассмотрении
@@ -127,11 +140,15 @@ test('Сценарий 1: подача, возврат по критерию, и
   assert.equal(d.json.status, 'submitted');
   assert.equal(d.json.versions.length, 2, 'куратор видит обе версии для сравнения');
   assert.equal(d.json.submissionId, w4data.submissionId);
-  const ok = await decide(w4, { action: 'approve' });
+  await decide(w4, { action: 'approve' }); // прежнее название действия — тоже рекомендация
+  assert.ok(!(await call('GET', '/api/cards')).json.cards.some((c) => c.author === 'Художник Тест' && c.code === 'DC-0045'), 'до решения администратора в галерее нет');
+  const ok = await publish(w4);
   publishedCode = ok.json.cardCode;
   const lib = await call('GET', '/api/cards');
   assert.ok(lib.json.cards.some((c) => c.code === publishedCode), 'карта появилась в библиотеке');
   assert.equal((await call('GET', `/api/cards/${publishedCode}`)).json.author, 'Художник Тест');
+  // автору — уведомления о решениях (только если у него есть подписка; здесь — проверка через журнал, без сети)
+  assert.ok(require('../server/db').prepare('SELECT COUNT(*) AS n FROM push_work_log').get().n >= 5, 'по одному уведомлению на решение: 4 публикации, возврат, отклонение');
   // изображения работ на рассмотрении не видны посторонним
   const thumb = d.json.versions[0].thumb;
   assert.equal((await call('GET', thumb)).status, 404);
@@ -170,14 +187,17 @@ test('Сценарий 4: новая версия — «исправление»
   // до одобрения опубликована старая версия
   assert.equal((await call('GET', `/api/cards/${publishedCode}`)).json.full, before.json.full);
   assert.equal((await call('POST', `/api/curation/works/${rep.json.id}/decide`, { action: 'approve' }, { cookie: curatorU.cookie })).json.error, 'replacement_type_required');
-  const fixed = await call('POST', `/api/curation/works/${rep.json.id}/decide`, { action: 'approve', replacementType: 'fix' }, { cookie: curatorU.cookie });
+  await call('POST', `/api/curation/works/${rep.json.id}/decide`, { action: 'recommend', replacementType: 'fix' }, { cookie: curatorU.cookie });
+  assert.equal((await call('GET', `/api/cards/${publishedCode}`)).json.full, before.json.full, 'после рекомендации — всё ещё прежняя версия');
+  const fixed = await call('POST', `/api/admin/works/${rep.json.id}/decide`, { action: 'publish' }, { cookie: owner.cookie });
   assert.equal(fixed.json.cardCode, publishedCode, 'номер сохранён');
   const after = await call('GET', `/api/cards/${publishedCode}`);
   assert.notEqual(after.json.full, before.json.full, 'изображение обновлено');
   assert.equal((await call('GET', `/api/cards/${publishedCode}/comments`)).json.comments.length, 1, 'обсуждение сохранено');
   // существенно новая работа
   const rep2 = await call('POST', `/api/artist/cards/${publishedCode}/replace`, null, { cookie: artist.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['image', await png('#fedcba'), 'v3.png']]) });
-  const asNew = await call('POST', `/api/curation/works/${rep2.json.id}/decide`, { action: 'approve', replacementType: 'new' }, { cookie: curatorU.cookie });
+  await call('POST', `/api/curation/works/${rep2.json.id}/decide`, { action: 'approve', replacementType: 'new' }, { cookie: curatorU.cookie });
+  const asNew = await call('POST', `/api/admin/works/${rep2.json.id}/decide`, { action: 'publish' }, { cookie: owner.cookie });
   assert.notEqual(asNew.json.cardCode, publishedCode, 'новый номер');
   assert.equal((await call('GET', `/api/cards/${asNew.json.cardCode}/comments`)).json.comments.length, 0, 'своё обсуждение');
   assert.equal((await call('GET', `/api/cards/${publishedCode}`)).status, 200, 'прежняя карта осталась');
@@ -330,12 +350,55 @@ test('16: курс, проверка, заявка, одобрение адми�
   await call('POST', `/api/admin/applications/${u.user.id}/decide`, { approve: true }, { cookie: owner.cookie });
   assert.ok((await call('GET', '/api/me', null, { cookie: u.cookie })).json.user.roles.includes('facilitator'));
 });
+test('Проверка фасилитатора: попытки, номера ошибок, главы, ручная проверка; роль только после одобрения', async () => {
+  const u = await emailLogin('quizfac@example.org', 'Квиз');
+  const Q = require('../server/community').QUESTIONS;
+  await call('POST', '/api/fac/application', null, { cookie: u.cookie });
+  const wrongAns = Object.fromEntries(Q.map((q, i) => [q.id, i === 1 ? (q.answer + 1) % q.options.length : q.answer]));
+  assert.equal((await call('POST', '/api/fac/application/quiz', { answers: wrongAns }, { cookie: u.cookie })).json.error, 'course_not_finished', 'сначала руководство');
+  await call('PUT', '/api/fac/application', { courseDone: [0, 1, 2, 3, 4, 5, 6, 7] }, { cookie: u.cookie });
+  const tryQ = () => call('POST', '/api/fac/application/quiz', { answers: wrongAns }, { cookie: u.cookie }).then((r) => r.json.quiz);
+  let q = await tryQ(); assert.equal(q.correct, 9); assert.equal(q.wrongNumbers, undefined, '1-я: только сколько верно');
+  q = await tryQ(); assert.equal(q.wrongNumbers, undefined, '2-я: только сколько верно');
+  q = await tryQ(); assert.deepEqual(q.wrongNumbers, [2], '3-я неудачная: номера вопросов'); assert.equal(q.chapters, undefined);
+  assert.equal((await call('POST', '/api/fac/application/manual', {}, { cookie: u.cookie })).json.error, 'manual_not_available');
+  q = await tryQ(); assert.ok(q.chapters['2'].length, '4-я: главы к вопросу'); assert.equal(q.canManual, false);
+  q = await tryQ(); assert.equal(q.canManual, true, '5-я: ручная проверка, даже при одной ошибке');
+  const me = (await call('GET', '/api/fac/application', null, { cookie: u.cookie })).json.application;
+  assert.equal(me.quiz.attempts, 5, 'состояние переживает перезагрузку'); assert.equal(me.answers[Q[1].id], wrongAns[Q[1].id], 'ответы сохранены');
+  assert.equal((await call('POST', '/api/fac/application/submit', null, { cookie: u.cookie })).json.error, 'quiz_not_passed');
+  assert.equal((await call('POST', '/api/fac/application/manual', { city: 'Казань', about: 'Хочу проводить' }, { cookie: u.cookie })).status, 200);
+  assert.ok(!(await call('GET', '/api/me', null, { cookie: u.cookie })).json.user.roles.includes('facilitator'), 'ручная отправка роль не даёт');
+  const app = (await call('GET', '/api/admin/applications', null, { cookie: owner.cookie })).json.applications.find((a) => a.userId === u.user.id);
+  assert.equal(app.status, 'submitted'); assert.ok(app.manualReview); assert.equal(app.answers.filter((x) => !x.right).length, 1, 'администратор видит ответы');
+  // успешная проверка у другого — сразу к заявке, роль тоже только после одобрения
+  const v = await emailLogin('quizfac2@example.org', 'Квиз2');
+  await call('POST', '/api/fac/application', null, { cookie: v.cookie });
+  await call('PUT', '/api/fac/application', { courseDone: [0, 1, 2, 3, 4, 5, 6, 7] }, { cookie: v.cookie });
+  const ok = (await call('POST', '/api/fac/application/quiz', { answers: Object.fromEntries(Q.map((x) => [x.id, x.answer])) }, { cookie: v.cookie })).json.quiz;
+  assert.ok(ok.passed);
+  assert.equal((await call('POST', '/api/fac/application/submit', null, { cookie: v.cookie })).status, 200);
+  assert.ok(!(await call('GET', '/api/me', null, { cookie: v.cookie })).json.user.roles.includes('facilitator'));
+});
 test('17: чаты — сообщения в своём пространстве, доступ по ролям, администратор видит оба', async () => {
   assert.equal((await call('POST', '/api/chats/curators', { text: 'Коллеги, привет' }, { cookie: curatorU.cookie })).status, 201);
   assert.equal((await call('POST', '/api/chats/facilitators', { text: 'Всем привет' }, { cookie: facil.cookie })).status, 201);
   assert.ok((await call('GET', '/api/chats/curators', null, { cookie: owner.cookie })).json.messages.some((m) => m.text === 'Коллеги, привет'));
   assert.equal((await call('GET', '/api/chats/facilitators', null, { cookie: owner.cookie })).json.messages.length, 1);
   assert.equal((await call('GET', '/api/chats/facilitators', null, { cookie: curatorU.cookie })).status, 403);
+});
+
+test('Переслать: из общего — в доступный закрытый чат, автор и ссылка на оригинал; закрытое в общий не пересылается', async () => {
+  const m = await call('POST', '/api/chats/general', { text: 'Кто знает хороший зал в Казани?' }, { cookie: visitor.cookie });
+  const id = m.json.id;
+  assert.equal((await call('POST', `/api/chats/general/messages/${id}/forward`, { to: 'curators' }, { cookie: visitor.cookie })).status, 403, 'без роли — нельзя');
+  const f = await call('POST', `/api/chats/general/messages/${id}/forward`, { to: 'facilitators' }, { cookie: facil.cookie });
+  assert.equal(f.status, 201);
+  const fm = (await call('GET', '/api/chats/facilitators', null, { cookie: facil.cookie })).json.messages.find((x) => x.id === f.json.id);
+  assert.equal(fm.text, 'Кто знает хороший зал в Казани?'); assert.equal(fm.forwardOf.id, id); assert.equal(fm.forwardOf.room, 'general');
+  assert.ok((await call('GET', '/api/chats/general', null, { cookie: facil.cookie })).json.messages.some((x) => x.id === id), 'оригинал на месте');
+  assert.equal((await call('POST', `/api/chats/facilitators/messages/${f.json.id}/forward`, { to: 'general' }, { cookie: facil.cookie })).json.error, 'forward_not_allowed', 'закрытое в общий — нет');
+  assert.equal((await call('POST', `/api/chats/general/messages/${id}/forward`, { to: 'general' }, { cookie: facil.cookie })).json.error, 'bad_room');
 });
 
 // ---------- демо-данные отделены от реальных ----------
@@ -806,23 +869,40 @@ test('Игры компанией: комната по коду, одна кар
   const g = (await st(c, 2)).gallery; assert.ok(g.length >= 3);
   await act(c, 1, 'pick', { code: g[0].code }); await act(c, 2, 'pick', { code: g[0].code });
   assert.equal((await st(c, 3)).shown, undefined, 'чужие карты скрыты до общего раскрытия');
+  assert.deepEqual((await st(c, 1)).ready.length, 2, 'ведущий видит готовность');
+  assert.equal((await act(c, 1, 'reveal')).json.error, 'group_not_all_picked', 'раньше времени не открыть');
   await act(c, 3, 'pick', { code: g[1].code });
-  const sh = (await st(c, 2)).shown; assert.equal(sh.length, 3, 'все выбрали — карты открылись');
+  assert.equal((await st(c, 2)).phase, 'pick', 'сами карты не открываются — открывает ведущий');
+  assert.equal((await act(c, 2, 'reveal')).json.error, 'group_host_only');
+  await act(c, 1, 'reveal');
+  const sh = (await st(c, 2)).shown; assert.equal(sh.length, 3, 'ведущий открыл — карты видны');
   assert.ok(sh.every((x) => x.name && x.card));
+  // общий показ: одна карта за раз, снимает автор или ведущий
+  await act(c, 2, 'spot', { on: true });
+  assert.equal((await st(c, 3)).spot.name, 'Друг 2', 'карта видна крупно всем');
+  assert.equal((await act(c, 3, 'spot', { on: true })).json.error, 'group_spot_busy', 'не два показа сразу');
+  assert.equal((await act(c, 3, 'spot', { on: false })).json.error, 'group_host_only');
+  await act(c, 2, 'spot', { on: false }); assert.equal((await st(c, 1)).spot, null);
+  await act(c, 3, 'spot', { on: true }); await act(c, 1, 'again');
+  const nr = await st(c, 3); assert.equal(nr.phase, 'pick'); assert.equal(nr.myCard, null, 'новый круг — новый выбор'); assert.equal(nr.members.length, 3, 'состав тот же');
   // угадай, кто выбрал: по одной, автор открывается по кнопке
   c = await room('guess');
   await act(c, 1, 'start');
   for (const i of [1, 2, 3]) await act(c, i, 'pick', { code: g[i - 1].code });
+  await act(c, 1, 'reveal');
   let s2 = await st(c, 2); assert.equal(s2.phase, 'guess'); assert.ok(s2.current && !s2.author, 'автор скрыт');
   await act(c, 1, 'reveal'); s2 = await st(c, 2); assert.ok(s2.author, 'автор открыт');
   await act(c, 1, 'next'); await act(c, 1, 'next'); await act(c, 1, 'next');
   assert.equal((await st(c, 3)).phase, 'done');
-  // карта для друга: у каждого свой адресат, не он сам
+  // карта для друга: один не начнёт; у каждого свой адресат, не он сам
+  c = await room('friend', 1);
+  assert.equal((await act(c, 1, 'start')).json.error, 'live_too_few', 'для друга нужно хотя бы двое');
   c = await room('friend', 4);
   await act(c, 1, 'start');
   const targets = []; for (const i of [1, 2, 3, 4]) { const x = await st(c, i); assert.ok(x.target && x.target !== x.me.name, 'адресат — другой человек'); targets.push(x.target); }
   assert.equal(new Set(targets).size, 4, 'каждый получает карту ровно от одного');
   for (const i of [1, 2, 3, 4]) await act(c, i, 'pick', { code: g[0].code });
+  await act(c, 1, 'reveal');
   assert.ok((await st(c, 1)).shown.every((x) => x.for), 'видно, кому какая карта');
   // история по кругу
   c = await room('story');

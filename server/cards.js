@@ -68,11 +68,14 @@ async function processImage(buffer, originalName = '', dir = '') {
   const base = dir ? path.join(config.mediaDir, dir) : config.mediaDir;
   for (const d of ['full', 'thumb', 'originals']) fs.mkdirSync(path.join(base, d), { recursive: true });
   const original = `${id}${ext}`; const name = `${id}.webp`;
-  fs.writeFileSync(path.join(base, 'originals', original), buffer);
-  const full = await sharp(buffer).rotate().toColorspace('srgb').resize({ height: FULL_HEIGHT, withoutEnlargement: true })
-    .webp({ quality: 84 }).toFile(path.join(base, 'full', name));
-  await sharp(buffer).rotate().toColorspace('srgb').resize({ width: THUMB_WIDTH, withoutEnlargement: true })
-    .webp({ quality: 80 }).toFile(path.join(base, 'thumb', name));
+  // Одно чтение файла и параллельная запись трёх вариантов (17.11.2026: раньше большой файл декодировался трижды подряд —
+  // на этом и задерживалась отправка нескольких работ).
+  const src = sharp(buffer).rotate().toColorspace('srgb');
+  const [, full] = await Promise.all([
+    fs.promises.writeFile(path.join(base, 'originals', original), buffer),
+    src.clone().resize({ height: FULL_HEIGHT, withoutEnlargement: true }).webp({ quality: 84 }).toFile(path.join(base, 'full', name)),
+    src.clone().resize({ width: THUMB_WIDTH, withoutEnlargement: true }).webp({ quality: 80 }).toFile(path.join(base, 'thumb', name)),
+  ]);
   return { full: name, thumb: name, original, width: full.width, height: full.height };
 }
 

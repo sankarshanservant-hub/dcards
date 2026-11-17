@@ -25,11 +25,11 @@ export async function home(ctx) {
     <section class="hero home"><div class="wrap">
       <div class="stack" style="gap:16px">
         <h1 style="margin:0">Dialogue Cards</h1>
-        <p class="greet">${esc(tt('Рады, что вы заглянули!', 'Glad you stopped by!'))}</p>
+        <p class="greet">${esc(tt('Карты, с которыми легче начать разговор', 'Cards that make it easier to start a conversation'))}</p>
         <div class="home-cta"><a class="btn yellow big" href="${u('/library')}">${ic.cards} ${esc(tt('Откройте любую карту', 'Open any card'))}</a>
           <span class="muted">${esc(tt('Посмотрите, что откликнется вам.', 'See what speaks to you.'))}</span></div>
       </div>
-      <div class="trio" id="trio"></div>
+      <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
     </div></section>
     <section class="wrap band">
       <div class="roles">${JOIN.map(([href, icon, ru, en, dru, den]) => `<a class="role" href="${u(href)}"><span class="role-head"><span class="ic">${ic[icon]}</span><b>${esc(tt(ru, en))}</b></span><p>${esc(tt(dru, den))}</p></a>`).join('')}</div>
@@ -42,9 +42,11 @@ export async function home(ctx) {
     while (picks.length < 3 && pool.length) picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     const trio = ctx.main.querySelector('#trio');
     // Каждая из трёх карт открывает именно себя (галерея с открытой картой).
+    trio.removeAttribute('aria-busy');
+    if (!picks.length) { trio.innerHTML = ''; return; }
     trio.innerHTML = picks.map((c) => `<a href="${u('/library?card=' + encodeURIComponent(c.code))}" aria-label="${esc(tt('Открыть карту', 'Open card'))} ${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" width="${c.width}" height="${c.height}" loading="eager"></a>`).join('');
     trio.querySelectorAll('img').forEach((im) => im.addEventListener('error', () => im.closest('a').remove()));
-  } catch { /* украшение: без карт блок просто пустой */ }
+  } catch { const t = ctx.main.querySelector('#trio'); if (t) t.innerHTML = ''; /* украшение: без карт блок просто пустой */ }
 }
 
 // ---------- библиотека ----------
@@ -62,8 +64,12 @@ export async function library(ctx) {
   ctx.main.innerHTML = `<div class="wrap page">
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted">${esc(tt(`${cards.length} карт · новые сверху · нажмите на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
-      <div class="row">${diceButtonHtml()}<a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div>
+      <div class="play-row" id="play">${diceButtonHtml()}
+        <a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a>
+        <a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div>
     ${cards.length ? groups.map((g) => `<h2 class="month-title">${esc(g.label)}</h2><div class="grid">${g.items.map(([c, i]) => tileHtml(c, i)).join('')}</div>`).join('') : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
+    <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать', 'Take part'))}</a>
+      <p class="muted small">${esc(tt('Предложить иллюстрацию, провести встречу, стать куратором', 'Suggest an illustration, host a meeting, become a curator'))}</p></div>
   </div>`;
   const openAt = (i) => openViewer({ cards, index: i, mode: 'library' });
   ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => openAt(Number(b.dataset.i))));
@@ -151,13 +157,15 @@ export function facilitatorAbout(ctx) {
   ];
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Проводите встречи Dialogue Flow в своём городе', 'Host Dialogue Flow meetings in your city'))}</h1></div>
-    <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого разговора. Вы познакомите участников с форматом и предложите им выбрать карту. С неё начнётся разговор, а дальше участники смогут говорить о том, что им интересно.', 'Bring people together for a real conversation. You introduce the format and invite everyone to choose a card. The conversation starts from it, and then participants can talk about whatever interests them.'))}</p>
+    <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого диалога. Участники выбирают карты и беседуют в парах: карта помогает начать разговор, а дальше он идёт сам.', 'Bring people together for a living dialogue. Participants choose cards and talk in pairs: the card helps start the conversation, and then it flows on its own.'))}</p>
     <p class="callout">${esc(tt('Предварительная подготовка не требуется.', 'No prior training is needed.'))}</p>
-    <p class="muted" style="margin:0">${esc(tt('Фасилитатор — человек, который проводит встречу и помогает участникам начать диалог.', 'A facilitator is the person who hosts the meeting and helps participants start a dialogue.'))}</p>
-    <h2 style="margin:8px 0 0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
-    <ol class="path">${steps.map(([t1, t2]) => `<li><b>${esc(t1)}</b><span>${esc(t2)}</span></li>`).join('')}</ol>
-    <div><a class="btn yellow big" href="${u('/facilitator/apply')}">${esc(tt('Начать путь фасилитатора', 'Start the facilitator path'))}</a></div>
-    <p class="small muted" style="margin:6px 0 0">${esc(tt('Уже фасилитатор?', 'Already a facilitator?'))} <a href="${u('/facilitator')}">${esc(tt('Перейти в кабинет', 'Go to your space'))}</a></p>
+    <section class="become card-ui stack" aria-labelledby="bf">
+      <h2 id="bf" style="margin:0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
+      <p class="muted" style="margin:0">${esc(tt('Фасилитатор — человек, который проводит встречу и помогает участникам начать диалог.', 'A facilitator is the person who hosts the meeting and helps participants start a dialogue.'))}</p>
+      <ol class="path">${steps.map(([t1, t2]) => `<li><b>${esc(t1)}</b><span>${esc(t2)}</span></li>`).join('')}</ol>
+      <div><a class="btn yellow big" href="${u('/facilitator/apply')}">${esc(tt('Начать путь фасилитатора', 'Start the facilitator path'))}</a></div>
+    </section>
+    <p class="already">${esc(tt('Уже фасилитатор?', 'Already a facilitator?'))} <a href="${u('/facilitator')}">${esc(tt('Перейти в кабинет', 'Go to your space'))}</a></p>
   </div>`;
 }
 
@@ -170,9 +178,9 @@ export async function curatorApply(ctx) {
   const app = info && info.application;
   const intro = `
     <div class="page-head"><h1>${esc(tt('Стать куратором', 'Become a curator'))}</h1></div>
-    <p class="lead" style="margin:0">${esc(tt('Кураторы помогают отбирать иллюстрации для коллекции Dialog Arts.', 'Curators help choose illustrations for the Dialog Arts collection.'))}</p>
+    <p class="lead" style="margin:0">${esc(tt('Кураторы помогают отбирать иллюстрации для коллекции Dialogue Cards.', 'Curators help choose illustrations for the Dialogue Cards collection.'))}</p>
     <ul class="icon-lines">
-      <li>${ic.picCheck}<span>${esc(tt('Куратор публикует работу или возвращает её художнику на доработку и объясняет причину.', 'A curator publishes a work or returns it to the artist for changes and explains why.'))}</span></li>
+      <li>${ic.picCheck}<span>${esc(tt('Куратор рекомендует работу к публикации или возвращает её художнику и объясняет причину. Окончательно работу публикует администратор.', 'A curator recommends a work for publication or returns it to the artist and explains why. The administrator makes the final publishing decision.'))}</span></li>
       <li>${ic.chat}<span>${esc(tt('Спорные работы можно обсудить с коллегами в чате кураторов.', 'Difficult works can be discussed with colleagues in the curators’ chat.'))}</span></li>
     </ul>`;
   let body;
@@ -192,7 +200,7 @@ export async function curatorApply(ctx) {
       <label class="field">${esc(tt('Контакт', 'Contact'))} * <span class="hint">${esc(tt('email, Telegram или телефон — как с вами связаться', 'email, Telegram or phone — how to reach you'))}</span><input type="text" name="contact" required maxlength="200" value="${esc(v.contact)}"></label>
       <label class="field">${esc(tt('Почему вы хотите участвовать?', 'Why do you want to take part?'))} *<textarea name="motivation" required maxlength="2000" rows="5">${esc(v.motivation)}</textarea></label>
       <p class="form-error" id="err" role="alert"></p>
-      <div><button class="btn dark" type="submit">${esc(tt('Отправить заявку', 'Send application'))}</button></div></form>`;
+      <div><button class="btn yellow" type="submit">${esc(tt('Отправить заявку', 'Send application'))}</button></div></form>`;
   }
   ctx.main.innerHTML = `<div class="wrap page narrow stack">${intro}${body}</div>`;
   const f = ctx.main.querySelector('#cf');

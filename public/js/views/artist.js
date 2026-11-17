@@ -1,6 +1,6 @@
 // Кабинет художника: подача работ (согласие → файлы), статусы каждой работы, причины решения, исправление в ту же заявку,
 // новая версия опубликованной карты, снятие своей карты.
-import { esc, tt, u, api, errorText, toast, fmtDate } from '../util.js';
+import { esc, tt, u, api, upload, errorText, toast, fmtDate } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill, timeline, stepsBar, ic } from '../ui.js';
 
@@ -32,14 +32,15 @@ export async function cabinet(ctx) {
   // Порядок по полезности: «Нужно доработать» → «На рассмотрении» (и на обсуждении) → «В галерее» (карточки карт); отклонённые — ниже, свёрнуто.
   // Одобренные работы показываются как опубликованные карты, без повторного списка.
   const need = data.works.filter((w) => w.status === 'needs_changes');
-  const review = data.works.filter((w) => ['submitted', 'discussion'].includes(w.status));
-  const other = data.works.filter((w) => !['needs_changes', 'submitted', 'discussion', 'approved'].includes(w.status));
+  const review = data.works.filter((w) => ['submitted', 'discussion', 'recommended'].includes(w.status));
+  const other = data.works.filter((w) => !['needs_changes', 'submitted', 'discussion', 'recommended', 'approved'].includes(w.status));
   const showAll = ctx.query.get('all') === '1';
   const group = (title, list, open = true) => (list.length ? `<section class="stack" style="gap:8px"><h2 style="margin:10px 0 0">${esc(title)} <span class="muted" style="font-size:1rem">· ${list.length}</span></h2>${list.map(workCard).join('')}</section>` : '');
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><h1>${esc(tt('Мои работы', 'My works'))}</h1><p class="sub">${esc(session.user.publicName)} · ${esc(tt('кабинет художника', 'artist space'))}</p></div>
     <div class="row"><a class="btn yellow" href="${u('/artist/submit')}">${ic.plus} ${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a>
       <span class="small muted" style="max-width:34em">${esc(tt('При возврате на доработку вы увидите причину.', 'If a work is returned for changes, you will see the reason.'))}</span></div>
+    <span id="works"></span>
     ${!data.works.length && !data.cards.length ? `<p class="empty">${esc(tt('Вы ещё не предлагали иллюстраций.', 'You have not suggested any illustrations yet.'))}</p>` : ''}
     ${group(tt('Нужно доработать', 'Needs changes'), need)}
     ${group(tt('На рассмотрении', 'Under review'), review)}
@@ -95,56 +96,107 @@ export async function cabinet(ctx) {
   });
 }
 
+// Подача работы — 4 шага (17.11.2026): условия использования → руководство для автора → изображения → отправка.
+// Руководства автора владелец пришлёт позже: здесь — явная временная заглушка (содержание не придумываем).
+// Отправка показывает ход загрузки и обработку; при сбое файлы остаются, «Повторить» безопасен — у отправки свой ключ,
+// и повтор не создаёт вторую подачу.
+const TERMS_KEY = 'dc_terms_ok';
 export function submit(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Чтобы подать работы, войдите по email: имя и email, без пароля.', 'To submit works, sign in with email: name and email, no password.'));
-  let step = 1; let files = []; let accepted = false;
+  let step = 1; let files = []; let guideOk = false; let result = null;
+  let accepted = false; try { accepted = localStorage.getItem(TERMS_KEY) === session.config.termsVersion; } catch { /* */ }
+  const send = { state: 'idle', progress: 0, error: '', key: null }; // idle | uploading | processing | error
+  const TITLES = [tt('Условия использования работы', 'Terms of use of the work'), tt('Руководство для автора', 'Guide for the artist'), tt('Загрузите изображение', 'Upload the image'), tt('Отправка', 'Sending')];
+  const urls = new Map(); const urlOf = (f) => { if (!urls.has(f)) urls.set(f, URL.createObjectURL(f)); return urls.get(f); };
+  const head = () => `<div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 4`, `Step ${step} of 4`))}</span></div>${stepsBar(step, 4)}<h1>${esc(TITLES[step - 1])}</h1>`;
+  const thumbs = (rm) => `<div class="cells" id="prev">${files.map((f, i) => `<div class="cell"><div class="tile" style="cursor:default"><img src="${urlOf(f)}" alt=""></div><small>${esc(f.name)}</small>${rm ? `<button class="mini-btn r" type="button" data-rm="${i}" aria-label="${esc(tt('Убрать', 'Remove'))} ${esc(f.name)}">${ic.x}</button>` : ''}</div>`).join('')}</div>`;
   const draw = () => {
-    ctx.main.innerHTML = `<div class="wrap page narrow stack"><div class="card-ui ${step === 3 ? 'navy' : ''} stack">
-      <div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 3`, `Step ${step} of 3`))}</span></div>
-      ${stepsBar(step, 3)}
-      ${step === 1 ? `<h1>${esc(tt('Условия публикации', 'Publication terms'))}</h1>
-        <div class="card-ui flat stack" style="gap:6px"><b>${esc(tt('Что понадобится', 'What you will need'))}</b>
+    let body;
+    if (result) {
+      const many = result.ids.length > 1;
+      body = `<h1 style="color:var(--on-navy)">${esc(many ? tt('Изображения отправлены', 'Images sent') : tt('Изображение отправлено', 'Image sent'))}</h1>
+        ${result.failed && result.failed.length ? `<div class="notice small">${esc(tt('Не удалось принять:', 'Could not be accepted:'))} ${esc(result.failed.join(', '))}</div>` : ''}
+        ${timeline([
+          { title: tt('Согласие с условиями записано', 'Consent to the terms recorded'), state: 'done' },
+          { title: tt('Проверка кураторами', 'Curators’ review'), note: esc(tt('Каждая работа рассматривается отдельно по критериям', 'Each work is reviewed separately by criteria')), state: 'now' },
+          { title: tt('Решение', 'Decision'), note: esc(tt('Возможны три исхода: работа опубликована; отклонена с указанием причины; возвращена на доработку с указанием причины.', 'Three outcomes are possible: the work is published; declined with a reason; returned for changes with a reason.')), state: 'todo' },
+        ])}
+        <p class="small" style="margin:0;color:var(--on-navy)">${esc(tt('Статус каждой работы виден в «Моих работах». Если включены уведомления, о решении придёт сообщение на телефон.', 'The status of each work is shown in “My works”. If notifications are on, you will get a message on your phone about the decision.'))}</p>
+        <div class="row"><a class="btn yellow" href="${u('/artist')}">${esc(tt('В кабинет', 'To my space'))}</a><a class="btn light" href="${u('/artist#works')}">${esc(tt('Мои работы', 'My works'))}</a></div>`;
+    } else if (step === 1) {
+      body = `${head()}
+        <p>${esc(tt('Публикация добровольная. Прочитайте короткое условие и отметьте галочку — согласие запомнится для следующих подач.', 'Publishing is voluntary. Read the short condition and tick the box — your consent is remembered for next submissions.'))}</p>
+        <label class="check card-ui flat"><input type="checkbox" id="terms" ${accepted ? 'checked' : ''}>
+          <span>${esc(tt('Я принимаю условия публикации и разрешаю бесплатно показывать эту работу в галерее Dialogue Cards и в подборках для встреч Dialogue Flow. Использование работы в печатной колоде согласуется со мной отдельно.', 'I accept the publication terms and allow this work to be shown free of charge in the Dialogue Cards gallery and in selections for Dialogue Flow meetings. Use of the work in a printed deck will be agreed with me separately.'))}
+          <a href="${u('/terms')}" target="_blank">${esc(tt('Полные условия', 'Full terms'))}</a> <span class="pill demo">${esc(tt('черновик текста', 'draft text'))}</span></span></label>
+        <div><button class="btn yellow" type="button" id="next" ${accepted ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button></div>`;
+    } else if (step === 2) {
+      body = `${head()}
+        <section class="card-ui flat stack" aria-labelledby="g-short"><h2 id="g-short" style="margin:0">${esc(tt('Краткое руководство', 'Short guide'))} <span class="small muted">· ${esc(tt('обязательно', 'required'))}</span></h2>
+          <div class="notice demo small">${esc(tt('Временная заглушка: текст краткого руководства подготовит владелец проекта.', 'Temporary placeholder: the project owner will provide the short guide text.'))}</div>
           <ul style="margin:0;padding-left:1.2em" class="small">
             <li>${esc(tt('JPEG или PNG, до 60 МБ, до 20 файлов за одну отправку.', 'JPEG or PNG, up to 60 MB, up to 20 files per submission.'))}</li>
             <li>${esc(tt('Вертикальное изображение, соотношение сторон 7:12.', 'A vertical image with a 7:12 aspect ratio.'))}</li>
             <li>${esc(tt('Формат печатной карты — 70 × 120 мм.', 'The printed card is 70 × 120 mm.'))}</li></ul>
-          <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The artist name under the cards comes from your profile. You can change it there.'))}</p></div>
-        <p>${esc(tt('Публикация добровольная. Прочитайте короткое условие и отметьте галочку.', 'Publishing is voluntary. Read the short condition and tick the box.'))}</p>
-        <label class="check card-ui flat"><input type="checkbox" id="terms" ${accepted ? 'checked' : ''}>
-          <span>${esc(tt('Я принимаю условия публикации и разрешаю бесплатно показывать эту работу в галерее Dialogue Cards и в подборках для встреч Dialogue Flow. Использование работы в печатной колоде согласуется со мной отдельно.', 'I accept the publication terms and allow this work to be shown free of charge in the Dialogue Cards gallery and in selections for Dialogue Flow meetings. Use of the work in a printed deck will be agreed with me separately.'))}
-          <a href="${u('/terms')}" target="_blank">${esc(tt('Полные условия', 'Full terms'))}</a> <span class="pill demo">${esc(tt('черновик текста', 'draft text'))}</span></span></label>
-        <button class="btn dark" type="button" id="next" ${accepted ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button>`
-      : step === 2 ? `<h1>${esc(tt('Ваши работы', 'Your works'))}</h1>
+          <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The artist name under the cards comes from your profile. You can change it there.'))}</p>
+          <label class="check"><input type="checkbox" id="gok" ${guideOk ? 'checked' : ''}> <span>${esc(tt('Я ознакомился(ась) с кратким руководством', 'I have read the short guide'))}</span></label></section>
+        <section class="card-ui flat stack" aria-labelledby="g-full"><h2 id="g-full" style="margin:0">${esc(tt('Полное руководство', 'Full guide'))} <span class="small muted">· ${esc(tt('по желанию', 'optional'))}</span></h2>
+          <p class="small muted" style="margin:0">${esc(tt('Появится здесь, когда владелец проекта его передаст.', 'It will appear here once the project owner provides it.'))}</p></section>
+        <div class="row"><button class="btn light" type="button" id="back">${esc(tt('Назад', 'Back'))}</button><button class="btn yellow" type="button" id="next" ${guideOk ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button></div>`;
+    } else if (step === 3) {
+      body = `${head()}
         <p>${esc(tt('Можно добавить одно или несколько изображений (JPEG или PNG). Каждая работа получит свой статус и решение; код карты присваивается автоматически при публикации.', 'Add one or more images (JPEG or PNG). Each work gets its own status and decision; the card code is assigned automatically on publication.'))}</p>
-        <input type="file" id="files" accept="image/jpeg,image/png" multiple>
-        <div class="cells" id="prev">${files.map((f, i) => `<div class="cell"><div class="tile" style="cursor:default"><img src="${URL.createObjectURL(f)}" alt=""></div><small>${esc(f.name)}</small><button class="mini-btn r" type="button" data-rm="${i}">${ic.x}</button></div>`).join('')}</div>
-        <p class="small muted" style="margin:0">${esc(tt('Автор в карточке:', 'Artist name on cards:'))} <b>${esc(session.user.publicName)}</b> (${esc(tt('меняется в профиле', 'change it in your profile'))})</p>
+        <label class="btn light" style="justify-self:start">${ic.plus || ''} ${esc(files.length ? tt('Добавить ещё', 'Add more') : tt('Выбрать изображения', 'Choose images'))}<input type="file" id="files" accept="image/jpeg,image/png" multiple class="sr-only"></label>
+        ${thumbs(true)}
         <p class="form-error" id="err" role="alert"></p>
-        <div class="row"><button class="btn" type="button" id="back">${esc(tt('Назад', 'Back'))}</button><button class="btn dark" type="button" id="send" ${files.length ? '' : 'disabled'}>${esc(tt(`Отправить на рассмотрение (${files.length})`, `Send for review (${files.length})`))}</button></div>`
-      : `<h1 style="color:var(--on-navy)">${esc(tt('Работы на рассмотрении', 'Works in review'))}</h1>
-        ${timeline([
-          { title: tt('Отправка получена', 'Submission received'), note: esc(tt('Согласие с условиями записано', 'Consent recorded')), state: 'done' },
-          { title: tt('Проверка кураторами', 'Curators’ review'), note: esc(tt('Каждая работа отдельно, по критериям', 'Each work separately, by criteria')), state: 'now' },
-          { title: tt('Решение', 'Decision'), note: esc(tt('Опубликовано — или причины и возможность исправить', 'Published — or reasons and a chance to fix')), state: 'todo' },
-        ])}
-        <a class="btn yellow" href="${u('/artist')}">${esc(tt('К моим работам', 'To my works'))}</a>`}
-    </div></div>`;
-    const t = ctx.main.querySelector('#terms');
-    if (t) { t.onchange = () => { accepted = t.checked; ctx.main.querySelector('#next').disabled = !accepted; }; ctx.main.querySelector('#next').onclick = () => { step = 2; draw(); }; }
-    const fi = ctx.main.querySelector('#files');
-    if (fi) {
-      fi.onchange = () => { files = files.concat([...fi.files]).slice(0, 20); draw(); };
-      ctx.main.querySelector('#prev').onclick = (e) => { const r = e.target.closest('[data-rm]'); if (r) { files.splice(Number(r.dataset.rm), 1); draw(); } };
-      ctx.main.querySelector('#back').onclick = () => { step = 1; draw(); };
-      ctx.main.querySelector('#send').onclick = async (e) => {
-        e.target.disabled = true; e.target.textContent = tt('Отправка…', 'Sending…');
-        const fd = new FormData();
-        for (const f of files) fd.append('images', f);
-        fd.append('termsAccepted', String(accepted)); fd.append('termsVersion', session.config.termsVersion);
-        try { await api('/api/artist/works', { method: 'POST', form: fd }); step = 3; files = []; draw(); }
-        catch (x) { ctx.main.querySelector('#err').textContent = errorText(x); e.target.disabled = false; }
-      };
+        <div class="row"><button class="btn light" type="button" id="back">${esc(tt('Назад', 'Back'))}</button><button class="btn yellow" type="button" id="next" ${files.length ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button></div>`;
+    } else {
+      const busy = send.state === 'uploading' || send.state === 'processing';
+      const pct = Math.round(send.progress * 100);
+      body = `${head()}
+        <p style="margin:0">${esc(tt('Отправьте работу и дождитесь решения.', 'Send your work and wait for the decision.'))}</p>
+        ${thumbs(false)}
+        <p class="small muted" style="margin:0">${esc(tt('Автор в карточке:', 'Artist name on cards:'))} <b>${esc(session.user.publicName)}</b></p>
+        ${busy ? `<div class="upl" role="status" aria-live="polite"><div class="upl-bar"><i style="width:${send.state === 'processing' ? 100 : pct}%"></i></div>
+          <span class="small">${esc(send.state === 'uploading' ? tt(`Загрузка файлов: ${pct}%`, `Uploading files: ${pct}%`) : tt('Файлы получены, сервер готовит изображения…', 'Files received, the server is preparing the images…'))}</span></div>` : ''}
+        ${send.state === 'error' ? `<div class="notice small" role="alert"><b>${esc(tt('Не отправлено.', 'Not sent.'))}</b> ${esc(send.error)} ${esc(tt('Файлы на месте — можно повторить: вторая подача не создастся.', 'Your files are still here — you can retry: no duplicate submission will be created.'))}</div>` : ''}
+        <div class="row"><button class="btn light" type="button" id="back" ${busy ? 'disabled' : ''}>${esc(tt('Назад', 'Back'))}</button>
+          <button class="btn yellow" type="button" id="send" ${busy || !files.length ? 'disabled' : ''}>${esc(busy ? tt('Отправляем…', 'Sending…') : send.state === 'error' ? tt('Повторить отправку', 'Retry sending') : tt('Отправить на рассмотрение', 'Send for review'))}${!busy && files.length > 1 ? ` (${files.length})` : ''}</button></div>`;
     }
+    ctx.main.innerHTML = `<div class="wrap page narrow stack"><div class="card-ui ${result ? 'navy' : ''} stack">${body}</div></div>`;
+    wire();
+  };
+  const wire = () => {
+    const $ = (q) => ctx.main.querySelector(q);
+    const t = $('#terms');
+    if (t) t.onchange = () => { accepted = t.checked; try { if (accepted) localStorage.setItem(TERMS_KEY, session.config.termsVersion); else localStorage.removeItem(TERMS_KEY); } catch { /* */ } $('#next').disabled = !accepted; };
+    const g = $('#gok'); if (g) g.onchange = () => { guideOk = g.checked; $('#next').disabled = !guideOk; };
+    const nx = $('#next'); if (nx) nx.onclick = () => { step++; draw(); window.scrollTo(0, 0); };
+    const bk = $('#back'); if (bk) bk.onclick = () => { step--; draw(); };
+    const fi = $('#files');
+    if (fi) fi.onchange = () => {
+      const add = [...fi.files].filter((f) => /^image\/(jpeg|png)$/.test(f.type));
+      const skipped = fi.files.length - add.length;
+      files = files.concat(add).slice(0, 20); send.key = null; draw();
+      if (skipped) $('#err').textContent = tt('Часть файлов пропущена: подходят только JPEG и PNG.', 'Some files were skipped: only JPEG and PNG are accepted.');
+    };
+    const pv = $('#prev'); if (pv) pv.onclick = (e) => { const r = e.target.closest('[data-rm]'); if (r) { files.splice(Number(r.dataset.rm), 1); send.key = null; draw(); } };
+    const sd = $('#send');
+    if (sd) sd.onclick = async () => {
+      if (!send.key) send.key = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9_-]/g, '');
+      const fd = new FormData();
+      for (const f of files) fd.append('images', f);
+      fd.append('termsAccepted', String(accepted)); fd.append('termsVersion', session.config.termsVersion); fd.append('clientKey', send.key);
+      Object.assign(send, { state: 'uploading', progress: 0, error: '' }); draw();
+      let last = 0;
+      try {
+        result = await upload('/api/artist/works', fd, (p) => {
+          send.progress = p; if (p >= 1 && send.state === 'uploading') { send.state = 'processing'; draw(); }
+          else if (p - last > 0.04) { last = p; draw(); }
+        });
+        files = []; urls.forEach((x) => URL.revokeObjectURL(x)); urls.clear(); draw(); window.scrollTo(0, 0);
+      } catch (x) { Object.assign(send, { state: 'error', error: errorText(x) }); draw(); }
+    };
   };
   draw();
 }
@@ -162,8 +214,8 @@ export async function work(ctx, id) {
   const r = w.lastResult;
   const steps = [
     { title: tt('Отправлено', 'Sent'), note: esc(fmtDate(w.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })), state: 'done' },
-    { title: w.status === 'discussion' ? tt('На обсуждении кураторов', 'Curators are discussing') : tt('Проверка куратором', 'Curator review'),
-      note: '', state: ['submitted', 'discussion'].includes(w.status) ? 'now' : 'done' },
+    { title: w.status === 'discussion' ? tt('На обсуждении кураторов', 'Curators are discussing') : w.status === 'recommended' ? tt('Кураторы рекомендовали — ждёт решения администратора', 'Recommended by curators — awaiting the administrator') : tt('Проверка куратором', 'Curator review'),
+      note: '', state: ['submitted', 'discussion', 'recommended'].includes(w.status) ? 'now' : 'done' },
     { title: w.status === 'published' ? tt('Опубликовано', 'Published') : w.status === 'needs_changes' ? tt('Возвращено на доработку', 'Returned for changes') : w.status === 'rejected' ? tt('Отклонено', 'Declined') : tt('Решение', 'Decision'),
       note: w.status === 'published' && w.card ? `${esc(tt('Карта', 'Card'))} <a href="${u('/cards/' + w.card.code)}">${esc(w.card.code)}</a>` : '',
       state: w.status === 'published' ? 'done' : ['needs_changes', 'rejected'].includes(w.status) ? 'bad' : 'todo' },
@@ -193,7 +245,7 @@ export async function work(ctx, id) {
 }
 
 export const ACTION_LABEL = {
-  submitted: ['Отправлено', 'Submitted'], resubmitted: ['Отправлена новая версия', 'New version sent'], approve: ['Одобрено', 'Approved'],
+  submitted: ['Отправлено', 'Submitted'], resubmitted: ['Отправлена новая версия', 'New version sent'], approve: ['Опубликовано', 'Published'], recommend: ['Рекомендовано к публикации', 'Recommended for publication'],
   return: ['Возвращено на доработку', 'Returned for changes'], reject: ['Отклонено', 'Declined'], assign: ['Передано куратору', 'Assigned to curator'],
   discuss: ['Вынесено на обсуждение', 'Moved to discussion'], vote: ['Голос куратора', 'Curator vote'],
 };

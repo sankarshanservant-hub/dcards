@@ -27,6 +27,7 @@ export const ic = {
   print: P('<path d="M7 8V3h10v5"/><rect x="3" y="8" width="18" height="9" rx="2"/><path d="M7 14h10v7H7z"/>'),
   settings: P('<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.4 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.4h5l.4-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/>'),
   menu: P('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+  home: P('<path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h12V9.5"/>'),
   close: P('<path d="M6 6l12 12M18 6L6 18"/>'),
   plus: P('<path d="M12 5v14M5 12h14"/>'),
   dice: '<svg viewBox="0 0 32 32" aria-hidden="true" class="die3d"><path class="f-top" d="M16 3.2 L27.6 9.6 L16 16 L4.4 9.6 Z"/><path class="f-left" d="M4.4 9.6 L16 16 L16 28.8 L4.4 22.4 Z"/><path class="f-right" d="M27.6 9.6 L16 16 L16 28.8 L27.6 22.4 Z"/><ellipse class="pip" cx="16" cy="9.6" rx="2.2" ry="1.25"/><ellipse class="pip" cx="7.6" cy="14.3" rx="1.25" ry="1.7" transform="rotate(-28 7.6 14.3)"/><ellipse class="pip" cx="12.8" cy="23.4" rx="1.25" ry="1.7" transform="rotate(-28 12.8 23.4)"/><ellipse class="pip" cx="24.6" cy="13.6" rx="1.25" ry="1.7" transform="rotate(28 24.6 13.6)"/><ellipse class="pip" cx="21.8" cy="18.6" rx="1.25" ry="1.7" transform="rotate(28 21.8 18.6)"/><ellipse class="pip" cx="19" cy="23.6" rx="1.25" ry="1.7" transform="rotate(28 19 23.6)"/></svg>',
@@ -35,8 +36,8 @@ export const ic = {
   sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'),
   globe: P('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>'),
   book: P('<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-6M20 4v14h-6"/>'),
-  picPlus: P('<rect x="1.8" y="6" width="12.4" height="15.5" rx="2"/><path d="M1.8 18l3.6-3.6 3 3 2-2 3.8 3.8"/><circle cx="9.8" cy="10.8" r="1.4"/><path d="M19.4 2.2v8M15.4 6.2h8"/>'),
-  picCheck: P('<rect x="1.8" y="6" width="12.4" height="15.5" rx="2"/><path d="M1.8 18l3.6-3.6 3 3 2-2 3.8 3.8"/><circle cx="9.8" cy="10.8" r="1.4"/><path d="M16 6.3l2.4 2.5 4.6-5.3"/>'),
+  picPlus: P('<rect x="1.5" y="8" width="11" height="13.5" rx="2"/><path d="M1.5 18.5l3-3 2.6 2.6 1.8-1.8 3.6 3.6"/><circle cx="8.4" cy="12.3" r="1.3"/><path d="M18.8 1.6v9.4M14.1 6.3h9.4"/>'),
+  picCheck: P('<rect x="1.5" y="8" width="11" height="13.5" rx="2"/><path d="M1.5 18.5l3-3 2.6 2.6 1.8-1.8 3.6 3.6"/><circle cx="8.4" cy="12.3" r="1.3"/><path d="M14.6 6.4l3 3.1 5.6-6.6"/>'),
   chats: P('<path d="M3 4h12v8H8l-4 3z"/><path d="M9 15v1h8l4 3v-11h-3"/>'),
   arrow: P('<path d="M5 12h14M13 6l6 6-6 6"/>'),
 };
@@ -50,6 +51,7 @@ export const rolesText = (roles) => (roles && roles.length ? roles.map((r) => RO
 export const WORK_STATUS = {
   submitted: () => [tt('На рассмотрении', 'In review'), 'yellow'],
   discussion: () => [tt('На обсуждении кураторов', 'Curators are discussing'), 'yellow'],
+  recommended: () => [tt('Рекомендована кураторами — ждёт решения администратора', 'Recommended by curators — awaiting the administrator'), 'yellow'],
   needs_changes: () => [tt('Возвращена на доработку', 'Returned for changes'), 'red'],
   rejected: () => [tt('Отклонена', 'Declined'), 'red'],
   published: () => [tt('Опубликована', 'Published'), 'mint'],

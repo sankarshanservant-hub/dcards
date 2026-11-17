@@ -302,6 +302,11 @@ addColumn('cards', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('cards', 'removed_by', "TEXT NOT NULL DEFAULT ''");          // owner | artist | admin
 addColumn('cards', 'print_permission', "TEXT NOT NULL DEFAULT 'not_set'"); // not_set | allowed | denied
 addColumn('users', 'site_uid', 'TEXT');
+// проверка знаний фасилитатора: число попыток, итог последней, запрос ручной проверки (17.11.2026)
+addColumn('fac_applications', 'quiz_attempts', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('fac_applications', 'quiz_wrong', "TEXT NOT NULL DEFAULT '[]'");
+addColumn('fac_applications', 'quiz_passed', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('fac_applications', 'manual_review', 'INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_site_uid ON users(site_uid) WHERE site_uid IS NOT NULL');
 addColumn('collections', 'owner_id', 'INTEGER REFERENCES users(id)');
 addColumn('collections', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
@@ -395,6 +400,19 @@ CREATE TABLE IF NOT EXISTS chat_notify (
 CREATE TABLE IF NOT EXISTS push_log (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, message_id INTEGER NOT NULL, reason TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), UNIQUE (user_id, message_id)
+);
+CREATE TABLE IF NOT EXISTS push_work_log (            -- уведомления автору о решении по работе: одно на решение
+  decision_id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );`);
+// рекомендация кураторов к публикации (17.11.2026): работа ждёт решения администратора, в галерее её ещё нет
+addColumn('works', 'recommended_at', 'TEXT');
+addColumn('works', 'recommended_by', 'INTEGER REFERENCES users(id)');
+addColumn('works', 'recommended_type', 'TEXT');
+addColumn('notify_prefs', 'works', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('chat_messages', 'forward_of', 'INTEGER'); // пересланное из общего чата: ссылка на оригинал
+// ключ отправки с устройства: повтор после обрыва связи не создаёт вторую подачу
+addColumn('submissions', 'client_key', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS submissions_client_key ON submissions (artist_id, client_key) WHERE client_key IS NOT NULL');
 
 module.exports = db;

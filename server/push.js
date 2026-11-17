@@ -38,14 +38,14 @@ function setSender(fn) { sender = fn; }
 
 const prefsOf = (userId) => {
   const p = db.prepare('SELECT * FROM notify_prefs WHERE user_id = ?').get(userId);
-  return { enabled: p ? !!p.enabled : true, replies: p ? !!p.replies : true, mentions: p ? !!p.mentions : true };
+  return { enabled: p ? !!p.enabled : true, replies: p ? !!p.replies : true, mentions: p ? !!p.mentions : true, works: p ? p.works !== 0 : true };
 };
-function setPrefs(userId, { enabled, replies, mentions }) {
+function setPrefs(userId, { enabled, replies, mentions, works }) {
   const cur = prefsOf(userId);
-  const v = { enabled: enabled ?? cur.enabled, replies: replies ?? cur.replies, mentions: mentions ?? cur.mentions };
-  db.prepare(`INSERT INTO notify_prefs (user_id, enabled, replies, mentions) VALUES (?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, replies = excluded.replies, mentions = excluded.mentions`)
-    .run(userId, v.enabled ? 1 : 0, v.replies ? 1 : 0, v.mentions ? 1 : 0);
+  const v = { enabled: enabled ?? cur.enabled, replies: replies ?? cur.replies, mentions: mentions ?? cur.mentions, works: works ?? cur.works };
+  db.prepare(`INSERT INTO notify_prefs (user_id, enabled, replies, mentions, works) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, replies = excluded.replies, mentions = excluded.mentions, works = excluded.works`)
+    .run(userId, v.enabled ? 1 : 0, v.replies ? 1 : 0, v.mentions ? 1 : 0, v.works ? 1 : 0);
   return prefsOf(userId);
 }
 const roomMode = (userId, room) => (db.prepare('SELECT mode FROM chat_notify WHERE user_id = ? AND room = ?').get(userId, room) || {}).mode || 'mentions';
@@ -136,9 +136,24 @@ function onMessage(messageId) {
   }
   return Promise.all(jobs);
 }
+/**
+ * Автору — об изменении статуса работы: фактическая публикация (решение администратора), возврат на доработку, отклонение.
+ * Одно уведомление на решение (push_work_log); рекомендация кураторов и обсуждение автору не приходят. Нажатие открывает работу.
+ */
+const WORK_TEXT = { approve: 'Работа опубликована в галерее', return: 'Работу вернули на доработку — причина в кабинете', reject: 'Работа отклонена — причина в кабинете' };
+function onWorkDecision(decisionId) {
+  const d = db.prepare('SELECT * FROM decisions WHERE id = ?').get(decisionId);
+  if (!d || !WORK_TEXT[d.action]) return Promise.resolve(0);
+  const w = db.prepare('SELECT * FROM works WHERE id = ?').get(d.work_id);
+  const u = w && db.prepare('SELECT id, is_demo FROM users WHERE id = ?').get(w.artist_id);
+  if (!u || u.is_demo || w.is_demo) return Promise.resolve(0);
+  const p = prefsOf(u.id); if (!p.enabled || !p.works) return Promise.resolve(0);
+  if (!db.prepare('INSERT OR IGNORE INTO push_work_log (decision_id, user_id) VALUES (?, ?)').run(d.id, u.id).changes) return Promise.resolve(0);
+  return deliver(u.id, { title: 'Dialogue Cards · Мои работы', body: WORK_TEXT[d.action], url: `${B}/artist/works/${w.id}`, tag: `dc-w${w.id}-${d.id}` });
+}
 /** Проверочное уведомление — по нажатию самого человека. */
 function test(user) {
   return deliver(user.id, { title: 'Dialogue Cards', body: 'Уведомления включены. Так будут приходить ответы и упоминания.', url: `${B}/me/notifications`, tag: 'dc-test' });
 }
 
-module.exports = { vapid, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, test, setSender, MODES };
+module.exports = { vapid, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };

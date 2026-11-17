@@ -2,12 +2,16 @@
 // Статусы работы: submitted (на рассмотрении), discussion (вынесена на обсуждение кураторов), needs_changes (возвращена
 // на доработку), rejected (отклонена), published (опубликована), withdrawn (отозвана художником).
 // Каждое действие пишется в историю (decisions). Отказ и возврат требуют выбрать хотя бы один критерий.
+// С 17.11.2026 куратор не публикует сам: «Рекомендовать к публикации» ставит работу в очередь администратора
+// (recommended_at; статус для показа — recommended). В галерею работа попадает только по решению администратора.
+// Возврат и отклонение куратор делает сам, без подтверждения администратора.
 const db = require('./db');
 const config = require('./config');
 const cards = require('./cards');
 const mediaUrl = (kind, file) => `${config.basePath}/media/works/${kind}/${file}`;
 
 const PLACEHOLDER_CRITERIA = 5;
+const effStatus = (w) => (w.recommended_at && ['submitted', 'discussion'].includes(w.status) ? 'recommended' : w.status);
 /** Временные критерии: формулировки будут перенесены из PDF владельца (самим список не придумываем). */
 function ensureCriteria() {
   if (db.prepare('SELECT COUNT(*) AS n FROM criteria').get().n) return;
@@ -66,7 +70,8 @@ function workOut(w, { full = false } = {}) {
   const target = w.target_card_id ? q.card.get(w.target_card_id) : null;
   const result = q.lastDecision.get(w.id);
   const out = {
-    id: w.id, submissionId: w.submission_id, kind: w.kind, status: w.status, isDemo: !!w.is_demo,
+    id: w.id, submissionId: w.submission_id, kind: w.kind, status: effStatus(w), isDemo: !!w.is_demo,
+    recommendedBy: w.recommended_at ? userName(w.recommended_by) : null, recommendedAt: w.recommended_at || null, recommendedType: w.recommended_type || null,
     artist: userName(w.artist_id), artistId: w.artist_id,
     version: last ? versionOut(last) : null, versionsCount: versions.length,
     targetCard: target ? cards.publicCard(target, { withDetails: true }) : null,
@@ -86,19 +91,26 @@ function workOut(w, { full = false } = {}) {
 
 // ---------- художник ----------
 /** Отправка: одна или несколько работ, у каждой — свой статус. */
-async function submit(artist, files, { termsAccepted, termsVersion, notes = [] }) {
+async function submit(artist, files, { termsAccepted, termsVersion, notes = [], clientKey = '' }) {
   if (!termsAccepted || termsVersion !== config.termsVersion) return { error: 'terms_required' };
+  const key = String(clientKey || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || null;
+  // повтор той же отправки (связь оборвалась после того, как сервер её принял) — возвращаем уже созданные работы
+  if (key) {
+    const prev = db.prepare('SELECT id FROM submissions WHERE artist_id = ? AND client_key = ?').get(artist.id, key);
+    if (prev) return { ids: db.prepare('SELECT id FROM works WHERE submission_id = ? ORDER BY id').all(prev.id).map((x) => x.id), failed: [], repeated: true };
+  }
   if (!files.length) return { error: 'no_images' };
   const processed = [];
   const failed = [];
-  for (const f of files) {
-    try { processed.push({ img: await cards.processImage(f.buffer, f.originalname, 'works'), name: f.originalname }); }
-    catch { failed.push(f.originalname); }
+  // по два файла одновременно: быстрее, чем по одному, и без лишней нагрузки на сервер
+  for (let i = 0; i < files.length; i += 2) {
+    const part = await Promise.all(files.slice(i, i + 2).map((f) => cards.processImage(f.buffer, f.originalname, 'works').then((img) => ({ img, name: f.originalname })).catch(() => { failed.push(f.originalname); return null; })));
+    processed.push(...part.filter(Boolean));
   }
   if (!processed.length) return { error: 'bad_images', failed };
   const ids = db.transaction(() => {
-    const sub = db.prepare('INSERT INTO submissions (artist_id, terms_version, terms_accepted_at, is_demo) VALUES (?, ?, ?, ?)')
-      .run(artist.id, termsVersion, new Date().toISOString(), artist.is_demo ? 1 : 0);
+    const sub = db.prepare('INSERT INTO submissions (artist_id, terms_version, terms_accepted_at, is_demo, client_key) VALUES (?, ?, ?, ?, ?)')
+      .run(artist.id, termsVersion, new Date().toISOString(), artist.is_demo ? 1 : 0, key);
     const out = [];
     processed.forEach(({ img }, i) => {
       const w = db.prepare('INSERT INTO works (submission_id, artist_id, is_demo) VALUES (?, ?, ?)').run(sub.lastInsertRowid, artist.id, artist.is_demo ? 1 : 0);
@@ -143,6 +155,7 @@ async function addVersion(artist, workId, file, note = '') {
     db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(workId, n, img.full, img.thumb, img.original, img.width, img.height, String(note).slice(0, 500));
     q.setStatus.run('submitted', workId);
+    db.prepare('UPDATE works SET recommended_at = NULL, recommended_by = NULL, recommended_type = NULL WHERE id = ?').run(workId);
     q.log.run(workId, n, artist.id, 'resubmitted', '[]', String(note).slice(0, 500), null, null);
   })();
   return { ok: true };
@@ -168,12 +181,24 @@ function withdrawCard(artist, code) {
 
 // ---------- куратор ----------
 function queue(showDemo) {
-  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at`)
+  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NULL AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at`)
     .all().map((w) => workOut(w));
+}
+/** Кураторы рекомендовали — ждут решения администратора. */
+function recommendedQueue(showDemo) {
+  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NOT NULL AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY recommended_at`)
+    .all().map((w) => workOut(w));
+}
+/** Обзор решений для администратора: рекомендации, возвраты и отклонения — автор, дата, причины. */
+function decisionsLog(showDemo, limit = 100) {
+  return db.prepare(`SELECT d.*, w.artist_id, w.is_demo FROM decisions d JOIN works w ON w.id = d.work_id
+    WHERE d.action IN ('recommend','approve','return','reject') AND ${showDemo ? '1=1' : 'w.is_demo = 0'} ORDER BY d.id DESC LIMIT ?`).all(limit)
+    .map((d) => ({ ...decisionOut(d), workId: d.work_id, artist: userName(d.artist_id), isDemo: !!d.is_demo,
+      thumb: (() => { const v = db.prepare('SELECT image_thumb FROM work_versions WHERE work_id = ? AND n = ?').get(d.work_id, d.version_n); return v ? mediaUrl('thumb', v.image_thumb) : null; })() }));
 }
 function recentDecided(showDemo) {
   // Принятые решения за последние 30 дней (период показывается кураторам явно).
-  return db.prepare(`SELECT * FROM works WHERE status NOT IN ('submitted','discussion') AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC LIMIT 200`)
+  return db.prepare(`SELECT * FROM works WHERE (status NOT IN ('submitted','discussion') OR recommended_at IS NOT NULL) AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC LIMIT 200`)
     .all().map((w) => workOut(w));
 }
 function detail(id) { const w = q.work.get(id); return w ? workOut(w, { full: true }) : null; }
@@ -184,45 +209,71 @@ function canSee(user, roles, workId) {
 }
 
 /**
- * Решение куратора. approve — публикует (новая работа → новая карта с автоматическим кодом;
- * новая версия: fix — та же карта, номер и обсуждение сохраняются; new — новая карта со своим номером и обсуждением).
- * return / reject — обязательно хотя бы один критерий.
+ * Решение куратора: recommend — рекомендовать к публикации (очередь администратора; в галерею ещё не попадает),
+ * return / reject — сразу, с хотя бы одним критерием (комментарий — по желанию). Прежний action 'approve' от куратора
+ * теперь тоже означает рекомендацию. Новая версия: тип (fix — та же карта, new — новая карта) выбирает куратор при рекомендации.
  */
 function decide(curator, workId, { action, criteria = [], comment = '', replacementType }) {
   const w = q.work.get(workId);
   if (!w) return { error: 'not_found' };
   if (!['submitted', 'discussion'].includes(w.status)) return { error: 'not_in_review', status: w.status };
-  if (!['approve', 'return', 'reject'].includes(action)) return { error: 'bad_action' };
+  if (action === 'approve') action = 'recommend';
+  if (!['recommend', 'return', 'reject'].includes(action)) return { error: 'bad_action' };
   const crit = criteriaByNumbers(criteria).map((c) => c.number);
-  if (action !== 'approve' && !crit.length) return { error: 'criteria_required' };
-  if (action === 'approve' && w.kind === 'replacement' && !['fix', 'new'].includes(replacementType)) return { error: 'replacement_type_required' };
+  if (action !== 'recommend' && !crit.length) return { error: 'criteria_required' };
+  if (action === 'recommend' && w.recommended_at) return { error: 'already_recommended' };
+  if (action === 'recommend' && w.kind === 'replacement' && !['fix', 'new'].includes(replacementType)) return { error: 'replacement_type_required' };
+  const v = q.lastVersion.get(workId);
+  return db.transaction(() => {
+    if (action === 'recommend') {
+      db.prepare(`UPDATE works SET recommended_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), recommended_by = ?, recommended_type = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
+        .run(curator.id, w.kind === 'replacement' ? replacementType : null, w.id);
+    } else {
+      q.setStatus.run(action === 'return' ? 'needs_changes' : 'rejected', w.id);
+      db.prepare('UPDATE works SET recommended_at = NULL, recommended_by = NULL, recommended_type = NULL WHERE id = ?').run(w.id);
+    }
+    const info = q.log.run(w.id, v.n, curator.id, action, JSON.stringify(crit), String(comment).slice(0, 2000), action === 'recommend' ? (replacementType || null) : null, null);
+    return { ok: true, decisionId: Number(info.lastInsertRowid), recommended: action === 'recommend' };
+  })();
+}
+
+/**
+ * Окончательное решение администратора по рекомендованной работе. publish — публикация (новая работа → новая карта
+ * с автоматическим кодом; новая версия fix — та же карта: код и обсуждение сохраняются, прежнее изображение уходит в историю
+ * card_versions; new — новая карта). Можно также вернуть или отклонить (с критериями).
+ */
+function adminDecide(admin, workId, { action, criteria = [], comment = '', replacementType }) {
+  const w = q.work.get(workId);
+  if (!w) return { error: 'not_found' };
+  if (!['submitted', 'discussion'].includes(w.status)) return { error: 'not_in_review', status: w.status };
+  if (!['publish', 'return', 'reject'].includes(action)) return { error: 'bad_action' };
+  if (action !== 'publish') return decide(admin, workId, { action, criteria, comment });
+  if (!w.recommended_at) return { error: 'not_recommended' };
+  const type = w.kind === 'replacement' ? (replacementType || w.recommended_type) : null;
+  if (w.kind === 'replacement' && !['fix', 'new'].includes(type)) return { error: 'replacement_type_required' };
   const v = q.lastVersion.get(workId);
   const artist = db.prepare('SELECT * FROM users WHERE id = ?').get(w.artist_id);
   const authorName = artist ? (artist.public_name || artist.name) : '';
   return db.transaction(() => {
     let cardCode = null;
-    if (action === 'approve') {
-      cards.copyWorkImage(v);
-      if (w.kind === 'replacement' && replacementType === 'fix') {
-        const card = q.card.get(w.target_card_id);
-        db.prepare('INSERT INTO card_versions (card_id, image_full, image_thumb, width, height, work_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(card.id, card.image_full, card.image_thumb, card.width, card.height, w.id);
-        db.prepare('UPDATE cards SET image_full = ?, image_thumb = ?, image_original = ?, width = ?, height = ? WHERE id = ?')
-          .run(v.image_full, v.image_thumb, v.image_original, v.width, v.height, card.id);
-        db.prepare('UPDATE works SET card_id = ? WHERE id = ?').run(card.id, w.id);
-        cardCode = card.code;
-      } else {
-        const card = cards.insertCard({ author: authorName, image_full: v.image_full, image_thumb: v.image_thumb, image_original: v.image_original,
-          width: v.width, height: v.height, artist_id: w.artist_id, is_demo: w.is_demo, source: 'work' });
-        db.prepare('UPDATE works SET card_id = ? WHERE id = ?').run(card.id, w.id);
-        cardCode = card.code;
-      }
-      q.setStatus.run('published', w.id);
+    cards.copyWorkImage(v);
+    if (w.kind === 'replacement' && type === 'fix') {
+      const card = q.card.get(w.target_card_id);
+      db.prepare('INSERT INTO card_versions (card_id, image_full, image_thumb, width, height, work_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(card.id, card.image_full, card.image_thumb, card.width, card.height, w.id);
+      db.prepare('UPDATE cards SET image_full = ?, image_thumb = ?, image_original = ?, width = ?, height = ? WHERE id = ?')
+        .run(v.image_full, v.image_thumb, v.image_original, v.width, v.height, card.id);
+      db.prepare('UPDATE works SET card_id = ? WHERE id = ?').run(card.id, w.id);
+      cardCode = card.code;
     } else {
-      q.setStatus.run(action === 'return' ? 'needs_changes' : 'rejected', w.id);
+      const card = cards.insertCard({ author: authorName, image_full: v.image_full, image_thumb: v.image_thumb, image_original: v.image_original,
+        width: v.width, height: v.height, artist_id: w.artist_id, is_demo: w.is_demo, source: 'work' });
+      db.prepare('UPDATE works SET card_id = ? WHERE id = ?').run(card.id, w.id);
+      cardCode = card.code;
     }
-    q.log.run(w.id, v.n, curator.id, action, JSON.stringify(crit), String(comment).slice(0, 2000), action === 'approve' ? (replacementType || null) : null, null);
-    return { ok: true, cardCode };
+    q.setStatus.run('published', w.id);
+    const info = q.log.run(w.id, v.n, admin.id, 'approve', '[]', String(comment).slice(0, 2000), type, null);
+    return { ok: true, cardCode, decisionId: Number(info.lastInsertRowid) };
   })();
 }
 
@@ -266,5 +317,5 @@ function workMediaAllowed(file, user, roles) {
 
 module.exports = {
   criteriaList, setCriteria, submit, proposeReplacement, addVersion, myWorks, myCards, withdrawCard,
-  queue, recentDecided, detail, canSee, decide, discuss, vote, curators, workMediaAllowed,
+  queue, recommendedQueue, decisionsLog, recentDecided, detail, canSee, decide, adminDecide, discuss, vote, curators, workMediaAllowed,
 };

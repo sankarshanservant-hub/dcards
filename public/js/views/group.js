@@ -9,8 +9,8 @@ import { QUESTION_FORMATS } from '../content.js';
 export const GROUP_FORMATS = [
   { key: 'one', ru: 'Одна карта на всех', en: 'One card for everyone', dru: 'Все смотрят на одну карту и по кругу говорят, что заметили и о чём она напоминает. Самый простой формат.', den: 'Everyone looks at one card and takes turns saying what they notice and what it reminds them of. The simplest format.' },
   { key: 'own', ru: 'Каждому своя карта', en: 'A card for each', dru: 'Каждый тайно выбирает карту, которая откликается ему сейчас. Потом карты открываются, и все по очереди рассказывают, почему выбрали свою.', den: 'Everyone secretly picks a card that speaks to them now. Then the cards are revealed and each person says why they chose theirs.' },
-  { key: 'guess', ru: 'Угадай, кто выбрал', en: 'Guess who chose it', dru: 'Все тайно выбирают карты, приложение показывает их по одной. Угадайте, чья это карта, — а потом хозяин расскажет, почему выбрал её.', den: 'Everyone secretly picks a card; the app shows them one by one. Guess whose card it is — then its owner tells why they chose it.' },
-  { key: 'friend', ru: 'Карта для друга', en: 'A card for a friend', dru: 'Для близких друзей: каждому достаётся имя одного из компании — выберите карту, которая, по-вашему, подходит этому человеку.', den: 'For close friends: each person gets someone’s name — choose a card that you feel suits that person.' },
+  { key: 'guess', ru: 'Угадай, кто выбрал', en: 'Guess who chose it', dru: 'Каждый тайно выбирает карту. Потом приложение показывает карты по одной и не говорит, чья она. Угадайте вслух, кто её выбрал, — затем ведущий откроет ответ, и автор расскажет о своём выборе.', den: 'Everyone secretly picks a card. Then the app shows the cards one at a time without saying whose it is. Guess out loud who chose it — then the host reveals the answer and its owner talks about the choice.' },
+  { key: 'friend', ru: 'Карта для друга', en: 'A card for a friend', dru: 'Для друзей: каждому достаётся имя одного из компании — выберите карту, которая, по-вашему, подходит этому человеку. Нужно хотя бы двое.', den: 'For friends: each person gets the name of someone in the group — choose a card that you feel suits that person. At least two players.' },
   { key: 'story', ru: 'История по кругу', en: 'A story in turns', dru: 'Открывается карта — первый начинает историю одной фразой. Следующая карта — следующий продолжает, вплетая то, что на ней.', den: 'A card is revealed — the first person starts a story in one sentence. Next card — the next person continues, weaving it in.' },
   { key: 'pairs', ru: 'Разговор в парах', en: 'Conversations in pairs', dru: 'Как на встрече Dialogue Flow: половина компании выбирает карты, остальные — из уже выбранных, так складываются пары. Поговорите минут 15, потом роли меняются. Ведущий — один из вас.', den: 'Like a Dialogue Flow meeting: half the group picks cards, the others choose from those — that is how pairs form. Talk for about 15 minutes, then swap roles. The host is one of you.' },
   { key: 'question', ru: 'Вопрос от карты', en: 'A question from the card', dru: 'Каждый пишет вопрос, который «задала бы эта карта». Вопросы перемешиваются — каждому достаётся чужой, на него можно ответить или сказать «пас».', den: 'Everyone writes a question “this card would ask”. Questions are shuffled — each gets someone else’s; answer it or say “pass”.' },
@@ -19,8 +19,10 @@ const F = (k) => GROUP_FORMATS.find((f) => f.key === k) || GROUP_FORMATS[0];
 const fTitle = (f) => (lang === 'en' ? f.en : f.ru);
 const fDesc = (f) => (lang === 'en' ? f.den : f.dru);
 const RULES = () => [tt('Говорим по очереди и не перебиваем.', 'We speak in turns and do not interrupt.'), tt('Советы — только если о них просят.', 'Advice only if asked.'), tt('Можно сказать «пас» — объяснять не нужно.', 'You can say “pass” — no explanation needed.'), tt('Сказанное остаётся между нами.', 'What is said stays between us.')];
-const CIRCLE = () => [tt('Что на карте первым привлекло ваше внимание?', 'What caught your attention first?'), tt('О чём она вам напоминает?', 'What does it remind you of?'), tt('Что из сказанного другими вас удивило?', 'What surprised you in what others said?'), tt('Что вы забираете с собой из этого разговора?', 'What are you taking away from this conversation?')];
-const circleHtml = () => `<details class="about-df card-ui flat"><summary><span class="grow">${esc(tt('Подсказки для круга', 'Prompts for the circle'))}</span><span class="chev" aria-hidden="true">▾</span></summary><div class="about-body"><ul class="qlist">${CIRCLE().map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div></details>`;
+// Дополнительные вопросы — без повтора того, что уже написано под картой («что заметили первым», «о чём напоминает»).
+const CIRCLE = () => [tt('Что из сказанного другими вас удивило?', 'What surprised you in what others said?'), tt('Что вы забираете с собой из этого разговора?', 'What are you taking away from this conversation?')];
+// Блок открывается и закрывается только по нажатию: при обновлении состояния игры его положение сохраняется (ui.open).
+const circleHtml = (open) => `<details class="about-df card-ui flat" data-k="circle" ${open ? 'open' : ''}><summary><span class="grow">${esc(tt('Дополнительные вопросы', 'More questions'))}</span><span class="chev" aria-hidden="true">▾</span></summary><div class="about-body"><ul class="qlist">${CIRCLE().map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div></details>`;
 
 // ---------- выбор формата ----------
 export function choose(ctx) {
@@ -28,7 +30,8 @@ export function choose(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией', 'Play with friends'))}</h1>
       <p class="sub">${esc(tt('Для друзей и семьи, от 2 до 20 человек. Один открывает игру и показывает QR, остальные заходят со своих телефонов. Регистрация не нужна.', 'For friends and family, 2 to 20 people. One person opens a game and shows the QR code; the others join from their phones. No sign-up needed.'))}</p></div>
-    <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name">
+    <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
+    <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
     <p class="form-error" id="gerr" role="alert"></p>
     <div class="list">${GROUP_FORMATS.map((f) => `<button class="item group-format" type="button" data-f="${f.key}"><span class="body"><b>${esc(fTitle(f))}</b><span class="small">${esc(fDesc(f))}</span></span><span aria-hidden="true">→</span></button>`).join('')}</div>
   </div>`;
@@ -52,7 +55,7 @@ export async function room(ctx, code) {
     return failed(ctx.main, e, ctx.rerender);
   }
   if (!ctx.alive()) return;
-  const ui = { preview: null, slot: null, busy: false, text: '', found: {}, showSign: false, list: null };
+  const ui = { preview: null, slot: null, busy: false, text: '', found: {}, showSign: false, list: null, open: {}, change: false, step: null };
   let tick = null; const fired = new Set(); let lastRecall = s.recallAt || null;
   const f = F(s.format);
   const url = `${location.origin}${u('/g/' + s.code)}`;
@@ -65,7 +68,8 @@ export async function room(ctx, code) {
   };
   const hostBtn = (action, label, cls = 'yellow') => (s.host ? `<button class="btn ${cls}" type="button" data-act="${action}" ${ui.busy ? 'disabled' : ''}>${esc(label)}</button>` : '');
   const waitHost = (what) => (s.host ? '' : `<p class="small muted" style="margin:0">${esc(tt(`${what} — ведущий: ${s.hostName}`, `${what} — host: ${s.hostName}`))}</p>`);
-  const bigCard = (c) => (c ? `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}"><img class="live-card" src="${esc(c.thumb)}" alt="${esc(c.code)}"></button>` : '');
+  // Нажатие на карту — свой просмотр на этом телефоне (общую карту у других не меняет). Размеры заданы — карта не прыгает при загрузке.
+  const bigCard = (c, big = false) => (c ? `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="live-card${big ? ' xl' : ''}" src="${esc(big ? (c.full || c.thumb) : c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>` : '');
   const cardsBy = new Map();
   const remember = (c) => { if (c) cardsBy.set(c.code, c); return c; };
   const invite = (open = false) => `<details class="card-ui flat" ${open ? 'open' : ''}><summary><b>${esc(tt('Пригласить друзей', 'Invite friends'))}</b> · ${esc(tt('код', 'code'))} <span class="g-code">${esc(s.code)}</span></summary>
@@ -75,18 +79,18 @@ export async function room(ctx, code) {
 
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
-      <div class="list"><a class="item" href="${u('/group')}"><span class="body"><b>${esc(tt('Сыграть ещё', 'Play again'))}</b></span><span>→</span></a><a class="item" href="${u('/library')}"><span class="body"><b>${esc(tt('Галерея карт', 'Card gallery'))}</b></span><span>→</span></a><a class="item" href="${u('/meetings')}"><span class="body"><b>${esc(tt('Найти встречу Dialogue Flow', 'Find a Dialogue Flow meeting'))}</b></span><span>→</span></a></div>`;
-    if (!s.me) return `<p class="lead">${esc(fDesc(f))}</p><form class="form" id="gj"><label class="field" for="gjn">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gjn" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}"><p class="form-error" id="gjerr" role="alert"></p><button class="btn yellow wide big" type="submit">${esc(tt('Войти в игру', 'Join the game'))}</button></form>${people()}`;
+      <div class="list"><a class="item" href="${u('/group')}"><span class="body"><b>${esc(tt('Сыграть ещё', 'Play again'))}</b></span><span>→</span></a><a class="item" href="${u('/library')}"><span class="body"><b>${esc(tt('Галерея карт', 'Card gallery'))}</b></span><span>→</span></a><a class="item" href="${u('/meetings')}"><span class="body"><b>${esc(tt('Найти встречу Dialogue Flow', 'Find a Dialogue Flow meeting'))}</b></span><span>→</span></a><a class="item" href="${u('/')}"><span class="body"><b>${esc(tt('На главную', 'Home'))}</b></span><span>→</span></a></div>`;
+    if (!s.me) return `<p class="lead">${esc(fDesc(f))}</p><form class="form" id="gj"><label class="field" for="gjn">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gjn" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}" aria-describedby="gjn-h"><p class="small muted" id="gjn-h" style="margin:0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p><p class="form-error" id="gjerr" role="alert"></p><button class="btn yellow wide big" type="submit">${esc(tt('Войти в игру', 'Join the game'))}</button></form>${people()}`;
     if (s.status === 'lobby') return `<p class="lead">${esc(fDesc(f))}</p>${invite(s.host)}${people()}
       <div class="card-ui flat"><b>${esc(tt('Договорённости', 'Agreements'))}</b><ul class="g-rules">${RULES().map((r) => `<li>${esc(r)}</li>`).join('')}</ul></div>
-      ${hostBtn('start', s.format === 'friend' && s.members.length < 2 ? tt('Нужно хотя бы двое', 'At least two needed') : tt('Все здесь — начать', 'Everyone is here — start'))}${waitHost(tt('Ждём начала', 'Waiting to start'))}`;
+      ${(s.format === 'friend' && s.members.length < 2 ? (s.host ? `<button class="btn yellow" type="button" disabled>${esc(tt('Нужно хотя бы двое — пригласите друзей', 'At least two needed — invite friends'))}</button>` : '') : hostBtn('start', tt('Все здесь — начать', 'Everyone is here — start')))}${waitHost(tt('Ждём начала', 'Waiting to start'))}`;
     const fmt = s.format;
     if (fmt === 'pairs') return pairsBody();
-    if (fmt === 'one') { remember(s.card); return `${bigCard(s.card)}<p class="lead">${esc(tt('По кругу: что вы заметили первым? О чём она вам напоминает?', 'In turns: what did you notice first? What does it remind you of?'))}</p>${circleHtml()}${hostBtn('next_card', tt('Другая карта', 'Another card'), 'light')}`; }
+    if (fmt === 'one') { remember(s.card); return `${bigCard(s.card)}<p class="lead">${esc(tt('По очереди расскажите, что вы заметили первым и о чём вам напоминает карта.', 'In turns, tell what you noticed first and what the card reminds you of.'))}</p>${circleHtml(ui.open.circle)}${hostBtn('next_card', tt('Другая карта', 'Another card'), 'light')}`; }
     if (fmt === 'story') {
       const cs = s.cards || []; cs.forEach(remember); const last = cs[cs.length - 1];
-      return `${cs.length > 1 ? `<div class="g-strip">${cs.slice(0, -1).map((c) => `<img src="${esc(c.thumb)}" alt="">`).join('')}</div>` : ''}${bigCard(last)}
-        <p class="lead">${esc(cs.length === 1 ? tt('Начните историю одной-двумя фразами — с того, что на карте.', 'Start the story in a sentence or two — from what is on the card.') : tt(`Карта ${cs.length}. Следующий продолжает историю, вплетая то, что на этой карте.`, `Card ${cs.length}. The next person continues the story, weaving in this card.`))}</p>
+      return `${cs.length > 1 ? `<div class="g-strip">${cs.slice(0, -1).map((c) => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" width="54" height="93"></button>`).join('')}</div>` : ''}${bigCard(last)}
+        <p class="lead">${esc(cs.length === 1 ? tt('Начните историю одной-двумя фразами — с того, что на карте.', 'Start the story in a sentence or two — from what is on the card.') : tt('Продолжите историю, глядя на новую карту.', 'Continue the story, looking at the new card.'))}</p>
         <div class="row">${hostBtn('next_card', tt('Следующая карта', 'Next card'))}${hostBtn('again', tt('Новая история', 'New story'), 'light')}</div>`;
     }
     if (fmt === 'question') {
@@ -101,18 +105,35 @@ export async function room(ctx, code) {
     if (s.phase === 'pick') {
       if (s.gallery) s.gallery.forEach(remember);
       const head = fmt === 'friend' ? tt(`Выберите карту для: ${s.target}`, `Choose a card for: ${s.target}`) : tt('Выберите карту, которая откликается вам сейчас', 'Choose a card that speaks to you now');
-      return `<h2 class="g-h">${esc(head)}</h2><p class="small muted" style="margin:0">${esc(tt('Никому не показывайте — карты откроются, когда выберут все.', 'Do not show anyone — the cards open when everyone has chosen.'))}</p>
-        ${s.myCard ? `<div class="live-chosen"><img src="${esc(s.myCard.thumb)}" alt=""><span>${ic.check} ${esc(tt('Выбрано — можно поменять', 'Chosen — you can change it'))}</span></div>` : ''}
+      const all = s.members.length && s.members.every((m) => (s.ready || []).includes(m.id));
+      // ведущий видит, кто уже выбрал (без самих карт), и открывает набор, когда выбрали все
+      const ready = `<ul class="g-ready" aria-live="polite">${s.members.map((m) => { const ok = (s.ready || []).includes(m.id); return `<li class="${ok ? 'ok' : ''}">${ok ? ic.check : '<span class="dot" aria-hidden="true"></span>'}<span>${esc(m.name)}</span><span class="sr-only">${esc(ok ? tt('выбрал(а)', 'has chosen') : tt('выбирает', 'choosing'))}</span></li>`; }).join('')}</ul>`;
+      const hostCtl = s.host ? `${all ? hostBtn('reveal', tt('Все выбрали — открыть карты', 'Everyone has chosen — reveal the cards')) : `<button class="btn light" type="button" disabled data-act-wait>${esc(tt(`Ждём выбора: ${s.picked} из ${s.members.length}`, `Waiting: ${s.picked} of ${s.members.length}`))}</button>`}
+        ${!all && s.picked ? `<button class="linkbtn small" type="button" data-force>${esc(tt('Кто-то не может выбрать? Открыть уже выбранные', 'Someone cannot choose? Reveal the chosen ones'))}</button>` : ''}` : '';
+      if (s.myCard && !ui.change) {
+        return `<h2 class="g-h">${esc(tt('Ваш выбор принят', 'Your choice is saved'))}</h2>
+          <div class="live-chosen"><img src="${esc(s.myCard.thumb)}" alt="" width="54" height="93"><span>${ic.check} ${esc(tt('Карта выбрана. Никому её не показывайте — карты откроются для всех вместе.', 'Card chosen. Do not show it to anyone — the cards open for everyone together.'))}</span></div>
+          <button class="linkbtn small" type="button" data-change>${esc(tt('Поменять выбор', 'Change my choice'))}</button>
+          <p class="live-count">${esc(all ? tt('Все выбрали — ведущий сейчас откроет карты.', 'Everyone has chosen — the host will reveal the cards.') : tt(`Ждём остальных: выбрали ${s.picked} из ${s.members.length}`, `Waiting for the others: ${s.picked} of ${s.members.length} have chosen`))}</p>
+          ${ready}${hostCtl}${waitHost(tt('Карты откроет', 'The cards will be revealed by'))}`;
+      }
+      return `<h2 class="g-h">${esc(head)}</h2><p class="small muted" style="margin:0">${esc(tt('Никому не показывайте — карты откроются, когда ведущий откроет их для всех.', 'Do not show anyone — the cards open when the host reveals them for everyone.'))}</p>
         <p class="live-count" aria-live="polite">${esc(tt(`Выбрали: ${s.picked} из ${s.members.length}`, `Chosen: ${s.picked} of ${s.members.length}`))}</p>
-        <div class="live-grid">${(s.gallery || []).map((c) => `<button type="button" class="live-tile" data-pick="${esc(c.code)}" aria-label="${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" loading="lazy">${s.myCard && s.myCard.code === c.code ? `<span class="lt-mark">${ic.check}</span>` : ''}</button>`).join('')}</div>
-        ${hostBtn('reveal', tt('Открыть, не дожидаясь остальных', 'Reveal without waiting'), 'light')}${previewHtml()}`;
+        <div class="live-grid">${(s.gallery || []).map((c) => `<button type="button" class="live-tile" data-pick="${esc(c.code)}" aria-label="${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" loading="lazy" width="${c.width || 910}" height="${c.height || 1560}">${s.myCard && s.myCard.code === c.code ? `<span class="lt-mark">${ic.check}</span>` : ''}</button>`).join('')}</div>
+        ${s.host ? ready + hostCtl : ''}${previewHtml()}`;
     }
     if (s.phase === 'show') {
       (s.shown || []).forEach((x) => remember(x.card));
+      const mineShown = s.me && (s.shown || []).find((x) => x.id === s.me.id);
+      const spot = fmt === 'own' && s.spot;
+      const spotHtml = spot ? `<div class="g-spot" role="region" aria-label="${esc(tt('Общий показ', 'Shared view'))}"><p class="eyebrow">${esc(tt('Показывает всем', 'Showing to everyone'))}: <b>${esc(spot.name)}</b></p>${bigCard(spot.card, true)}
+        ${s.me && (spot.id === s.me.id || s.host) ? `<button class="btn light sm" type="button" data-unspot>${esc(spot.id === s.me.id ? tt('Закончить показ', 'Stop showing') : tt('Снять показ', 'Clear the view'))}</button>` : ''}</div>` : '';
+      const spotBtn = fmt === 'own' && mineShown && !spot ? `<button class="btn yellow" type="button" data-spot ${ui.busy ? 'disabled' : ''}>${esc(tt('Показать мою работу всем', 'Show my card to everyone'))}</button>` : '';
       return `<h2 class="g-h">${esc(fmt === 'friend' ? tt('Карты друг для друга', 'Cards for each other') : tt('Карты открыты', 'The cards are open'))}</h2>
-        <p class="lead">${esc(fmt === 'friend' ? tt('По очереди: «Я выбрал для тебя эту, потому что…». Тот, кому карта, отвечает — совпало ли. Можно сказать «мне не откликается».', 'In turns: “I chose this one for you because…”. The person it is for answers whether it fits. “It doesn’t speak to me” is fine too.') : tt('По очереди расскажите, почему выбрали свою карту. Остальные задают по одному вопросу — без советов.', 'In turns, say why you chose your card. The others ask one question each — no advice.'))}</p>
+        <p class="lead">${esc(fmt === 'friend' ? tt('По очереди: «Я выбрал для тебя эту, потому что…». Тот, кому карта, отвечает — совпало ли. Можно сказать «мне не откликается».', 'In turns: “I chose this one for you because…”. The person it is for answers whether it fits. “It doesn’t speak to me” is fine too.') : tt('По очереди расскажите о своём выборе. Остальные могут задать по одному вопросу — без советов.', 'In turns, talk about your choice. The others may ask one question each — no advice.'))}</p>
+        ${spotHtml}${spotBtn}
         <div class="g-shown">${(s.shown || []).map((x) => `<figure>${bigCard(x.card)}<figcaption>${fmt === 'friend' ? `${esc(tt('Для', 'For'))} <b>${esc(x.for)}</b> · ${esc(tt('от', 'from'))} ${esc(x.name)}` : `<b>${esc(x.name)}</b>`}</figcaption></figure>`).join('')}</div>
-        ${fmt === 'own' ? circleHtml() : ''}${hostBtn('again', tt('Ещё круг', 'Another round'))}`;
+        ${fmt === 'own' ? circleHtml(ui.open.circle) : ''}${hostBtn('again', tt('Ещё круг', 'Another round'))}`;
     }
     if (s.phase === 'guess') {
       remember(s.current);
@@ -190,26 +211,37 @@ export async function room(ctx, code) {
     return `<div class="live-preview" role="dialog" aria-modal="true" aria-label="${esc(tt('Карта', 'Card'))}"><div class="lp-in"><img src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}">
       <div class="lp-acts"><button class="btn light" type="button" data-pv-close>${esc(tt('Назад', 'Back'))}</button><button class="btn yellow" type="button" data-pv-ok ${ui.busy ? 'disabled' : ''}>${esc(tt('Выбрать эту карту', 'Choose this card'))}</button></div></div></div>`;
   }
+  let root = null; let lastHtml = '';
   function draw() {
     if (s.recallAt && s.recallAt !== lastRecall) { lastRecall = s.recallAt; play('gather'); }
-    ctx.main.innerHTML = `<div class="live"><div class="live-in">
+    if (ui.step !== s.step) { ui.step = s.step; ui.change = false; } // новый круг — новый выбор
+    if (s.phase !== 'pick') ui.change = false;
+    if (!root || !ctx.main.contains(root)) { ctx.main.innerHTML = '<div class="live" id="groot"></div>'; root = ctx.main.querySelector('#groot'); lastHtml = ''; }
+    const html = `<div class="live-in">
       <p class="eyebrow">${esc(tt('Играть компанией', 'Play with friends'))} · ${esc(fTitle(f))}</p>
       ${body()}
       ${s.me && s.status !== 'ended' && s.status !== 'lobby' ? invite() : ''}
       ${s.me && s.status !== 'ended' ? `<div class="row between">${s.host ? `<button class="linkbtn" type="button" data-end>${esc(tt('Завершить игру', 'End the game'))}</button>` : `<button class="linkbtn" type="button" data-leave>${esc(tt('Выйти', 'Leave'))}</button>`}</div>` : ''}
-    </div></div>`;
-    wire(); runTimer();
+    </div>`;
+    // перерисовываем только то, что изменилось: без мигания при каждом обновлении и при новом круге
+    if (html !== lastHtml) { root.innerHTML = html; lastHtml = html; wire(); }
+    runTimer();
   }
   function wire() {
     const $ = (q) => ctx.main.querySelector(q);
-    ctx.main.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => { unlockSound(); const a = b.dataset.act; act(a, a === 'talk' ? { minutes: Number(($('#gmin') || {}).value) || s.minutes } : {}); }));
+    root.querySelectorAll('details[data-k]').forEach((d) => d.addEventListener('toggle', () => { ui.open[d.dataset.k] = d.open; lastHtml = ''; }));
+    const ch = $('[data-change]'); if (ch) ch.onclick = () => { ui.change = true; draw(); };
+    const fo = $('[data-force]'); if (fo) fo.onclick = () => { if (confirm(tt('Открыть карты тех, кто уже выбрал? Остальные увидят их без своей.', 'Reveal the cards of those who have chosen? The others will see them without theirs.'))) act('reveal', { force: true }); };
+    const sp = $('[data-spot]'); if (sp) sp.onclick = () => act('spot', { on: true });
+    const us = $('[data-unspot]'); if (us) us.onclick = () => act('spot', { on: false });
+    ctx.main.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => { if (s.format === 'pairs') unlockSound(); const a = b.dataset.act; act(a, a === 'talk' ? { minutes: Number(($('#gmin') || {}).value) || s.minutes } : {}); }));
     const gj = $('#gj');
-    if (gj) gj.onsubmit = async (e) => { e.preventDefault(); unlockSound(); keepAwake(true); const n = $('#gjn').value.trim(); if (!n) return; storage.set('dc_live_name', n); try { await api(`/api/group/${s.code}/join`, { method: 'POST', body: { deviceId: dev, name: n } }); await refresh(); } catch (x) { $('#gjerr').textContent = errorText(x); } };
+    if (gj) gj.onsubmit = async (e) => { e.preventDefault(); if (s.format === 'pairs') unlockSound(); keepAwake(true); const n = $('#gjn').value.trim(); if (!n) return; storage.set('dc_live_name', n); try { await api(`/api/group/${s.code}/join`, { method: 'POST', body: { deviceId: dev, name: n } }); await refresh(); } catch (x) { $('#gjerr').textContent = errorText(x); } };
     const gq = $('#gq');
     if (gq) { gq.gqt.addEventListener('input', () => { ui.text = gq.gqt.value; }); gq.onsubmit = async (e) => { e.preventDefault(); const t = gq.gqt.value.trim(); if (!t) return; await act('write', { text: t }); ui.text = ''; toast(tt('Вопрос принят', 'Question saved')); }; }
     ctx.main.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { ui.preview = b.dataset.pick; draw(); });
     const pc = $('[data-pv-close]'); if (pc) { pc.onclick = () => { ui.preview = null; draw(); }; pc.focus(); }
-    const po = $('[data-pv-ok]'); if (po) po.onclick = async () => { const code0 = ui.preview; const slot = ui.slot; ui.preview = null; ui.slot = null; if (slot) await act('partner', { slotId: slot }); else await act('pick', { code: code0 }); };
+    const po = $('[data-pv-ok]'); if (po) po.onclick = async () => { const code0 = ui.preview; const slot = ui.slot; ui.preview = null; ui.slot = null; ui.change = false; if (slot) await act('partner', { slotId: slot }); else await act('pick', { code: code0 }); };
     ctx.main.querySelectorAll('[data-slot]:not([disabled])').forEach((b) => b.onclick = () => { unlockSound(); ui.preview = b.dataset.code; ui.slot = Number(b.dataset.slot); draw(); });
     const fd = $('[data-found]'); if (fd) fd.onclick = () => { ui.found[s.step] = true; ui.showSign = false; draw(); window.scrollTo(0, 0); };
     const sg = $('[data-sign]'); if (sg) sg.onclick = () => { ui.showSign = true; draw(); };
@@ -220,5 +252,61 @@ export async function room(ctx, code) {
     const en = $('[data-end]'); if (en) en.onclick = () => { if (confirm(tt('Завершить игру для всех?', 'End the game for everyone?'))) act('end'); };
     const lv = $('[data-leave]'); if (lv) lv.onclick = async () => { await api(`/api/group/${s.code}/leave`, { method: 'POST', body: { deviceId: dev } }).catch(() => {}); ctx.navigate('/group'); };
   }
+  draw();
+}
+
+// ---------- «Играть одному»: История из трёх карт ----------
+// Без регистрации, комнаты и QR. Три разные случайные карты открываются по очереди: первая помогает начать историю,
+// вторая меняет её ход, третья помогает закончить. Ход игры хранится в sessionStorage — перезагрузка его не сбрасывает.
+const SOLO_KEY = 'dc_solo_story';
+const SOLO_STEPS = () => [
+  tt('Первая карта помогает начать историю. Кто здесь? Где это происходит? С чего всё началось?', 'The first card helps start the story. Who is here? Where is it happening? How did it begin?'),
+  tt('Вторая карта меняет ход истории. Что случилось неожиданно? Что изменилось?', 'The second card changes the course of the story. What happened unexpectedly? What changed?'),
+  tt('Третья карта помогает закончить историю. Чем всё завершилось? С чем остался герой?', 'The third card helps end the story. How did it all end? What is the hero left with?'),
+];
+export async function solo(ctx) {
+  loading(ctx.main);
+  let cards;
+  try { ({ cards } = await api('/api/cards')); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  if (!ctx.alive()) return;
+  const byCode = new Map(cards.map((c) => [c.code, c]));
+  let st = null;
+  try { st = JSON.parse(sessionStorage.getItem(SOLO_KEY) || 'null'); } catch { st = null; }
+  if (!st || !Array.isArray(st.codes) || st.codes.some((c) => !byCode.has(c))) st = null;
+  const save = () => { try { sessionStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch { /* без сохранения */ } };
+  const deal = () => {
+    const pool = cards.slice(); const codes = [];
+    while (codes.length < 3 && pool.length) codes.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].code);
+    st = { codes, open: 0 }; save();
+  };
+  if (!st) deal();
+  const img = (c, cls = 'live-card') => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="${cls}" src="${esc(c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
+  const draw = () => {
+    const opened = st.codes.slice(0, st.open).map((c) => byCode.get(c));
+    const last = opened[opened.length - 1];
+    let html;
+    if (cards.length < 3) html = `<p class="empty">${esc(tt('Для игры нужно хотя бы три карты в галерее.', 'The game needs at least three cards in the gallery.'))}</p>`;
+    else if (!st.open) {
+      html = `<p class="lead">${esc(tt('Вы откроете три разные карты, одну за другой, и сочините по ним историю — вслух, про себя или на бумаге.', 'You will open three different cards, one after another, and make up a story from them — out loud, silently or on paper.'))}</p>
+        <ol class="solo-steps">${SOLO_STEPS().map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
+        <button class="btn yellow big" type="button" data-next>${esc(tt('Открыть первую карту', 'Open the first card'))}</button>`;
+    } else {
+      html = `<p class="eyebrow">${esc(tt(`Карта ${st.open} из 3`, `Card ${st.open} of 3`))}</p>
+        ${opened.length > 1 ? `<div class="g-strip">${opened.slice(0, -1).map((c) => img(c, '')).join('')}</div>` : ''}
+        ${img(last)}
+        <p class="lead">${esc(SOLO_STEPS()[st.open - 1])}</p>
+        ${st.open < 3 ? `<button class="btn yellow big" type="button" data-next>${esc(st.open === 1 ? tt('Открыть вторую карту', 'Open the second card') : tt('Открыть третью карту', 'Open the third card'))}</button>`
+          : `<div class="card-ui flat"><b>${esc(tt('История сложилась', 'The story is complete'))}</b><p class="small muted" style="margin:4px 0 0">${esc(tt('Можно рассказать её кому-нибудь — или сыграть ещё раз с другими картами.', 'You can tell it to someone — or play again with other cards.'))}</p></div>
+          <div class="row"><button class="btn yellow" type="button" data-again>${esc(tt('Сыграть ещё', 'Play again'))}</button><a class="btn light" href="${u('/library')}">${esc(tt('В галерею', 'To the gallery'))}</a><a class="btn light" href="${u('/')}">${esc(tt('На главную', 'Home'))}</a></div>`}`;
+    }
+    ctx.main.querySelector('#solo').innerHTML = html;
+  };
+  ctx.main.innerHTML = `<div class="live"><div class="live-in"><p class="eyebrow">${esc(tt('Играть одному', 'Play solo'))}</p><h1 style="margin:0">${esc(tt('История из трёх карт', 'A story from three cards'))}</h1><div class="live-in" id="solo" style="max-width:none"></div></div></div>`;
+  ctx.main.querySelector('#solo').addEventListener('click', (e) => {
+    if (e.target.closest('[data-next]')) { st.open = Math.min(3, st.open + 1); save(); draw(); window.scrollTo({ top: 0 }); }
+    else if (e.target.closest('[data-again]')) { deal(); st.open = 1; save(); draw(); window.scrollTo({ top: 0 }); }
+    const z = e.target.closest('[data-zoom]');
+    if (z) { const c = byCode.get(z.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin' }); }
+  });
   draw();
 }
