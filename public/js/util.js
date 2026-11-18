@@ -20,7 +20,8 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   try {
     res = await fetch(BASE + path, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      // X-DC-Visitor — случайный идентификатор этого браузера: обмены, колокольчик и записи гостя (без личных данных)
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'X-DC-Visitor': visitorId() },
       body: form || (body ? JSON.stringify(body) : undefined),
       credentials: 'same-origin',
     });
@@ -37,7 +38,7 @@ export async function api(path, { method = 'GET', body, form } = {}) {
 export function upload(path, form, onProgress) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
-    x.open('POST', BASE + path); x.withCredentials = true; x.responseType = 'text';
+    x.open('POST', BASE + path); x.withCredentials = true; x.responseType = 'text'; x.setRequestHeader('X-DC-Visitor', visitorId());
     x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
     x.upload.onload = () => onProgress && onProgress(1);
     x.onerror = () => reject(new ApiError(0, 'network'));
@@ -95,6 +96,13 @@ const ERRORS = {
   group_not_member: ['Сначала войдите в игру.', 'Join the game first.'],
   group_host_only: ['Это делает ведущий — тот, кто открыл игру.', 'Only the host — the person who opened the game — can do this.'],
   group_need_two: ['Нужно хотя бы два вопроса.', 'At least two questions are needed.'],
+  collection_too_small: ['В подборке должно быть хотя бы две карты.', 'The collection needs at least two cards.'],
+  collection_full: ['В подборке уже 40 карт.', 'The collection already has 40 cards.'],
+  text_required: ['Напишите пару слов.', 'Write a few words.'],
+  exchange_taken: ['На это приглашение уже ответил другой человек.', 'Someone else has already answered this invitation.'],
+  exchange_own: ['Это ваше приглашение — отправьте его другу.', 'This is your own invitation — send it to a friend.'],
+  story_changed: ['Макет изменился — посмотрите его ещё раз.', 'The layout changed — please look at it again.'],
+  visitor_required: ['Не удалось определить браузер. Обновите страницу.', 'Could not identify the browser. Reload the page.'],
   forward_not_allowed: ['Пересылать можно только из общего чата.', 'Only messages from the general chat can be forwarded.'],
   bad_room: ['Такого чата нет.', 'There is no such chat.'],
   group_not_all_picked: ['Ещё не все выбрали карту.', 'Not everyone has chosen a card yet.'],
@@ -154,6 +162,9 @@ export function visitorId() {
   }
   return v;
 }
+
+/** Общее устройство: после выхода — новый идентификатор браузера, чтобы следующий человек не видел чужие обмены и события. */
+export function resetVisitor() { try { localStorage.removeItem('dc_visitor'); } catch { /* */ } }
 
 let toastTimer;
 export function toast(msg) {

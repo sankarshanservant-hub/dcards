@@ -61,8 +61,8 @@ export async function search(ctx, country, city) {
         <h3>${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h3>
         <ol class="steps">
           <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
-          <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в живом потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a living flow.'))}</li>
-          <li>${esc(tt('В конце встречи участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
+          <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в естественном потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a natural flow.'))}</li>
+          <li>${esc(tt('В конце участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
         </ol></div></details>
     <form class="filters card-ui flat" id="flt" style="padding:14px">
       <label class="field">${esc(tt('Страна', 'Country'))}<select name="country"><option value="">${esc(tt('Все страны', 'All countries'))}</option>${places.map((p) => `<option ${p.country === country ? 'selected' : ''} value="${esc(p.country)}">${esc(p.country)} (${p.count})</option>`).join('')}</select></label>

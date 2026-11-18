@@ -463,9 +463,11 @@ function facStatusBody(a) {
 export async function apply(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Чтобы стать фасилитатором, войдите по email.', 'Sign in with email to become a facilitator.'));
   loading(ctx.main);
-  let d;
-  try { d = await loadApplication(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  let d; let assets = { pdf: false, audio: {} };
+  try { [d, assets] = await Promise.all([loadApplication(ctx), api('/api/guides/facilitator/assets').catch(() => assets)]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
+  // аудиоглава — только если автор прислал запись: стандартный плеер (длительность, пауза, продолжение)
+  const audioHtml = (i) => (assets.audio[String(i + 1)] ? `<div class="ch-audio"><b class="small">${esc(tt('Прослушать главу', 'Listen to the chapter'))}</b><audio controls preload="metadata" src="${u(`/guides/facilitator/chapter-${i + 1}`)}"></audio></div>` : '');
   if (d.isFacilitator && !d.application) {
     ctx.main.innerHTML = `<div class="wrap page narrow"><div class="card-ui stack"><h2>${esc(tt('Вы уже фасилитатор', 'You are already a facilitator'))}</h2><a class="btn dark" href="${u('/facilitator')}">${esc(tt('В кабинет', 'Open the space'))}</a></div></div>`;
     return;
@@ -492,10 +494,12 @@ export async function apply(ctx) {
         <p class="small muted" style="margin:0">${esc(tt('Откройте главу и прочитайте её.', 'Open a chapter and read it.'))}</p>
         <p class="small muted" style="margin:0">${esc(tt('Когда дочитаете, нажмите «Я прочитал(а)» в конце главы — само открытие главы отметку не ставит.', 'When you finish, press “I have read it” at the end of the chapter — opening a chapter does not mark it.'))}</p>
         <p class="small muted" style="margin:0">${esc(tt('Отметки сохраняются в вашем аккаунте: можно закрыть страницу и вернуться позже — на этом или другом устройстве, войдя по тому же email.', 'Marks are saved in your account: you can close the page and come back later — on this or another device, signed in with the same email.'))}</p>
+        ${assets.pdf ? `<p style="margin:0"><a class="btn sm light" href="${u('/guides/facilitator/guide.pdf')}" download>${esc(tt('Скачать руководство (PDF) — для чтения или печати', 'Download the guide (PDF) — to read or print'))}</a></p>` : ''}
+        <nav class="toc small" aria-label="${esc(tt('Оглавление', 'Contents'))}"><b>${esc(tt('Оглавление', 'Contents'))}</b><ol>${d.course.map((t0, i) => `<li><a href="#ch-${i + 1}" data-toc="${i + 1}">${esc(t0)}</a>${done.has(i) ? ' ✓' : ''}</li>`).join('')}</ol></nav>
         ${d.guideMissing ? `<div class="notice">${esc(tt('Тексты глав ещё не загружены администратором — пока видны только названия.', 'Chapter texts have not been uploaded yet — only titles are shown.'))}</div>` : ''}
         <div class="row between"><b id="prog">${esc(tt(`Прочитано ${done.size} из ${N}`, `Read ${done.size} of ${N}`))}</b>${nextUnread >= 0 && done.size ? `<button class="btn sm" type="button" id="cont">${esc(tt(`Продолжить с главы ${nextUnread + 1}`, `Continue with chapter ${nextUnread + 1}`))}</button>` : ''}</div>
         <div class="stack" style="gap:8px">${d.course.map((title, i) => `<details class="chapter ${done.has(i) ? 'read' : ''}" data-chapter="${i}" id="ch-${i + 1}"><summary><span class="state" aria-hidden="true">${done.has(i) ? icons.check : ''}</span><span class="grow"><b>${esc(title)}</b><br><span class="small muted" data-chstate>${esc(done.has(i) ? tt('Прочитано', 'Read') : tt('Не прочитано', 'Not read'))}</span></span></summary>
-          <div class="ch-body">${d.chapters ? d.chapters[i].map(block).join('') : `<p class="muted">${esc(tt('Текст этой главы пока не загружен.', 'This chapter’s text is not uploaded yet.'))}</p>`}
+          <div class="ch-body">${audioHtml(i)}${d.chapters ? d.chapters[i].map(block).join('') : `<p class="muted">${esc(tt('Текст этой главы пока не загружен.', 'This chapter’s text is not uploaded yet.'))}</p>`}
             <div class="row" style="margin-top:10px"><button class="btn ${done.has(i) ? 'light' : 'yellow'} sm" type="button" data-read="${i}" aria-pressed="${done.has(i)}">${esc(done.has(i) ? tt('Отметить как непрочитанную', 'Mark as unread') : tt('Я прочитал(а)', 'I have read it'))}</button></div></div></details>`).join('')}
           ${d.extra.map((x) => `<details class="chapter optional"><summary><span class="state" aria-hidden="true"></span><span class="grow"><b>${esc(x.title)}</b><br><span class="small muted">${esc(tt('Приложение · необязательно, на проверку не влияет', 'Appendix · optional, not part of the quiz'))}</span></span></summary><div class="ch-body">${x.blocks.map(block).join('')}</div></details>`).join('')}</div></section>
       ${allRead ? `<section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${icons.check} ${esc(tt('Всё прочитано', 'All read'))}</h2>
@@ -503,6 +507,7 @@ export async function apply(ctx) {
         <div><a class="btn yellow" href="${u('/facilitator/quiz')}">${esc(a.quiz && a.quiz.passed ? tt('К заявке', 'To the application') : tt('Пройти проверку', 'Take the quiz'))}</a></div></section>` : ''}`;
   } else body = facStatusBody(a);
   ctx.main.innerHTML = `<div class="wrap page narrow stack">${facHead(d)}${body}</div>`;
+  ctx.main.querySelectorAll('[data-toc]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const det = ctx.main.querySelector(`#ch-${a.dataset.toc}`); if (det) { det.open = true; det.scrollIntoView({ block: 'start' }); det.querySelector('summary').focus({ preventScroll: true }); } }));
   const hashCh = /^#ch-(\d+)$/.exec(location.hash); if (hashCh) { const det = ctx.main.querySelector(`#ch-${hashCh[1]}`); if (det) det.open = true; }
   const cont = ctx.main.querySelector('#cont');
   if (cont) cont.addEventListener('click', () => { const det = ctx.main.querySelector(`[data-chapter="${d.course.findIndex((_, i) => !a.courseDone.includes(i))}"]`); if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'start' }); det.querySelector('summary').focus({ preventScroll: true }); } });

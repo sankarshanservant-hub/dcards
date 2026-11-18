@@ -724,6 +724,33 @@ admin.post('/guide', (req, res, next) => (req.user.is_demo ? bad(res, 'demo_read
   if (!req.file) return bad(res, 'file_required');
   out(res, guide.save(req.file.buffer, req.user.id), 201);
 });
+// Материалы руководств (18.11.2026): полный PDF и аудиозаписи глав. Пока файлов нет — ничего не показывается (без заглушек-файлов).
+// guide: facilitator | artist; аудио — глава n (с 1). Файлы — в DATA_DIR/guide-assets.
+const assetDir = path.join(config.dataDir, 'guide-assets');
+const assetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 80 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => (/^(application\/pdf|audio\/(mpeg|mp4|x-m4a|aac|ogg|webm|wav))$/.test(file.mimetype) ? cb(null, true) : cb(Object.assign(new Error('bad_file_type'), { code: 'bad_file_type' }))) });
+const assetName = (g, kind, n) => (['facilitator', 'artist'].includes(g) ? (kind === 'pdf' ? `${g}.pdf` : /^\d{1,2}$/.test(String(n)) ? `${g}-ch${Number(n)}.audio` : null) : null);
+function guideAssets(g) {
+  const out = { pdf: false, audio: {} };
+  try { for (const f of fs.readdirSync(assetDir)) { if (f === `${g}.pdf`) out.pdf = true; const m = f.match(new RegExp(`^${g}-ch(\\d+)\\.audio$`)); if (m) out.audio[m[1]] = true; } } catch { /* ещё нет */ }
+  return out;
+}
+r.get('/api/guides/:g/assets', (req, res) => res.json(guideAssets(String(req.params.g))));
+r.get('/guides/:g/:file', (req, res) => {
+  const g = String(req.params.g); const f = String(req.params.file);
+  const name = f === 'guide.pdf' ? assetName(g, 'pdf') : (f.match(/^chapter-(\d{1,2})$/) ? assetName(g, 'audio', f.split('-')[1]) : null);
+  if (!name) return bad(res, 'not_found', 404);
+  const full = path.join(assetDir, name); if (!fs.existsSync(full)) return bad(res, 'not_found', 404);
+  let type = 'application/pdf'; try { type = name.endsWith('.pdf') ? 'application/pdf' : fs.readFileSync(full + '.type', 'utf8'); } catch { type = 'audio/mpeg'; }
+  res.type(type).sendFile(full);
+});
+admin.post('/guides/:g/:kind', (req, res, next) => (req.user.is_demo ? bad(res, 'demo_readonly', 403) : next()), assetUpload.single('file'), (req, res) => {
+  const name = assetName(String(req.params.g), req.params.kind === 'pdf' ? 'pdf' : 'audio', req.query.chapter);
+  if (!name || !req.file) return bad(res, 'file_required');
+  fs.mkdirSync(assetDir, { recursive: true }); fs.writeFileSync(path.join(assetDir, name), req.file.buffer);
+  if (!name.endsWith('.pdf')) fs.writeFileSync(path.join(assetDir, name + '.type'), req.file.mimetype);
+  res.status(201).json({ ok: true });
+});
 admin.get('/print-requests', (req, res) => res.json({ requests: db.prepare(`SELECT p.*, COALESCE(NULLIF(u.public_name,''), u.name) AS name, u.email FROM print_requests p JOIN users u ON u.id = p.user_id WHERE ${req.showDemo ? '1=1' : 'p.is_demo = 0'} ORDER BY (p.status = 'new') DESC, p.id DESC LIMIT 100`).all()
   .map((p) => ({ id: p.id, name: p.name, email: p.email, note: p.note, status: p.status, createdAt: p.created_at, isDemo: !!p.is_demo })) }));
 admin.post('/print-requests/:id/done', (req, res) => { db.prepare(`UPDATE print_requests SET status = 'done' WHERE id = ?`).run(Number(req.params.id)); res.json({ ok: true }); });
@@ -861,6 +888,7 @@ r.get('*', (req, res) => {
 
 r.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err && err.code === 'bad_image_type') return bad(res, 'bad_image_type');
+  if (err && err.code === 'bad_file_type') return bad(res, 'bad_file_type');
   if (err && err.code === 'bad_media_type') return bad(res, 'bad_media_type');
   console.error(err);
   if (err instanceof multer.MulterError) return bad(res, err.code === 'LIMIT_FILE_SIZE' ? 'file_too_large' : 'upload_error');

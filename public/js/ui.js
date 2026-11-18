@@ -128,6 +128,7 @@ document.addEventListener('click', (e) => {
 }, true);
 
 export async function refreshSession() {
+  const before = session.user ? session.user.id : null;
   try {
     const [me, cfg] = await Promise.all([api('/api/me'), api('/api/config')]);
     session.user = me.user; session.showDemo = me.showDemo; session.config = cfg;
@@ -136,6 +137,10 @@ export async function refreshSession() {
       session.user = again.user; session.showDemo = again.showDemo;
     }
   } catch { /* сайт работает и без этого */ }
+  const after = session.user ? session.user.id : null;
+  // вход или выход в этой вкладке — app.js переносит данные гостя или очищает личное (personal.js)
+  if (before !== after && session.loaded) window.dispatchEvent(new CustomEvent('dc-auth', { detail: { before, after } }));
+  session.loaded = true;
 }
 
 export function showQr(slug, title, url) {

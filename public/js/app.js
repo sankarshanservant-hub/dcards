@@ -16,6 +16,8 @@ import * as fac from './views/facilitator.js';
 import * as coll from './views/fac-collections.js';
 import * as team from './views/team.js';
 import * as adm from './views/admin.js';
+import * as xch from './views/exchange.js';
+import * as personal from './personal.js';
 
 const main = document.getElementById('app');
 let renderToken = 0;
@@ -25,6 +27,11 @@ let renderedPath = null;
 const routes = [
   [/^\/$/, pub.home],
   [/^\/library\/?$/, pub.library],
+  [/^\/x\/([A-Za-z0-9_-]{16,40})\/?$/, xch.page],
+  [/^\/play\/(DC-\d{4,6})\/?$/, (ctx, code) => ctx.navigate(`/library?card=${code}&play=friend`, { replace: true })],
+  [/^\/bell\/?$/, xch.bellPage],
+  [/^\/me\/exchanges\/?$/, xch.myExchanges],
+  [/^\/me\/collections\/?$/, xch.myCollections],
   [/^\/cards\/(DC-\d{4,6})\/?$/, pub.cardPage],
   [/^\/start\/?$/, pub.start],
   [/^\/join\/?$/, (ctx) => ctx.navigate('/start#join', { replace: true })],
@@ -76,6 +83,7 @@ const PARENTS = [
   [/^\/group\/solo/, '/library#play', 'К играм', 'To games'],
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
+  [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
   [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
   [/^\/admin\/./, '/admin', 'Администрирование', 'Administration'],
@@ -159,6 +167,28 @@ export async function refreshUnread(force = false) {
 }
 window.dcRefreshUnread = refreshUnread;
 
+// ---------- колокольчик: отметка непрочитанного; обновление приложения ----------
+let bellAt = 0; let loadedBuild = null; session.bellUnread = 0; session.update = false;
+export async function refreshBell(force = false) {
+  const bl = document.getElementById('bell'); const dot = bl && bl.querySelector('.bell-dot');
+  const draw = () => { if (!dot) return; const n = session.bellUnread + (session.update ? 1 : 0); dot.hidden = !n; dot.textContent = n > 9 ? '9+' : String(n || '');
+    bl.setAttribute('aria-label', n ? tt(`Уведомления, непрочитанных: ${n}`, `Notifications, unread: ${n}`) : tt('Уведомления', 'Notifications')); };
+  draw();
+  if (!force && Date.now() - bellAt < 20000) return;
+  bellAt = Date.now();
+  try { session.bellUnread = (await api('/api/bell')).unread; } catch { /* без отметки */ }
+  try { const v = await api('/api/version'); if (!loadedBuild) loadedBuild = v.build; else if (v.build !== loadedBuild) session.update = true; } catch { /* */ }
+  draw();
+}
+window.dcRefreshBell = refreshBell;
+setInterval(() => document.visibilityState === 'visible' && refreshBell(), 60000);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refreshBell(true));
+// вход/выход в этой вкладке: данные гостя — в аккаунт (по согласию), после выхода — новый идентификатор браузера
+window.addEventListener('dc-auth', async (e) => {
+  if (e.detail.after) await personal.afterLogin(); else personal.afterLogout();
+  refreshBell(true);
+});
+
 function renderChrome() {
   const p = appPath();
   const link = (href, ru, en, on) => `<a href="${u(href)}" class="${on ? 'on' : ''}">${esc(tt(ru, en))}</a>`;
@@ -172,13 +202,17 @@ function renderChrome() {
   // Одна круглая кнопка открывает полное меню — и с инициалом, и у гостя (там же «Войти»).
   acct.innerHTML = session.user
     ? `<button class="acct" type="button" data-menu aria-label="${esc(tt('Меню: ', 'Menu: ') + session.user.publicName)}" title="${esc(session.user.publicName)}"><span class="ava">${avatar(session.user.publicName)}</span></button>`
-    : `<button class="acct guest" type="button" data-menu aria-label="${esc(tt('Меню и вход', 'Menu and sign in'))}" title="${esc(tt('Меню и вход', 'Menu and sign in'))}"><span class="ava">${ic.user}</span></button>`;
+    : `<button class="signin-btn" type="button" data-menu aria-label="${esc(tt('Войти и меню', 'Sign in and menu'))}">${esc(tt('Войти', 'Sign in'))}</button>`;
+  const bl = document.getElementById('bell');
+  bl.setAttribute('aria-label', tt('Уведомления', 'Notifications')); bl.title = tt('Уведомления', 'Notifications');
+  bl.classList.toggle('on', p.startsWith('/bell'));
+  refreshBell();
   drawThemeBtn();
   const ls = document.getElementById('lang');
   ls.textContent = lang === 'ru' ? 'EN' : 'RU';
   ls.setAttribute('aria-label', lang === 'ru' ? 'Switch to English' : 'Переключить на русский');
   document.getElementById('foot').innerHTML = `<span>© Dialogue Cards · Dialogue Flow</span>
-    ${p.startsWith('/library') ? '' : `<a href="${u('/start#join')}">${esc(tt('Участвовать', 'Take part'))}</a>`}
+    <a href="${u('/start#join')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
     <a href="${u('/terms')}">${esc(tt('Условия публикации', 'Publication terms'))}</a>
     ${session.config.demoMode ? `<span>${esc(tt('Прототип в демо-режиме', 'Prototype in demo mode'))}</span>` : ''}`;
   const pill = document.getElementById('demo-pill');
@@ -240,9 +274,12 @@ function openMenu() {
     ${s ? `${cabinets.length ? `<div class="sec">${esc(tt('Мои кабинеты', 'My spaces'))}</div>${cabinets.join('')}` : ''}
       <div class="sec">${esc(tt('Аккаунт', 'Account'))}</div>
       ${mi('/me', ic.user, 'Профиль', 'Profile')}
+      ${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}
+      ${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
       ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications')}
       ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', '', '', true) : ''}`
-    : `<div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
+    : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
+      <div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
     ${session.config.demoMode ? `<div class="demo-box">
       <p>${esc(tt('Демо-режим прототипа: войдите под тестовой ролью, чтобы пройти её путь. Права проверяются на сервере. Демо-данные помечены и не смешиваются с настоящими.', 'Prototype demo mode: sign in as a test role to walk through its path. Permissions are checked on the server. Demo data is labelled and kept apart from real data.'))}</p>
       <div class="chips">${demoRoles.map(([k, ru, en]) => `<button class="chip" type="button" data-demo="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
@@ -259,7 +296,7 @@ function openMenu() {
       try { await api('/api/demo/login', { method: 'POST', body: { as: d.dataset.demo } }); await refreshSession(); closeMenu(); toast(tt('Вы вошли как: ', 'Signed in as: ') + session.user.publicName); navigate(homeFor()); }
       catch (err) { toast(errorText(err)); }
     }
-    if (e.target.closest('[data-logout]')) { skipSiteAutoLogin(); await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); await refreshSession(); closeMenu(); navigate('/'); }
+    if (e.target.closest('[data-logout]')) { skipSiteAutoLogin(); await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); await refreshSession(); closeMenu(); navigate('/'); refreshBell(); }
   });
   // Escape закрывает; Tab не уходит из меню на страницу под ним; после закрытия фокус возвращается к кнопке.
   const onKey = (e) => {

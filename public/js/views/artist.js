@@ -48,6 +48,7 @@ export async function cabinet(ctx) {
       <div class="my-cards" id="mycards">${data.cards.length ? data.cards.map((c) => `<article class="my-card" data-card="${esc(c.code)}">
           <div class="mc-head"><b>${esc(c.code)}</b> · <span>${c.status === 'published' ? esc(tt('В галерее', 'In the gallery')) : esc(tt('Снята с сайта', 'Removed from the site'))}</span>${c.pendingReplacement ? `<span class="small muted"> · ${esc(tt('новая версия на рассмотрении', 'new version in review'))}</span>` : ''}</div>
           <div class="mc-img"><img src="${esc(c.thumb)}" alt="${esc(c.code)}" loading="lazy"></div>
+          ${c.status === 'published' ? `<p class="small muted" style="margin:0">${esc(tt('Выбрали для разговора', 'Chosen for a conversation'))}: <b>${c.selectedCount || 0}</b></p>` : ''}
           ${c.status === 'published' ? `<div class="mc-actions"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/jpeg,image/png" data-replace="${esc(c.code)}" hidden></label>
             <button class="linkbtn mc-remove" type="button" data-withdraw="${esc(c.code)}">${esc(tt('Убрать', 'Remove'))}</button></div>` : ''}
           <div class="mc-ask"></div>
@@ -106,6 +107,7 @@ export function submit(ctx) {
   let step = 1; let files = []; let guideOk = false; let result = null;
   let accepted = false; try { accepted = localStorage.getItem(TERMS_KEY) === session.config.termsVersion; } catch { /* */ }
   const send = { state: 'idle', progress: 0, error: '', key: null }; // idle | uploading | processing | error
+  let gAssets = null; api('/api/guides/artist/assets').then((x) => { gAssets = x; if (step === 2 && !result) draw(); }).catch(() => {});
   const TITLES = [tt('Условия использования работы', 'Terms of use of the work'), tt('Руководство для автора', 'Guide for the artist'), tt('Загрузите изображение', 'Upload the image'), tt('Отправка', 'Sending')];
   const urls = new Map(); const urlOf = (f) => { if (!urls.has(f)) urls.set(f, URL.createObjectURL(f)); return urls.get(f); };
   const head = () => `<div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 4`, `Step ${step} of 4`))}</span></div>${stepsBar(step, 4)}<h1>${esc(TITLES[step - 1])}</h1>`;
@@ -141,7 +143,7 @@ export function submit(ctx) {
           <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The artist name under the cards comes from your profile. You can change it there.'))}</p>
           <label class="check"><input type="checkbox" id="gok" ${guideOk ? 'checked' : ''}> <span>${esc(tt('Я ознакомился(ась) с кратким руководством', 'I have read the short guide'))}</span></label></section>
         <section class="card-ui flat stack" aria-labelledby="g-full"><h2 id="g-full" style="margin:0">${esc(tt('Полное руководство', 'Full guide'))} <span class="small muted">· ${esc(tt('по желанию', 'optional'))}</span></h2>
-          <p class="small muted" style="margin:0">${esc(tt('Появится здесь, когда владелец проекта его передаст.', 'It will appear here once the project owner provides it.'))}</p></section>
+          ${gAssets && gAssets.pdf ? `<p style="margin:0"><a class="btn sm light" href="${u('/guides/artist/guide.pdf')}" target="_blank" rel="noopener">${esc(tt('Открыть полное руководство (PDF)', 'Open the full guide (PDF)'))}</a></p>` : `<p class="small muted" style="margin:0">${esc(tt('Появится здесь, когда владелец проекта его передаст.', 'It will appear here once the project owner provides it.'))}</p>`}</section>
         <div class="row"><button class="btn light" type="button" id="back">${esc(tt('Назад', 'Back'))}</button><button class="btn yellow" type="button" id="next" ${guideOk ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button></div>`;
     } else if (step === 3) {
       body = `${head()}

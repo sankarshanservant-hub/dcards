@@ -5,6 +5,7 @@ import { ic, loading, failed } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { subscribe, signHtml, unlockSound, soundsReady, play, clock, left, mmss, bellsFor, keepAwake } from '../live-common.js';
 import { QUESTION_FORMATS } from '../content.js';
+import * as personal from '../personal.js';
 
 export const GROUP_FORMATS = [
   { key: 'one', ru: 'Одна карта на всех', en: 'One card for everyone', dru: 'Все смотрят на одну карту и по кругу говорят, что заметили и о чём она напоминает. Самый простой формат.', den: 'Everyone looks at one card and takes turns saying what they notice and what it reminds them of. The simplest format.' },
@@ -25,13 +26,18 @@ const CIRCLE = () => [tt('Что из сказанного другими вас
 const circleHtml = (open) => `<details class="about-df card-ui flat" data-k="circle" ${open ? 'open' : ''}><summary><span class="grow">${esc(tt('Дополнительные вопросы', 'More questions'))}</span><span class="chev" aria-hidden="true">▾</span></summary><div class="about-body"><ul class="qlist">${CIRCLE().map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div></details>`;
 
 // ---------- выбор формата ----------
-export function choose(ctx) {
+export async function choose(ctx) {
   const name = storage.get('dc_live_name') || '';
+  // Источник карт: вся галерея или своя подборка (у гостя — из этого браузера)
+  let cols = []; try { cols = (await personal.load()).collections.filter((c) => c.codes.length >= 2); } catch { /* только галерея */ }
+  if (!ctx.alive()) return;
+  const pre = ctx.query.get('collection');
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией', 'Play with friends'))}</h1>
       <p class="sub">${esc(tt('Для друзей и семьи, от 2 до 20 человек. Один открывает игру и показывает QR, остальные заходят со своих телефонов. Регистрация не нужна.', 'For friends and family, 2 to 20 people. One person opens a game and shows the QR code; the others join from their phones. No sign-up needed.'))}</p></div>
     <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
     <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
+    ${cols.length ? `<label class="field" for="gsrc">${esc(tt('Какие карты', 'Which cards'))}</label><select id="gsrc"><option value="">${esc(tt('Вся галерея', 'The whole gallery'))}</option>${cols.map((c) => `<option value="${esc(String(c.id))}" ${pre === String(c.id) ? 'selected' : ''}>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)} · ${c.codes.length}</option>`).join('')}</select>` : ''}
     <p class="form-error" id="gerr" role="alert"></p>
     <div class="list">${GROUP_FORMATS.map((f) => `<button class="item group-format" type="button" data-f="${f.key}"><span class="body"><b>${esc(fTitle(f))}</b><span class="small">${esc(fDesc(f))}</span></span><span aria-hidden="true">→</span></button>`).join('')}</div>
   </div>`;
@@ -39,7 +45,8 @@ export function choose(ctx) {
     const n = ctx.main.querySelector('#gname').value.trim();
     if (!n) { ctx.main.querySelector('#gerr').textContent = tt('Напишите имя — его увидят друзья.', 'Enter your name — your friends will see it.'); ctx.main.querySelector('#gname').focus(); return; }
     storage.set('dc_live_name', n); b.disabled = true;
-    try { const r = await api('/api/group', { method: 'POST', body: { format: b.dataset.f, deviceId: visitorId(), name: n } }); ctx.navigate('/g/' + r.code); }
+    const src = ctx.main.querySelector('#gsrc'); const col = src && src.value ? cols.find((c) => String(c.id) === src.value) : null;
+    try { const r = await api('/api/group', { method: 'POST', body: { format: b.dataset.f, deviceId: visitorId(), name: n, codes: col ? col.codes : undefined } }); ctx.navigate('/g/' + r.code); }
     catch (x) { b.disabled = false; ctx.main.querySelector('#gerr').textContent = errorText(x); }
   }));
 }

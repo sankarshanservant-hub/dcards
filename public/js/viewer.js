@@ -1,8 +1,11 @@
 // Просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием, листание свайпом и стрелками.
 // «Карта / Вопросы» (переключатель и свайп), «На весь экран» (в том числе без Fullscreen API), экран разговора после выбора. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
 import { t, dateLabel, lang } from './i18n.js';
-import { esc, api, u, tt, toast, visitorId, errorText } from './util.js';
+import { esc, api, u, tt, toast, visitorId, errorText, storage } from './util.js';
+import { session } from './ui.js';
 import { QUESTION_FORMATS, START_GUIDES } from './content.js';
+import * as personal from './personal.js';
+import { shareInvite, friendText } from './share.js';
 
 let current = null; // открытый просмотр
 // новое поведение (скилл apple-design, vendor/hk-feel): карта листается за пальцем 1:1, бросок по скорости, пружины;
@@ -66,8 +69,8 @@ export function openViewer(opts) {
         <button type="button" role="tab" data-view="card" aria-selected="true">${esc(tt('Карта', 'Card'))}</button>
         <button type="button" role="tab" data-view="questions" aria-selected="false">${esc(tt('Вопросы', 'Questions'))}</button></div>` : '<span class="viewer-counter" data-counter></span>'}
       <span class="vt-end">
-        <button class="icon-btn vt-nav" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
-        <button class="icon-btn vt-nav" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>
+        ${withQ ? '' : `<button class="icon-btn vt-nav" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
+        <button class="icon-btn vt-nav" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>`}
         <button class="icon-btn full-btn" type="button" data-full aria-label="${esc(tt('На весь экран', 'Full screen'))}" title="${esc(tt('На весь экран', 'Full screen'))}">${icons.expand}</button>
         ${withQ ? '' : `<button class="icon-btn" type="button" data-info aria-label="${esc(t('viewer.info'))}" aria-expanded="false">${icons.info}</button>`}
       </span>
@@ -245,7 +248,7 @@ export function openViewer(opts) {
     if (!sheet.hidden) renderSheet();
     if (opts.onChange) opts.onChange(c.code);
   }
-  function syncNav() { $('[data-prev]').hidden = $('[data-next]').hidden = !canFlip() || (mode.view === 'questions' && !el.classList.contains('q-side')); }
+  function syncNav() { el.querySelectorAll('[data-prev], [data-next]').forEach((b) => { b.hidden = !canFlip() || (mode.view === 'questions' && !el.classList.contains('q-side')); }); }
   function go(d) {
     if (!canFlip()) return;
     index = (index + d + opts.cards.length) % opts.cards.length;
@@ -300,7 +303,15 @@ export function openViewer(opts) {
   }
 
   // Блок под картой: подборка встречи — выбор и вопросы; общая галерея — «С чего начать?», вопросы, комментарии.
-  const ui = { guide: false, guideKey: null, saving: false, err: '', share: '', note: '' };
+  const ui = { guide: false, guideKey: null, saving: false, err: '', share: '', note: '', noteOpen: false, friend: !!opts.playFriend, fav: false, how: false, sending: false, sent: null, sendErr: '' };
+  // черновики остаются у своей карты при листании: заметка (не сохранённая) и текст для друга — отдельно
+  const DKEY = 'dc_drafts';
+  const drafts = (() => { try { return JSON.parse(sessionStorage.getItem(DKEY) || '{}'); } catch { return {}; } })();
+  const draft = (code) => (drafts[code] = drafts[code] || {});
+  const keepDrafts = () => { try { sessionStorage.setItem(DKEY, JSON.stringify(drafts)); } catch { /* */ } };
+  let pstate = null; personal.load().then((s) => { pstate = s; renderBottom(); }).catch(() => {});
+  const xCache = new Map();
+  const loadX = (code) => api(`/api/exchanges?card=${encodeURIComponent(code)}`).then((d) => { xCache.set(code, d.exchanges); if (opts.cards[index].code === code) renderBottom(); }).catch(() => {});
   const L = (o) => (o && (o[lang] || o.ru)) || '';
   const chev = (open) => `<span class="chev ${open ? 'open' : ''}" aria-hidden="true">▾</span>`;
   const countLine = (info) => (info && typeof info.selectedCount === 'number'
@@ -327,12 +338,12 @@ export function openViewer(opts) {
         ${questionsBtn(true)}
         <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}</div>
         ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}`
-      : chosen ? `
+      : chosen ? `${navRow()}
         <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>${linkBtn('data-talk', 'Открыть экран разговора', 'Open conversation view')}</div>
         ${questionsBtn(true)}
         <div class="vb-row">${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
         ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}${countLine(info)}`
-      : `
+      : `${navRow()}
         <button class="btn yellow wide" type="button" data-choose ${ui.saving ? 'disabled aria-busy="true"' : ''}>${esc(ui.saving ? tt('Сохраняем…', 'Saving…') : t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}
         <div class="vb-row">${questionsBtn(false)}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
@@ -345,20 +356,79 @@ export function openViewer(opts) {
           ${ui.note ? `<p class="vb-note">${esc(ui.note)}</p>` : ''}`;
       } else {
         const g = START_GUIDES.find((x) => x.key === ui.guideKey);
+        const dr = draft(c.code);
+        const saved = pstate && pstate.notes[c.code] ? pstate.notes[c.code].text : '';
+        const noteVal = dr.note != null ? dr.note : saved;
+        const fav = pstate && personal.isFav(pstate, c.code);
+        if (!xCache.has(c.code)) { xCache.set(c.code, null); loadX(c.code); }
+        const xs = xCache.get(c.code) || [];
+        const xLine = xs.length ? `<div class="x-status">${xs.slice(0, 3).map((x) => `<a class="x-item" href="${u('/x/' + x.secret)}" data-xopen><span class="x-dot ${x.answered ? 'on' : ''}" aria-hidden="true"></span><span>${esc(x.answered ? tt('Друг ответил', 'Your friend answered') + (x.otherName ? ` · ${x.otherName}` : '') : tt('Ждём ответа', 'Waiting for an answer'))}${xs.length > 1 ? ` · ${esc(new Date(x.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }))}` : ''}</span><b>${esc(tt('Открыть обмен', 'Open exchange'))}</b></a>`).join('')}${xs.length > 3 ? `<a class="small" href="${u('/me/exchanges')}" data-xopen>${esc(tt(`Все обмены (${xs.length})`, `All exchanges (${xs.length})`))}</a>` : ''}</div>` : '';
         bottom.innerHTML = `
+          <div class="vb-nav">
+            <button class="icon-btn sm" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button>
+            <span class="vb-icons">
+              <button class="icon-btn sm ${fav ? 'is-on' : ''}" type="button" data-fav aria-pressed="${!!fav}" aria-label="${esc(fav ? tt('В избранном — подборки', 'In favourites — collections') : tt('В избранное', 'Add to favourites'))}" title="${esc(fav ? tt('В избранном', 'In favourites') : tt('В избранное', 'Add to favourites'))}">${fav ? icons.heartFull : icons.heart}</button>
+              <button class="icon-btn sm" type="button" data-copy aria-label="${esc(tt('Поделиться картой', 'Share the card'))}" title="${esc(tt('Поделиться картой', 'Share the card'))}">${icons.shareBox}</button>
+              <button class="icon-btn sm" type="button" data-info aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}" aria-expanded="${!sheet.hidden}">${icons.info}</button>
+            </span>
+            <button class="icon-btn sm" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button>
+          </div>
+          ${ui.fav ? favPanel(c.code) : ''}
+          ${shareField()}
+          ${xLine}
+          ${ui.friend ? friendForm(c, noteVal) : `
+          <div class="note-box ${ui.noteOpen || noteVal !== saved ? 'open' : ''}">
+            <label for="vn-${c.code}" class="note-q">${esc(tt('Что тебе откликнулось в этой карте?', 'What speaks to you in this card?'))}</label>
+            <textarea id="vn-${c.code}" data-note rows="${ui.noteOpen ? 3 : 1}" maxlength="2000" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}" aria-describedby="vn-h-${c.code}">${esc(noteVal)}</textarea>
+            <p class="vb-note" id="vn-h-${c.code}"><span class="note-hint">${esc(tt('Это может быть чувство, мысль или история, которую ты увидел в этой карте.', 'It can be a feeling, a thought or a story you saw in this card.'))} </span>${esc(tt('Заметка видна только тебе.', 'Only you can see this note.'))}</p>
+            <div class="row note-act"><button class="btn sm light" type="button" data-note-save ${noteVal === saved ? 'disabled' : ''}>${esc(noteVal === saved && saved ? tt('Заметка сохранена', 'Note saved') : tt('Сохранить заметку', 'Save note'))}</button></div>
+          </div>
+          <button class="btn friend-btn wide" type="button" data-friend>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></button>`}
           <div class="vb-panel">
-            <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('С чего начать?', 'Where to start?'))}</span>${chev(ui.guide)}</button>
+            <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('Попробуй другие форматы', 'Try other formats'))}</span>${chev(ui.guide)}</button>
             ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>
               ${g ? `<div class="vb-guide"><p>${guideText(g)}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}
                 ${g.choose ? libChoiceHtml(info) : ''}</div>` : ''}</div>` : ''}
-          </div>
-          <div class="vb-actions">${questionsBtn(false)}<a class="btn light sm" href="${u('/cards/' + c.code)}" data-discuss>${esc(tt('Комментарии', 'Comments'))}${info && typeof info.comments === 'number' ? ` · ${info.comments}` : ''}</a></div>
-          <div class="vb-row">${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}${countLine(info).replace('<p class="choose-count">', '<p class="choose-count" style="text-align:right">')}</div>
-          ${shareField()}`;
+          </div>`;
       }
     }
+    syncNav();
     syncBottom();
   }
+  // Сердце: сразу «Избранное», затем — свои подборки (отметки, новая подборка). Убрать из избранного ≠ убрать из подборки.
+  function favPanel(code) {
+    if (!pstate) return '';
+    return `<div class="fav-pop" role="group" aria-label="${esc(tt('Подборки', 'Collections'))}">
+      ${pstate.collections.map((col) => `<label class="check"><input type="checkbox" data-col="${esc(String(col.id))}" ${col.codes.includes(code) ? 'checked' : ''}> <span>${esc(col.favorites ? tt('Избранное', 'Favourites') : col.title)} <span class="muted small">· ${col.codes.length}</span></span></label>`).join('')}
+      <form class="row" data-newcol><label class="sr-only" for="ncol">${esc(tt('Новая подборка', 'New collection'))}</label><input id="ncol" maxlength="80" placeholder="${esc(tt('Новая подборка…', 'New collection…'))}" style="flex:1;min-width:0"><button class="btn sm light" type="submit">${esc(tt('Создать', 'Create'))}</button></form>
+      <div class="row between"><a class="small" href="${u('/me/collections')}" data-xopen>${esc(tt('Мои подборки', 'My collections'))}</a><button class="link-btn" type="button" data-fav-close>${esc(tt('Готово', 'Done'))}</button></div></div>`;
+  }
+  // «Сыграть с другом»: черновик для друга — отдельный от личной заметки (правка или отправка заметку не меняет).
+  function friendForm(c, noteVal) {
+    const dr = draft(c.code);
+    const text = dr.friend != null ? dr.friend : noteVal;
+    if (ui.sent && ui.sent.code === c.code) {
+      const s = ui.sent;
+      return `<div class="friend-form sent" role="region" aria-label="${esc(tt('Приглашение другу', 'Invitation for a friend'))}">
+        <b>${esc(tt('Отправь приглашение другу', 'Send the invitation to your friend'))}</b>
+        <p class="vb-note">${esc(tt('Выбери, где отправить, — и подтверди отправку там. Друг увидит твой ответ, когда напишет свой.', 'Choose where to send it and confirm there. Your friend will see your answer once they write theirs.'))}</p>
+        <div class="share-row">${shareButtons()}</div>
+        <p class="vb-note">${esc(tt('Твоя личная ссылка, чтобы вернуться к обмену (не пересылай её):', 'Your personal link back to the exchange (do not forward it):'))}</p>
+        <div class="row"><button class="btn sm light" type="button" data-copy-back>${esc(tt('Скопировать мою ссылку', 'Copy my link'))}</button><a class="btn sm" href="${u('/x/' + s.secret)}" data-xopen>${esc(tt('Открыть обмен', 'Open exchange'))}</a></div>
+        <button class="link-btn" type="button" data-friend-close>${esc(tt('Готово', 'Done'))}</button></div>`;
+    }
+    return `<div class="friend-form" role="region" aria-label="${esc(tt('Сыграть с другом', 'Play with a friend'))}">
+      <label for="vf-${c.code}" class="note-q">${esc(tt('Что тебе откликнулось в этой карте?', 'What speaks to you in this card?'))}</label>
+      <textarea id="vf-${c.code}" data-friend-text rows="3" maxlength="300" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}">${esc(text)}</textarea>
+      ${session.user ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))} <span class="hint">${esc(tt('по желанию', 'optional'))}</span><input data-friend-name maxlength="40" value="${esc(dr.name || storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
+      <p class="vb-note">${esc(tt('Друг увидит твой ответ, когда напишет свой.', 'Your friend will see your answer once they write theirs.'))} <button class="link-btn" type="button" data-how aria-expanded="${ui.how}">${esc(tt('Как это работает', 'How it works'))}</button></p>
+      ${ui.how ? `<ol class="vb-note" style="margin:0;padding-left:1.2em"><li>${esc(tt('Ты отправляешь карту и свой ответ — ответ пока скрыт.', 'You send the card and your answer — the answer stays hidden.'))}</li><li>${esc(tt('Друг пишет, что видит он.', 'Your friend writes what they see.'))}</li><li>${esc(tt('Вы оба видите два взгляда на одну карту.', 'You both see two views of one card.'))}</li></ol>` : ''}
+      ${ui.sendErr ? `<p class="field-error" role="alert">${esc(ui.sendErr)}</p>` : ''}
+      <div class="row"><button class="btn yellow" type="button" data-friend-send ${ui.sending || !String(text).trim() ? 'disabled' : ''}>${esc(ui.sending ? tt('Готовим приглашение…', 'Preparing…') : tt('Отправить другу', 'Send to a friend'))}</button>
+        <button class="link-btn" type="button" data-friend-close>${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
+  }
+  const shareButtons = () => `<button class="btn sm" type="button" data-sh="tg">Telegram</button><button class="btn sm" type="button" data-sh="wa">WhatsApp</button>${navigator.share ? `<button class="btn sm" type="button" data-sh="sys">${esc(tt('Другие приложения', 'Other apps'))}</button>` : ''}<button class="btn sm light" type="button" data-sh="copy">${esc(tt('Скопировать ссылку', 'Copy link'))}</button>`;
+  const navRow = () => (opts.cards.length > 1 ? `<div class="vb-nav"><button class="icon-btn sm" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button><span class="small muted">${index + 1} / ${opts.cards.length}</span><button class="icon-btn sm" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button></div>` : '');
   // Необязательный выбор для обсуждения в галерее (внутри «Для двоих» и «Для группы»).
   function libChoiceHtml(info) {
     if (!info) return '';
@@ -443,16 +513,85 @@ export function openViewer(opts) {
   }
   // «Поделиться картой»: системное меню, где оно есть; иначе копирование. Отмена — без сообщений; не вышло — показываем ссылку.
   async function copyLink() {
-    const url = location.href;
+    // делимся самой картой с авторством — без личного текста; ссылка ведёт на эту карту в галерее
+    const c0 = opts.cards[index]; const inf = detailsCache.get(c0.code);
+    const url = `${location.origin}${u('/library?card=' + encodeURIComponent(c0.code))}`;
     if (navigator.share) {
-      try { await navigator.share({ title: 'Dialogue Cards', url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      try { await navigator.share({ title: 'Dialogue Cards', text: `${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
     }
     try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
     catch { ui.share = url; renderBottom(); const inp = bottom.querySelector('[data-share-url]'); if (inp) { inp.focus(); inp.select(); } }
   }
   const focusIn = (sel) => { const n = bottom && bottom.querySelector(sel); if (n) n.focus({ preventScroll: true }); };
   if (bottom) {
+    // ввод без перерисовки: фокус и курсор остаются на месте
+    bottom.addEventListener('focusin', (e) => {
+      const ta = e.target.closest('[data-note]');
+      if (ta) { ui.noteOpen = true; ta.rows = 3; ta.closest('.note-box').classList.add('open'); requestAnimationFrame(syncBottom); }
+    });
+    bottom.addEventListener('input', (e) => {
+      const code = opts.cards[index].code; const dr = draft(code);
+      if (e.target.matches('[data-note]')) {
+        dr.note = e.target.value; keepDrafts();
+        const saved = pstate && pstate.notes[code] ? pstate.notes[code].text : '';
+        const b = bottom.querySelector('[data-note-save]'); if (b) { b.disabled = dr.note === saved; b.textContent = tt('Сохранить заметку', 'Save note'); }
+      } else if (e.target.matches('[data-friend-text]')) {
+        dr.friend = e.target.value; keepDrafts();
+        const b = bottom.querySelector('[data-friend-send]'); if (b) b.disabled = ui.sending || !e.target.value.trim();
+      } else if (e.target.matches('[data-friend-name]')) { dr.name = e.target.value; keepDrafts(); }
+    });
+    bottom.addEventListener('submit', async (e) => {
+      const f = e.target.closest('[data-newcol]'); if (!f) return;
+      e.preventDefault(); const inp = f.querySelector('input'); const t0 = inp.value.trim(); if (!t0) return;
+      try { const id = await personal.createCollection(t0); await personal.toggle(id, opts.cards[index].code, true); pstate = await personal.load(); renderBottom(); focusIn('[data-fav-close]'); }
+      catch (x) { toast(errorText(x)); }
+    });
+    bottom.addEventListener('change', async (e) => {
+      const cb = e.target.closest('[data-col]'); if (!cb) return;
+      try { await personal.toggle(cb.dataset.col, opts.cards[index].code, cb.checked); pstate = await personal.load(); }
+      catch (x) { cb.checked = !cb.checked; toast(x.code === 'collection_full' ? tt('В подборке уже 40 карт', 'The collection already has 40 cards') : errorText(x)); }
+      const cur = bottom.querySelector('[data-fav]'); const on = personal.isFav(pstate, opts.cards[index].code);
+      if (cur) { cur.classList.toggle('is-on', on); cur.setAttribute('aria-pressed', String(on)); cur.innerHTML = on ? icons.heartFull : icons.heart; }
+    });
     bottom.addEventListener('click', async (e) => {
+      const xo = e.target.closest('a[data-xopen]');
+      if (xo) { e.preventDefault(); const href = xo.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
+      const cb0 = e.target.closest('button'); const code0 = opts.cards[index].code;
+      if (cb0 && (cb0.type === 'submit' || cb0.closest('form'))) return; // формы (новая подборка) — своим обработчиком submit
+      if (cb0 && cb0.hasAttribute('data-fav')) {
+        if (!pstate) pstate = await personal.load();
+        // первое нажатие сразу сохраняет в «Избранное» и предлагает подборки; повторное — открывает или закрывает выбор подборок
+        if (!personal.isFav(pstate, code0)) { try { await personal.toggle('favorites', code0, true); pstate = await personal.load(); ui.fav = true; } catch (x) { toast(errorText(x)); return; } }
+        else ui.fav = !ui.fav;
+        renderBottom(); focusIn(ui.fav ? '[data-col]' : '[data-fav]'); return;
+      }
+      if (cb0 && cb0.hasAttribute('data-fav-close')) { ui.fav = false; renderBottom(); focusIn('[data-fav]'); return; }
+      if (cb0 && cb0.hasAttribute('data-note-save')) {
+        const dr = draft(code0); const v = dr.note != null ? dr.note : '';
+        cb0.disabled = true;
+        try { await personal.setNote(code0, v); delete dr.note; keepDrafts(); pstate = await personal.load(); ui.noteOpen = false; renderBottom(); toast(tt('Заметка сохранена', 'Note saved')); }
+        catch (x) { cb0.disabled = false; toast(errorText(x)); }
+        return;
+      }
+      if (cb0 && cb0.hasAttribute('data-friend')) { ui.friend = true; ui.sent = null; ui.sendErr = ''; renderBottom(); focusIn('[data-friend-text]'); return; }
+      if (cb0 && cb0.hasAttribute('data-friend-close')) { ui.friend = false; ui.sent = null; renderBottom(); focusIn('[data-friend]'); return; }
+      if (cb0 && cb0.hasAttribute('data-how')) { ui.how = !ui.how; renderBottom(); focusIn('[data-how]'); return; }
+      if (cb0 && cb0.hasAttribute('data-friend-send')) {
+        const dr = draft(code0); const saved = pstate && pstate.notes[code0] ? pstate.notes[code0].text : '';
+        const text = String(dr.friend != null ? dr.friend : (dr.note != null ? dr.note : saved)).trim(); if (!text) return;
+        if (dr.name) storage.set('dc_live_name', dr.name);
+        // повтор после обрыва сети — тот же ключ, вторая запись не создаётся
+        dr.key = dr.key || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9_-]/g, '');
+        keepDrafts(); ui.sending = true; ui.sendErr = ''; renderBottom();
+        try {
+          const r = await api('/api/exchanges', { method: 'POST', body: { code: code0, text, name: dr.name || '', clientKey: dr.key } });
+          ui.sent = { code: code0, secret: r.secret, invite: r.invite, name: dr.name || (session.user && session.user.publicName) || '' };
+          delete dr.friend; delete dr.key; keepDrafts(); xCache.delete(code0);
+        } catch (x) { ui.sendErr = `${errorText(x)} ${tt('Текст сохранён — попробуйте ещё раз.', 'Your text is kept — try again.')}`; }
+        ui.sending = false; renderBottom(); focusIn('[data-sh]'); return;
+      }
+      if (cb0 && cb0.dataset.sh && ui.sent) { shareInvite(cb0.dataset.sh, `${location.origin}${u('/x/' + ui.sent.invite)}`, friendText()); return; }
+      if (cb0 && cb0.hasAttribute('data-copy-back') && ui.sent) { shareInvite('copy', `${location.origin}${u('/x/' + ui.sent.secret)}`, '', tt('Личная ссылка скопирована — сохраните её', 'Personal link copied — keep it')); return; }
       const ql = e.target.closest('a[data-q-open]');
       if (ql) { e.preventDefault(); openQ(ql.dataset.qOpen); return; }
       const a = e.target.closest('a[data-discuss]');
@@ -483,6 +622,7 @@ export function openViewer(opts) {
         focusIn(ok && on ? '[data-questions]' : '[data-lib-choose], [data-guide]');
         return;
       }
+      if (!btn.hasAttribute('data-choose') && !btn.hasAttribute('data-cancel')) return; // прочие кнопки уже обработаны выше
       if (btn.hasAttribute('data-choose')) { if (ui.saving) return; ui.saving = true; ui.err = ''; renderBottom(); }
       btn.disabled = true;
       let ok = false;
@@ -520,7 +660,6 @@ export function openViewer(opts) {
           ${info && info.publishedAt ? `<div><dt>${esc(t('viewer.published'))}</dt><dd>${esc(dateLabel(info.publishedAt))}</dd></div>` : ''}
         </dl>
         ${countLine}
-        ${opts.mode === 'library' && info && typeof info.comments === 'number' ? `<a class="sheet-link" href="${u('/cards/' + code)}">${esc(tt('Комментарии', 'Comments'))} · ${info.comments} →</a>` : ''}
         <p class="sheet-hint">${esc(t('viewer.zoomHint'))}</p>`;
     };
     draw(d || c);
@@ -551,8 +690,7 @@ export function openViewer(opts) {
   $('[data-full]').addEventListener('click', () => setFull(true));
   $('[data-unfull]').addEventListener('click', () => setFull(false));
   const topInfo = el.querySelector('.viewer-top [data-info]'); if (topInfo) topInfo.addEventListener('click', () => toggleSheet());
-  $('[data-prev]').addEventListener('click', () => go(-1));
-  $('[data-next]').addEventListener('click', () => go(1));
+  el.addEventListener('click', (e) => { if (e.target.closest('[data-prev]')) go(-1); else if (e.target.closest('[data-next]')) go(1); });
   sheet.addEventListener('click', (e) => {
     const a = e.target.closest('a[href]');
     if (a) { e.preventDefault(); const href = a.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
@@ -608,6 +746,9 @@ export function refreshViewer() { if (current) current.refreshBottom(); }
 export const icons = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>',
+  heartFull: '<svg viewBox="0 0 24 24" aria-hidden="true" class="filled"><path d="M12 20.3s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>',
+  shareBox: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M6.5 11H5v9h14v-9h-1.5"/></svg>',
   prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',

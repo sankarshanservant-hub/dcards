@@ -585,15 +585,14 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 .greet { font: 600 clamp(1.25rem, 3.6vw, 1.6rem)/1.3 var(--font-ui); margin: 0; }
 .home-cta { display: grid; gap: 8px; justify-items: start; }
 .btn.big { min-height: 54px; padding: 12px 26px; font-size: 1.05rem; }
-.trio { display: flex; justify-content: center; align-items: flex-end; padding: 30px 0 8px; min-height: calc(clamp(108px, 27vw, 190px) * 12 / 7 + 38px); }
+.trio { display: flex; justify-content: center; align-items: flex-end; padding: 30px 0 8px; min-height: calc(clamp(96px, 27vw, 180px) * 12 / 7 + 38px); }
 /* место под три карты резервируется до загрузки — страница не прыгает */
-.trio .slot { display: block; width: clamp(108px, 27vw, 190px); aspect-ratio: 7 / 12; border-radius: 14px; background: var(--surface-3); border: 3px solid var(--surface); }
-.trio .slot + .slot { margin-left: -14px; }
-.trio .slot:nth-child(2) { transform: translateY(-14px); }
-.trio img { width: clamp(108px, 27vw, 190px); height: auto; border-radius: 14px; box-shadow: var(--shadow); border: 3px solid var(--surface); position: relative; }
+.trio .slot { display: block; width: clamp(96px, 27vw, 180px); aspect-ratio: 7 / 12; border-radius: 14px; background: var(--surface-3); border: 3px solid var(--surface); }
+.trio .slot + .slot { margin-left: 10px; }
+.trio img { width: clamp(96px, 27vw, 180px); height: auto; border-radius: 14px; box-shadow: var(--shadow); border: 3px solid var(--surface); position: relative; }
 .trio a { display: block; position: relative; transition: transform .15s ease; }
-.trio a + a { margin-left: -14px; }
-.trio a:nth-child(2) { z-index: 2; transform: translateY(-14px); }
+.trio a + a { margin-left: 10px; }
+
 .trio a:focus-visible { transform: translateY(-6px); z-index: 3; }
 @media (hover: hover) { .trio a:hover { transform: translateY(-6px); z-index: 3; } }
 .trio a:nth-child(2):focus-visible { transform: translateY(-20px); }
@@ -904,3 +903,78 @@ body.live-mode .foot, body.live-mode #demo-pill { display: none; }
 html:not([data-feel="old"]) .viewer-sheet { animation: none; will-change: transform; }
 html:not([data-feel="old"]) .sheet-menu.menu-feel { background: color-mix(in srgb, var(--overlay) calc(var(--menu-a, 1) * 100%), transparent); }
 html:not([data-feel="old"]) .sheet-menu.menu-feel .panel { will-change: transform; }
+
+/* 18.11: колокольчик и «Войти» в шапке */
+.bell-btn { position: relative; width: 42px; height: 42px; flex: none; border-radius: 50%; border: 1px solid var(--border-strong); display: grid; place-items: center; color: var(--text); text-decoration: none; }
+.bell-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.bell-btn.on { border-color: var(--accent); }
+.bell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bell-dot { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 800 .68rem/18px var(--font-head); text-align: center; }
+.signin-btn { min-height: 42px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent; color: var(--text); font: 600 .9rem var(--font-ui); cursor: pointer; flex: none; }
+.signin-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 420px) {
+  .top .lang, .theme-btn, .acct, .bell-btn { width: 38px; height: 38px; min-height: 38px; }
+  .signin-btn { min-height: 38px; padding: 0 11px; font-size: .85rem; }
+  .top .wrap { gap: 5px; }
+  .brand img { width: 46px; }
+  .brand .brand-name { font-size: .92rem; }
+}
+@media (max-width: 350px) { .brand img { display: none; } }
+
+/* главная 18.11: «Что ты здесь видишь?», «Сыграть с другом» с инструкцией на месте */
+.home-q { font-size: clamp(1.3rem, 4.6vw, 1.8rem); margin: 6px 0 0; }
+.friend-play { display: grid; justify-items: center; gap: 10px; }
+.friend-btn { border: 1.5px solid var(--accent); background: transparent; color: var(--text); gap: 9px; }
+.friend-btn .fp-ic svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.friend-btn.wiggle .fp-ic { animation: fp-wiggle .5s ease; }
+@keyframes fp-wiggle { 0% { transform: rotate(0); } 25% { transform: rotate(-12deg) scale(1.1); } 60% { transform: rotate(10deg) scale(1.1); } 100% { transform: rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .friend-btn.wiggle .fp-ic, .dice-btn .die { animation: none !important; } }
+.fp-how { max-width: 34em; padding: 14px 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.fp-how ol { margin: 0 0 12px; padding-left: 1.3em; display: grid; gap: 6px; }
+@media (min-width: 900px) { .hero.home .friend-play { grid-column: 1 / -1; } }
+.play-intent { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; border: 1.5px solid var(--accent); border-radius: 16px; margin: 8px 0; }
+.play-intent svg { width: 22px; height: 22px; stroke: var(--accent-text); fill: none; stroke-width: 1.8; stroke-linecap: round; flex: none; }
+/* открытая карта 18.11: стрелки и три значка под картой, заметка, «Сыграть с другом» */
+.vb-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vb-icons { display: inline-flex; gap: 6px; }
+.icon-btn.sm { width: 44px; height: 44px; }
+.icon-btn.is-on { color: var(--accent-text); border-color: var(--accent); }
+.icon-btn svg.filled path { fill: currentColor; }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vb-nav .icon-btn[hidden] { visibility: hidden; display: grid; }
+.note-box { display: grid; gap: 6px; }
+.note-q { font-weight: 600; font-size: .95rem; }
+.note-box textarea, .friend-form textarea { width: 100%; min-height: 42px; resize: vertical; margin: 0; font-size: 1rem; }
+.note-box:not(.open) .note-hint, .note-box:not(.open) .note-act { display: none; }
+.friend-form { display: grid; gap: 8px; padding: 12px; border: 1.5px solid var(--accent); border-radius: 16px; }
+.friend-btn.wide { width: 100%; }
+.friend-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.share-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.fav-pop { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); }
+.x-status { display: grid; gap: 6px; }
+.x-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); text-decoration: none; color: var(--text); font-size: .9rem; }
+.x-item b { margin-left: auto; color: var(--accent-text); font-size: .85rem; white-space: nowrap; }
+.x-dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--accent); flex: none; }
+.x-dot.on { background: var(--accent); }
+/* обмен с другом, колокольчик, мои подборки (18.11) */
+.x-page .x-h { font-size: clamp(1.4rem, 5vw, 2rem); margin: 0; }
+.x-page .live-card { width: min(300px, 74vw); }
+.locked { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 12px; border-radius: 14px; border: 1px dashed var(--border-strong); color: var(--text-2); font-size: .92rem; }
+.locked svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.9; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pair.one { grid-template-columns: 1fr; }
+.pair > div { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; overflow-wrap: anywhere; }
+.pair b { display: block; font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); margin-bottom: 4px; }
+@media (max-width: 380px) { .pair { grid-template-columns: 1fr; } }
+.story-prev { width: min(320px, 100%); border-radius: 14px; display: block; margin: 0 auto; border: 1px solid var(--border); }
+.bell-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bell-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; }
+.bell-item.unread { border-color: var(--accent); }
+.bell-item .grow { display: grid; gap: 2px; }
+.bell-item .x-dot { margin-top: 6px; }
+.bell-item time { white-space: nowrap; }
+.mini-strip { display: flex; gap: 3px; flex: none; min-width: 80px; }
+.mini-strip img { width: 26px; height: 44px; object-fit: cover; border-radius: 5px; }
+.ch-audio { display: grid; gap: 6px; margin: 0 0 12px; }
+.ch-audio audio { width: 100%; }
+.toc ol { margin: 6px 0 0; padding-left: 1.3em; display: grid; gap: 3px; }

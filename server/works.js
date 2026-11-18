@@ -167,6 +167,7 @@ function myWorks(artistId) {
 function myCards(artistId) {
   return db.prepare('SELECT * FROM cards WHERE artist_id = ? ORDER BY number').all(artistId).map((c) => ({
     ...cards.publicCard(c, { withDetails: true }), status: c.status, removedBy: c.removed_by,
+    selectedCount: require('./choices').total(c.id), // тот же счётчик «Выбрали для разговора», что в галерее
     pendingReplacement: !!db.prepare(`SELECT 1 FROM works WHERE target_card_id = ? AND status IN ('submitted','discussion','needs_changes')`).get(c.id),
   }));
 }

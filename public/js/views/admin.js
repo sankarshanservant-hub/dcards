@@ -241,7 +241,17 @@ const SECTIONS = {
         <ol class="small" style="margin:0;padding-left:1.3em">${g.chapters.map((c) => `<li>${esc(c.title)}${c.course ? '' : ` <span class="muted">(${esc(tt('дополнительно', 'extra'))})</span>`}</li>`).join('')}</ol>` : `<div class="notice">${esc(tt('Руководство ещё не загружено: будущие фасилитаторы видят только названия глав.', 'The guide is not uploaded yet: future facilitators only see chapter titles.'))}</div>`}
         <a class="small" href="${u('/guide/dialogue-flow-guide.docx')}" download>${esc(tt('Скачать текущую версию (.docx)', 'Download the current version (.docx)'))}</a>
         <form class="row" id="gf"><input type="file" name="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required aria-label="${esc(tt('Файл руководства', 'Guide file'))}" style="flex:1 1 240px"><button class="btn dark" type="submit">${esc(tt('Загрузить', 'Upload'))}</button></form>
-        <p class="form-error" id="gerr" role="alert"></p></div>`);
+        <p class="form-error" id="gerr" role="alert"></p></div>
+      <div class="card-ui flat stack" style="margin-top:14px"><h3 style="margin:0">${esc(tt('PDF и аудиозаписи глав', 'PDF and chapter audio'))}</h3>
+        <p class="small muted" style="margin:0">${esc(tt('Пока файлов нет, у читателей ничего не показывается. Аудио глав записывает автор и присылает файлы; загрузите их сюда — у главы появится «Прослушать главу».', 'Until files are uploaded nothing is shown to readers. The author records the chapters and sends files; upload them here and the chapter gets “Listen to the chapter”.'))}</p>
+        ${['facilitator', 'artist'].map((gk) => `<form class="row ga" data-g="${gk}"><b style="min-width:12em">${esc(gk === 'facilitator' ? tt('Руководство фасилитатора', 'Facilitator guide') : tt('Руководство для автора', 'Guide for artists'))}</b>
+          <select name="kind" aria-label="${esc(tt('Что загрузить', 'What to upload'))}"><option value="pdf">PDF</option>${Array.from({ length: 12 }, (_, i) => `<option value="audio:${i + 1}">${esc(tt(`Аудио, глава ${i + 1}`, `Audio, chapter ${i + 1}`))}</option>`).join('')}</select>
+          <input type="file" name="file" accept="application/pdf,audio/*" required style="flex:1 1 200px"><button class="btn sm" type="submit">${esc(tt('Загрузить', 'Upload'))}</button></form>`).join('')}
+        <p class="form-error" id="gaerr" role="alert"></p></div>`);
+    sec.querySelectorAll('form.ga').forEach((f) => f.addEventListener('submit', async (e) => {
+      e.preventDefault(); const [kind, n] = f.kind.value.split(':'); const fd = new FormData(); fd.append('file', f.file.files[0]);
+      try { await api(`/api/admin/guides/${f.dataset.g}/${kind}${n ? '?chapter=' + n : ''}`, { method: 'POST', form: fd }); toast(tt('Загружено', 'Uploaded')); f.reset(); } catch (x) { sec.querySelector('#gaerr').textContent = errorText(x); }
+    }));
     sec.querySelector('#gf').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
