@@ -72,7 +72,7 @@ export function subscribe(path, onChange, alive) {
     es.onmessage = () => !closed && onChange();
     es.onerror = () => { startPoll(); };
   } catch { startPoll(); }
-  const safety = setInterval(() => !closed && onChange(), 20000); // на случай тихого обрыва соединения
+  const safety = setInterval(() => !closed && navigator.onLine !== false && onChange(), 20000); // на случай тихого обрыва соединения
   const guard = setInterval(() => { if (!alive()) { stop(); clearInterval(safety); keepAwake(false); } }, 1000);
   const vis = () => { if (document.visibilityState === 'visible' && !closed) { onChange(); keepAwake(true); } };
   document.addEventListener('visibilitychange', vis);

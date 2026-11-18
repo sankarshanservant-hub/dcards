@@ -81,7 +81,7 @@ export async function page(ctx, token) {
         <p class="vb-note">${esc(tt('Друг увидит твой ответ, когда напишет свой. Когда он ответит, здесь появятся оба ответа, а в колокольчике — уведомление.', 'Your friend will see your answer once they write theirs. Then both answers appear here and in the bell.'))}</p>
         <b>${esc(tt('Отправить приглашение ещё раз', 'Send the invitation again'))}</b>${shareRow('sinv')}
         ${backLinkHtml()}`;
-      poll = setInterval(async () => { if (!ctx.alive()) return clearInterval(poll); if (document.visibilityState !== 'visible') return; try { await load(); if (v.answered) draw(); } catch { /* */ } }, 15000);
+      poll = setInterval(async () => { if (!ctx.alive()) return clearInterval(poll); if (document.visibilityState !== 'visible' || navigator.onLine === false) return; try { await load(); if (v.answered) draw(); } catch { /* */ } }, 15000);
     } else {
       body = `<h1 class="x-h">${esc(tt('Одна карта — два взгляда', 'One card — two views'))}</h1>${cardBtn(c)}${authorLine(c)}
         <div class="pair"><div><b>${esc(v.myName || tt('Ты', 'You'))}</b>${esc(v.myText)}</div><div><b>${esc(v.otherName || tt('Друг', 'Friend'))}</b>${esc(v.otherText)}</div></div>

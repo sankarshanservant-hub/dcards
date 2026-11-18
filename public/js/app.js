@@ -161,6 +161,7 @@ export async function refreshUnread(force = false) {
   if (!session.user) { session.unread = 0; draw(); return; }
   draw();
   if (!force && Date.now() - unreadAt < 30000) return;
+  if (navigator.onLine === false) return;
   unreadAt = Date.now();
   try { const d = await api('/api/chats'); session.unread = d.rooms.reduce((n, r) => n + (r.unread || 0), 0); } catch { /* без счётчика */ }
   draw();
@@ -175,6 +176,7 @@ export async function refreshBell(force = false) {
     bl.setAttribute('aria-label', n ? tt(`Уведомления, непрочитанных: ${n}`, `Notifications, unread: ${n}`) : tt('Уведомления', 'Notifications')); };
   draw();
   if (!force && Date.now() - bellAt < 20000) return;
+  if (navigator.onLine === false) return; // без сети не опрашиваем — иначе в консоли копятся ERR_INTERNET_DISCONNECTED
   bellAt = Date.now();
   try { session.bellUnread = (await api('/api/bell')).unread; } catch { /* без отметки */ }
   try { const v = await api('/api/version'); if (!loadedBuild) loadedBuild = v.build; else if (v.build !== loadedBuild) session.update = true; } catch { /* */ }
@@ -183,6 +185,7 @@ export async function refreshBell(force = false) {
 window.dcRefreshBell = refreshBell;
 setInterval(() => document.visibilityState === 'visible' && refreshBell(), 60000);
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refreshBell(true));
+window.addEventListener('online', () => { refreshBell(true); refreshUnread(true); }); // сеть вернулась — обновляем сразу
 // вход/выход в этой вкладке: данные гостя — в аккаунт (по согласию), после выхода — новый идентификатор браузера
 window.addEventListener('dc-auth', async (e) => {
   if (e.detail.after) await personal.afterLogin(); else personal.afterLogout();
