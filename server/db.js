@@ -410,7 +410,9 @@ addColumn('works', 'recommended_at', 'TEXT');
 addColumn('works', 'recommended_by', 'INTEGER REFERENCES users(id)');
 addColumn('works', 'recommended_type', 'TEXT');
 addColumn('notify_prefs', 'works', 'INTEGER NOT NULL DEFAULT 1');
-addColumn('chat_messages', 'forward_of', 'INTEGER'); // пересланное из общего чата: ссылка на оригинал
+addColumn('chat_messages', 'forward_of', 'INTEGER');
+addColumn('registrations', 'user_id', 'INTEGER REFERENCES users(id)');
+addColumn('registrations', 'visitor_id', 'TEXT'); // пересланное из общего чата: ссылка на оригинал
 // ключ отправки с устройства: повтор после обрыва связи не создаёт вторую подачу
 addColumn('submissions', 'client_key', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS submissions_client_key ON submissions (artist_id, client_key) WHERE client_key IS NOT NULL');

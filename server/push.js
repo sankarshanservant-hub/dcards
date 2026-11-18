@@ -156,4 +156,12 @@ function test(user) {
   return deliver(user.id, { title: 'Dialogue Cards', body: 'Уведомления включены. Так будут приходить ответы и упоминания.', url: `${B}/me/notifications`, tag: 'dc-test' });
 }
 
+// Колокольчик приглашает вернуться push-уведомлением (нейтральный текст) — по общим настройкам человека.
+require('./bell').onPush((uid, payload, kind) => {
+  const u = db.prepare('SELECT is_demo FROM users WHERE id = ?').get(uid); if (!u || u.is_demo) return;
+  const p = prefsOf(uid); if (!p.enabled) return;
+  if (/^work_/.test(kind)) return; // о решениях по работам — onWorkDecision (своя настройка «Решения по моим работам»)
+  deliver(uid, payload).catch(() => {});
+});
+
 module.exports = { vapid, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };

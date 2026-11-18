@@ -86,7 +86,7 @@ function fmtLocal(d, m, lang) {
 }
 
 /** Запись на дату: занимает место; при заполнении запись закрывается. Подтверждение — письмом (или показ текста в демо). */
-async function register(dateId, { name, email, contact }, baseUrl, lang = 'ru') {
+async function register(dateId, { name, email, contact, userId = null, visitorId = null }, baseUrl, lang = 'ru') {
   const n = String(name || '').trim().slice(0, 100);
   const e = String(email || '').trim().toLowerCase().slice(0, 200);
   if (!n) return { error: 'name_required' };
@@ -100,8 +100,9 @@ async function register(dateId, { name, email, contact }, baseUrl, lang = 'ru') 
     if (seatsTaken.get(d.id).n >= d.capacity) return { error: 'full' };
     if (db.prepare(`SELECT 1 FROM registrations WHERE date_id = ? AND email = ? AND status = 'active'`).get(d.id, e)) return { error: 'already_registered' };
     const token = crypto.randomBytes(18).toString('base64url');
-    db.prepare('INSERT INTO registrations (date_id, name, email, contact, token, is_demo) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(d.id, n, e, m.ask_contact ? String(contact || '').trim().slice(0, 200) : '', token, m.is_demo);
+    // привязка записи к аккаунту или к этому браузеру — для событий в колокольчике (одного совпавшего email недостаточно)
+    db.prepare('INSERT INTO registrations (date_id, name, email, contact, token, is_demo, user_id, visitor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(d.id, n, e, m.ask_contact ? String(contact || '').trim().slice(0, 200) : '', token, m.is_demo, userId, visitorId);
     return { token, d, m };
   })();
   if (result.error) return result;

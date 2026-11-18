@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const db = require('./db');
 const { publicCard } = require('./cards');
 const live = require('./live'); // знаки пар — те же, что во встрече по телефонам
+const talk = require('./talk'); // единый счётчик «Выбрали для разговора»
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS group_rooms (
@@ -56,23 +57,32 @@ function setRoom(r, fields) {
   db.prepare(`UPDATE group_rooms SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @u WHERE id = @id`).run({ ...fields, u: now(), id: r.id });
 }
 
-/** Карты галереи: опубликованные; демо-карты — только в демо-просмотре. */
-function pool(showDemo) {
-  return db.prepare("SELECT * FROM cards WHERE status = 'published' ORDER BY id DESC").all().filter((c) => !c.is_demo || showDemo);
+/** Карты для игры: вся галерея или своя подборка ведущего (r.data.pool — коды); демо-карты — только в демо-просмотре. */
+function pool(showDemo, r = null) {
+  const all = db.prepare("SELECT * FROM cards WHERE status = 'published' ORDER BY id DESC").all().filter((c) => !c.is_demo || showDemo);
+  const codes = r && dataOf(r).pool;
+  if (Array.isArray(codes) && codes.length) { const set = new Set(codes); const mine = all.filter((c) => set.has(c.code)); if (mine.length) return mine; }
+  return all;
 }
-function randomCard(showDemo, avoid = []) {
-  const all = pool(showDemo); if (!all.length) return null;
+function randomCard(showDemo, avoid = [], r = null) {
+  const all = pool(showDemo, r); if (!all.length) return null;
   const fresh = all.filter((c) => !avoid.includes(c.code));
   const from = fresh.length ? fresh : all;
   return from[Math.floor(Math.random() * from.length)].code;
 }
 
-function create({ format, deviceId, name, showDemo }) {
+/** Выбор для разговора в месте игры (единый счётчик). Ключ — комната, раунд и место: повтор не добавляет, замена заменяет. */
+function count(r, key, code, memberId = null) {
+  talk.record(`g:${r.id}:${key}`, code, { source: `group:${r.format}`, demo: !!r.is_demo });
+}
+function create({ format, deviceId, name, showDemo, codes }) {
   if (!FORMATS.includes(format)) return { error: 'group_bad_format' };
   const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
   if (!n) return { error: 'live_name_required' };
   let code; do { code = crypto.randomBytes(4).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 5).toUpperCase(); } while (code.length < 5 || R.byCode.get(code));
-  const info = db.prepare('INSERT INTO group_rooms (code, format, host_device, is_demo) VALUES (?, ?, ?, ?)').run(code, format, deviceId, showDemo ? 1 : 0);
+  const poolCodes = Array.isArray(codes) ? [...new Set(codes.map(String))].slice(0, 40) : null;
+  if (poolCodes && poolCodes.length && poolCodes.filter((c) => db.prepare("SELECT 1 FROM cards WHERE code = ? AND status = 'published'").get(c)).length < 2) return { error: 'collection_too_small' };
+  const info = db.prepare('INSERT INTO group_rooms (code, format, host_device, is_demo, data) VALUES (?, ?, ?, ?, ?)').run(code, format, deviceId, showDemo ? 1 : 0, JSON.stringify(poolCodes && poolCodes.length ? { pool: poolCodes } : {}));
   db.prepare('INSERT INTO group_members (room_id, device_id, name) VALUES (?, ?, ?)').run(Number(info.lastInsertRowid), deviceId, n);
   return { ok: true, code };
 }
@@ -107,7 +117,7 @@ function newRound(r, showDemo) {
     const m = derange(members.map((x) => x.id));
     for (const x of members) db.prepare('INSERT OR REPLACE INTO group_picks (room_id, step, member_id, target_id) VALUES (?, ?, ?, ?)').run(r.id, step, x.id, m.get(x.id));
   }
-  if (r.format === 'question') { patch.card = randomCard(showDemo, dataOf(r).seen || []); patch.seen = [...(dataOf(r).seen || []), patch.card].slice(-30); patch.phase = 'write'; }
+  if (r.format === 'question') { patch.card = randomCard(showDemo, dataOf(r).seen || [], r); patch.seen = [...(dataOf(r).seen || []), patch.card].slice(-30); patch.phase = 'write'; }
   setRoom(r, { status: 'play', step }); save(R.byCode.get(r.code), patch);
   return { ok: true };
 }
@@ -154,6 +164,8 @@ function pairsAct(r, me, host, action, body) {
       if (mine) mine.code = card.code;
       else slots.push({ id: slots.length + 1, holder: me.id, code: card.code, sign: live.pickSign(slots.map((x) => x.sign)), listeners: [] });
       save(r, { slots }); pairsCheck(R.byCode.get(r.code));
+      // одна подтверждённая карта на место выбора пары; другая карта на том же месте заменяет прежнюю
+      count(r, `${r.step}:slot:${(mine || slots[slots.length - 1]).id}`, card.code);
       return { ok: true, id: r.id };
     }
     case 'partner': {
@@ -223,7 +235,7 @@ function pairsState(r, me, out) {
     const all = [mine.holder, ...mine.listeners].filter((id) => id !== me.id);
     out.pair = { sign: live.signOut(mine.sign, slots.indexOf(mine) + 1), partners: all.map(name) };
   }
-  if (role === 'holder' && d.phase === 'holders') out.gallery = pool(r.is_demo).map((k) => publicCard(k));
+  if (role === 'holder' && d.phase === 'holders') out.gallery = pool(r.is_demo, r).map((k) => publicCard(k));
   return out;
 }
 
@@ -237,14 +249,21 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
   switch (action) {
     case 'start': {
       if (hostOnly()) return hostOnly();
-      if (r.format === 'one') { const c = randomCard(showDemo); setRoom(r, { status: 'play', step: 1 }); save(R.byCode.get(r.code), { card: c, seen: [c] }); return { ok: true, id: r.id }; }
-      if (r.format === 'story') { const c = randomCard(showDemo); setRoom(r, { status: 'play', step: 1 }); save(R.byCode.get(r.code), { cards: [c] }); return { ok: true, id: r.id }; }
+      if (r.format === 'one') { const c = randomCard(showDemo, [], r); setRoom(r, { status: 'play', step: 1 }); save(R.byCode.get(r.code), { card: c, seen: [c], oneAt: Date.now(), oneKey: 1 }); count(r, 'one:1', c); return { ok: true, id: r.id }; }
+      if (r.format === 'story') { const c = randomCard(showDemo, [], r); setRoom(r, { status: 'play', step: 1 }); save(R.byCode.get(r.code), { cards: [c] }); return { ok: true, id: r.id }; }
       const x = newRound(r, showDemo); return x.error ? x : { ok: true, id: r.id };
     }
     case 'next_card': { // «Одна карта на всех» и «История по кругу»: новая случайная карта
       if (hostOnly()) return hostOnly();
-      if (r.format === 'one') { const c = randomCard(showDemo, d.seen || []); save(r, { card: c, seen: [...(d.seen || []), c].slice(-30) }); setRoom(R.byCode.get(r.code), { step: r.step + 1 }); }
-      else if (r.format === 'story') { const c = randomCard(showDemo, d.cards || []); save(r, { cards: [...(d.cards || []), c].slice(0, 12) }); }
+      if (r.format === 'one') {
+        // «Другая карта» сразу после показа — замена в том же раунде; позже — новый раунд разговора со своим выбором
+        const c = randomCard(showDemo, d.seen || [], r);
+        const sameRound = d.oneAt && Date.now() - d.oneAt < 90e3;
+        const key = sameRound ? d.oneKey || r.step : r.step + 1;
+        save(r, { card: c, seen: [...(d.seen || []), c].slice(-30), oneAt: sameRound ? d.oneAt : Date.now(), oneKey: key });
+        setRoom(R.byCode.get(r.code), { step: r.step + 1 }); count(r, `one:${key}`, c);
+      }
+      else if (r.format === 'story') { const c = randomCard(showDemo, d.cards || [], r); save(r, { cards: [...(d.cards || []), c].slice(0, 12) }); }
       else return { error: 'live_bad_state' };
       return { ok: true, id: r.id };
     }
@@ -299,7 +318,7 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
     }
     case 'again': { // новый круг
       if (hostOnly()) return hostOnly();
-      if (r.format === 'story') { const c = randomCard(showDemo); save(r, { cards: [c] }); return { ok: true, id: r.id }; }
+      if (r.format === 'story') { const c = randomCard(showDemo, [], r); save(r, { cards: [c] }); return { ok: true, id: r.id }; }
       const x = newRound(r, showDemo); return x.error ? x : { ok: true, id: r.id };
     }
     case 'end': { if (hostOnly()) return hostOnly(); setRoom(r, { status: 'ended' }); return { ok: true, id: r.id }; }
@@ -309,6 +328,8 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
 /** Ведущий открыл карты: показываем (own/friend) или начинаем угадывание (guess). */
 function toShow(r) {
   const d = dataOf(r);
+  // по одному выбору на подтверждённую и показанную карту каждого участника (для друга — при раскрытии)
+  for (const p of R.picks.all(r.id, r.step).filter((x) => x.code)) count(r, `${r.step}:m:${p.member_id}`, p.code, p.member_id);
   if (r.format === 'guess') save(r, { phase: 'guess', order: shuffle(R.picks.all(r.id, r.step).filter((p) => p.code).map((p) => p.member_id)), index: 0, revealed: false });
   else save(r, { ...d, phase: 'show' });
 }
@@ -335,7 +356,7 @@ function state(code, deviceId, showDemo) {
     out.ready = picks.filter((p) => p.code).map((p) => p.member_id); // кто уже выбрал (без самих карт)
     out.myCard = mine && mine.code ? cardOut(mine.code) : null;
     if (r.format === 'friend' && mine) out.target = name(mine.target_id);
-    if (d.phase === 'pick') out.gallery = pool(showDemo || r.is_demo).map((k) => publicCard(k));
+    if (d.phase === 'pick') out.gallery = pool(showDemo || r.is_demo, r).map((k) => publicCard(k));
     if (d.phase === 'show') {
       out.shown = picks.filter((p) => p.code).map((p) => ({ id: p.member_id, name: name(p.member_id), for: r.format === 'friend' ? name(p.target_id) : null, card: cardOut(p.code) }));
       const sp = d.spot && out.shown.find((x) => x.id === d.spot);

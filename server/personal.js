@@ -1,0 +1,110 @@
+// Личное участника (18.11.2026): заметки к картам («видна только тебе»), «Избранное» и свои подборки.
+// У гостя всё это хранится в его браузере (localStorage); у вошедшего — здесь, на сервере, и видно на всех его устройствах.
+// При входе гость переносит своё сюда: объединение без дублей и без перезаписи разных заметок (merge).
+const db = require('./db');
+const { publicCard } = require('./cards');
+
+db.exec(`CREATE TABLE IF NOT EXISTS user_notes (
+  user_id INTEGER NOT NULL REFERENCES users(id), card_id INTEGER NOT NULL REFERENCES cards(id), text TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), PRIMARY KEY (user_id, card_id)
+);
+CREATE TABLE IF NOT EXISTS user_collections (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), title TEXT NOT NULL, is_favorites INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uc_fav ON user_collections(user_id) WHERE is_favorites = 1;
+CREATE TABLE IF NOT EXISTS user_collection_cards (
+  collection_id INTEGER NOT NULL REFERENCES user_collections(id) ON DELETE CASCADE, card_id INTEGER NOT NULL REFERENCES cards(id),
+  position INTEGER NOT NULL DEFAULT 0, added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), PRIMARY KEY (collection_id, card_id)
+);`);
+
+const MAX = 40; // как у подборки фасилитатора
+const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+const cardByCode = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND status = 'published'").get(String(code || ''));
+function favorites(userId) {
+  let f = db.prepare('SELECT * FROM user_collections WHERE user_id = ? AND is_favorites = 1').get(userId);
+  if (!f) { db.prepare("INSERT OR IGNORE INTO user_collections (user_id, title, is_favorites) VALUES (?, 'Избранное', 1)").run(userId); f = db.prepare('SELECT * FROM user_collections WHERE user_id = ? AND is_favorites = 1').get(userId); }
+  return f;
+}
+const own = (userId, id) => db.prepare('SELECT * FROM user_collections WHERE id = ? AND user_id = ?').get(Number(id), userId);
+
+function state(userId) {
+  favorites(userId);
+  const notes = Object.fromEntries(db.prepare('SELECT k.code, n.text, n.updated_at FROM user_notes n JOIN cards k ON k.id = n.card_id WHERE n.user_id = ?').all(userId).map((r) => [r.code, { text: r.text, updatedAt: r.updated_at }]));
+  const collections = db.prepare('SELECT * FROM user_collections WHERE user_id = ? ORDER BY is_favorites DESC, updated_at DESC').all(userId).map((c) => ({
+    id: c.id, title: c.title, favorites: !!c.is_favorites, updatedAt: c.updated_at,
+    codes: db.prepare("SELECT k.code FROM user_collection_cards x JOIN cards k ON k.id = x.card_id WHERE x.collection_id = ? AND k.status = 'published' ORDER BY x.position, x.added_at").all(c.id).map((r) => r.code),
+  }));
+  return { notes, collections, max: MAX };
+}
+function setNote(userId, code, text) {
+  const c = cardByCode(code); if (!c) return { error: 'not_found' };
+  const t = String(text || '').trim().slice(0, 2000);
+  if (!t) db.prepare('DELETE FROM user_notes WHERE user_id = ? AND card_id = ?').run(userId, c.id);
+  else db.prepare(`INSERT INTO user_notes (user_id, card_id, text) VALUES (?, ?, ?) ON CONFLICT(user_id, card_id) DO UPDATE SET text = excluded.text, updated_at = ${NOW}`).run(userId, c.id, t);
+  return { ok: true };
+}
+function createCollection(userId, title) {
+  const t = String(title || '').trim().slice(0, 80); if (!t) return { error: 'title_required' };
+  const info = db.prepare('INSERT INTO user_collections (user_id, title) VALUES (?, ?)').run(userId, t);
+  return { ok: true, id: Number(info.lastInsertRowid) };
+}
+function renameCollection(userId, id, title) {
+  const c = own(userId, id); if (!c) return { error: 'not_found' };
+  if (c.is_favorites) return { error: 'forbidden' };
+  const t = String(title || '').trim().slice(0, 80); if (!t) return { error: 'title_required' };
+  db.prepare(`UPDATE user_collections SET title = ?, updated_at = ${NOW} WHERE id = ?`).run(t, c.id); return { ok: true };
+}
+function deleteCollection(userId, id) {
+  const c = own(userId, id); if (!c) return { error: 'not_found' };
+  if (c.is_favorites) return { error: 'forbidden' };
+  db.prepare('DELETE FROM user_collection_cards WHERE collection_id = ?').run(c.id);
+  db.prepare('DELETE FROM user_collections WHERE id = ?').run(c.id); return { ok: true };
+}
+/** Добавить/убрать карту. id 'favorites' — «Избранное». */
+function toggle(userId, id, code, on) {
+  const c = id === 'favorites' ? favorites(userId) : own(userId, id); if (!c) return { error: 'not_found' };
+  const k = cardByCode(code); if (!k) return { error: 'not_found' };
+  if (on) {
+    const n = db.prepare('SELECT COUNT(*) AS n FROM user_collection_cards WHERE collection_id = ?').get(c.id).n;
+    if (n >= MAX && !db.prepare('SELECT 1 FROM user_collection_cards WHERE collection_id = ? AND card_id = ?').get(c.id, k.id)) return { error: 'collection_full' };
+    db.prepare('INSERT OR IGNORE INTO user_collection_cards (collection_id, card_id, position) VALUES (?, ?, ?)').run(c.id, k.id, n);
+  } else db.prepare('DELETE FROM user_collection_cards WHERE collection_id = ? AND card_id = ?').run(c.id, k.id);
+  db.prepare(`UPDATE user_collections SET updated_at = ${NOW} WHERE id = ?`).run(c.id);
+  return { ok: true };
+}
+/**
+ * Перенос из браузера гостя. local: { notes: {code: {text, updatedAt}}, favorites: [code], collections: [{title, codes}] }.
+ * Заметка: если в аккаунте её нет — переносим; если есть и текст другой — сохраняем обе (новая дописывается ниже с пометкой);
+ * если такая же — ничего. Подборки с тем же названием объединяются, карты не дублируются.
+ */
+function merge(userId, local) {
+  const L = local && typeof local === 'object' ? local : {};
+  let notes = 0; let cards = 0; let cols = 0;
+  db.transaction(() => {
+    for (const [code, v] of Object.entries(L.notes || {}).slice(0, 500)) {
+      const k = cardByCode(code); const t = String((v && v.text) || '').trim().slice(0, 2000); if (!k || !t) continue;
+      const ex = db.prepare('SELECT text FROM user_notes WHERE user_id = ? AND card_id = ?').get(userId, k.id);
+      if (!ex) { db.prepare('INSERT INTO user_notes (user_id, card_id, text) VALUES (?, ?, ?)').run(userId, k.id, t); notes++; }
+      else if (ex.text !== t && !ex.text.includes(t)) { db.prepare(`UPDATE user_notes SET text = ?, updated_at = ${NOW} WHERE user_id = ? AND card_id = ?`).run(`${ex.text}\n\n— с другого устройства —\n${t}`.slice(0, 4000), userId, k.id); notes++; }
+    }
+    const fav = favorites(userId);
+    const add = (cid, code) => { const k = cardByCode(code); if (!k) return; const n = db.prepare('SELECT COUNT(*) AS n FROM user_collection_cards WHERE collection_id = ?').get(cid).n; if (n >= MAX) return; cards += db.prepare('INSERT OR IGNORE INTO user_collection_cards (collection_id, card_id, position) VALUES (?, ?, ?)').run(cid, k.id, n).changes; };
+    for (const code of (L.favorites || []).slice(0, 200)) add(fav.id, code);
+    for (const c of (L.collections || []).slice(0, 50)) {
+      const t = String((c && c.title) || '').trim().slice(0, 80); if (!t) continue;
+      let col = db.prepare('SELECT * FROM user_collections WHERE user_id = ? AND title = ? AND is_favorites = 0').get(userId, t);
+      if (!col) { const info = db.prepare('INSERT INTO user_collections (user_id, title) VALUES (?, ?)').run(userId, t); col = { id: Number(info.lastInsertRowid) }; cols++; }
+      for (const code of (c.codes || []).slice(0, MAX)) add(col.id, code);
+    }
+  })();
+  return { ok: true, notes, cards, collections: cols };
+}
+/** Карты своей подборки — для игры компанией. */
+function collectionCodes(userId, id) {
+  const c = id === 'favorites' ? favorites(userId) : own(userId, id); if (!c) return null;
+  return db.prepare("SELECT k.code FROM user_collection_cards x JOIN cards k ON k.id = x.card_id WHERE x.collection_id = ? AND k.status = 'published'").all(c.id).map((r) => r.code);
+}
+const cardsOf = (codes) => codes.map(cardByCode).filter(Boolean).map((k) => publicCard(k));
+
+module.exports = { state, setNote, createCollection, renameCollection, deleteCollection, toggle, merge, collectionCodes, cardsOf, MAX };

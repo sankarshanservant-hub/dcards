@@ -252,10 +252,9 @@ function application(userId) {
     decisionNote: a.decision_note, decidedAt: a.decided_at, createdAt: a.created_at, updatedAt: a.updated_at,
     quiz: quizInfo(a), manualReview: !!a.manual_review };
 }
-// Попытки проверки (решение владельца 17.11.2026): три попытки — только сколько верно; после третьей неудачной — номера
-// вопросов с ошибками; после четвёртой — ещё и главы руководства к этим вопросам; после пятой — можно отправить на ручную
-// проверку (и попробовать ещё). Ни проверка, ни ручная отправка роль не дают — только решение администратора.
-const QUIZ = { numbersAfter: 3, chaptersAfter: 4, manualAfter: 5 };
+// Попытки проверки (задание 18.11.2026): первые две — только сколько верно; после третьей неудачной — номера вопросов
+// с ошибками и ссылки на главы руководства к ним; если и после этого ошибка — можно отправить на ручную проверку. Ни проверка, ни ручная отправка роль не дают — только решение администратора.
+const QUIZ = { numbersAfter: 3, chaptersAfter: 3, manualAfter: 4 };
 function quizInfo(a) {
   const n = a.quiz_attempts || 0; const wrong = JSON.parse(a.quiz_wrong || '[]'); const passed = !!a.quiz_passed;
   const out = { attempts: n, passed, total: QUESTIONS.length, correct: n ? QUESTIONS.length - wrong.length : null };

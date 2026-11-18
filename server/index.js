@@ -17,6 +17,11 @@ const works = require('./works');
 const meetings = require('./meetings');
 const community = require('./community');
 const push = require('./push');
+const bell = require('./bell');
+const events = require('./events');
+const exchanges = require('./exchanges');
+const personal = require('./personal');
+const safe = (fn) => { try { fn(); } catch (e) { console.error('event:', e.message); } }; // событие не должно ломать основное действие
 const demo = require('./demo');
 const choices = require('./choices');
 const places = require('./places');
@@ -42,6 +47,8 @@ const r = express.Router();
 r.use(express.json({ limit: '200kb' }));
 r.use(cookieParser());
 r.use(auth.loadUser);
+// Гость: случайный идентификатор этого браузера (заголовок X-DC-Visitor) — привязка его обменов, колокольчика, записей.
+r.use((req, res, next) => { const v = String(req.get('x-dc-visitor') || ''); req.visitor = /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null; next(); });
 
 const VISITOR_RE = /^[A-Za-z0-9-]{16,64}$/;
 const CODE_RE = /^DC-\d{4,6}$/;
@@ -259,7 +266,9 @@ r.get('/api/meetings/dates/:id', (req, res) => {
   res.json(d);
 });
 r.post('/api/meetings/dates/:id/register', wrap(async (req, res) => {
-  out(res, await meetings.register(Number(req.params.id), req.body || {}, baseUrl(req), req.body.lang === 'en' ? 'en' : 'ru'), 201);
+  const r0 = await meetings.register(Number(req.params.id), { ...(req.body || {}), userId: req.user && !req.user.is_demo ? req.user.id : null, visitorId: req.visitor }, baseUrl(req), req.body.lang === 'en' ? 'en' : 'ru');
+  if (r0.ok) safe(() => events.registered(r0.token));
+  out(res, r0, 201);
 }));
 r.get('/api/registrations/:token', (req, res) => {
   const x = meetings.registrationByToken(String(req.params.token));
@@ -271,7 +280,7 @@ r.get('/api/registrations/:token/ics', (req, res) => {
   if (!ics) return bad(res, 'not_found', 404);
   res.set('Content-Type', 'text/calendar; charset=utf-8').set('Content-Disposition', 'attachment; filename="dialogue-flow.ics"').set('Cache-Control', 'no-store').send(ics);
 });
-r.post('/api/registrations/:token/cancel', (req, res) => out(res, meetings.cancelByToken(String(req.params.token))));
+r.post('/api/registrations/:token/cancel', (req, res) => { const r0 = meetings.cancelByToken(String(req.params.token)); if (r0.ok && !r0.already) safe(() => events.registrationCancelled(String(req.params.token))); out(res, r0); });
 
 // ---------- художник ----------
 // Роль художника выдаётся автоматически при первой подаче работ (правила выдачи ролей ещё уточняются).
@@ -280,15 +289,20 @@ r.post('/api/artist/works', auth.requireUser, artistUpload.array('images', 20), 
   const notes = [].concat(req.body.notes || []);
   const result = await works.submit(req.user, req.files || [], { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, notes, clientKey: req.body.clientKey });
   if (!result.error) auth.grant(req.user.id, 'artist');
+  if (!result.error && !result.repeated) safe(() => events.worksQueued(!!req.user.is_demo, req.user.id));
   out(res, result, 201);
 }));
 r.post('/api/artist/works/:id/versions', auth.requireUser, artistUpload.single('image'), wrap(async (req, res) => {
   if (!req.file) return bad(res, 'no_image');
-  out(res, await works.addVersion(req.user, Number(req.params.id), req.file, req.body.note));
+  const r0 = await works.addVersion(req.user, Number(req.params.id), req.file, req.body.note);
+  if (r0.ok) safe(() => events.worksQueued(!!req.user.is_demo, req.user.id));
+  out(res, r0);
 }));
 r.post('/api/artist/cards/:code/replace', auth.requireUser, artistUpload.single('image'), wrap(async (req, res) => {
   if (!req.file) return bad(res, 'no_image');
-  out(res, await works.proposeReplacement(req.user, req.params.code, req.file, { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, note: req.body.note }), 201);
+  const r0 = await works.proposeReplacement(req.user, req.params.code, req.file, { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, note: req.body.note });
+  if (r0.id) safe(() => events.worksQueued(!!req.user.is_demo, req.user.id));
+  out(res, r0, 201);
 }));
 r.post('/api/artist/cards/:code/withdraw', auth.requireUser, (req, res) => out(res, works.withdrawCard(req.user, req.params.code)));
 r.get('/api/works/:id', auth.requireUser, (req, res) => {
@@ -303,10 +317,11 @@ r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queu
 r.use('/api/curation/works/:id', (req, res, next) => (demoOnly(req, res, isDemoRow('works', 'id', Number(req.params.id))) ? next() : undefined));
 r.post('/api/curation/works/:id/decide', curator, (req, res) => {
   const result = works.decide(req.user, Number(req.params.id), req.body || {});
-  if (result.decisionId && !result.recommended) push.onWorkDecision(result.decisionId).catch(() => {}); // автору — о возврате или отклонении
+  if (result.decisionId && !result.recommended) { push.onWorkDecision(result.decisionId).catch(() => {}); safe(() => events.workDecided(result.decisionId)); } // автору — о возврате или отклонении
+  if (result.recommended) safe(() => events.workRecommended(Number(req.params.id), req.user.id));
   out(res, result);
 });
-r.post('/api/curation/works/:id/discuss', curator, (req, res) => out(res, works.discuss(req.user, Number(req.params.id), req.body.question ?? req.body.comment)));
+r.post('/api/curation/works/:id/discuss', curator, (req, res) => { const r0 = works.discuss(req.user, Number(req.params.id), req.body.question ?? req.body.comment); if (r0.ok) safe(() => events.workDiscussed(Number(req.params.id), req.user.id)); out(res, r0); });
 r.post('/api/curation/works/:id/vote', curator, (req, res) => out(res, works.vote(req.user, Number(req.params.id), req.body.vote, req.body.comment)));
 
 // ---------- чаты: общий и ролевые; сообщения с изображениями; «Медиа» ----------
@@ -368,7 +383,7 @@ r.post('/api/chats/:room', auth.requireUser, roomGuard, chatUpload.array('images
   const files = [];
   for (const f of req.files || []) files.push(await chatImage(f.buffer));
   const r0 = community.post(req.params.room, req.user, b.text, { files, category: b.category, clientId: b.clientId, replyTo: b.replyTo, mentions: b.mentions });
-  if (r0.ok && !r0.duplicate) push.onMessage(r0.id).catch((e) => console.error('push:', e.message)); // в фоне: ответ не ждёт push-сервисов
+  if (r0.ok && !r0.duplicate) { push.onMessage(r0.id).catch((e) => console.error('push:', e.message)); safe(() => events.chatMessage(r0.id)); } // в фоне: ответ не ждёт push-сервисов
   out(res, r0, 201);
 }));
 r.delete('/api/chats/:room/messages/:id', auth.requireUser, roomGuard, (req, res) => out(res, community.deleteMessage(req.params.room, Number(req.params.id), req.user, req.has('admin'), (req.body || {}).reason || req.query.reason)));
@@ -462,7 +477,10 @@ r.put('/api/fac/meetings/:id', fac, (req, res) => {
   const id = Number(req.params.id);
   if (!meetings.facilitatorOf(id) || !ownsMeeting(req, id)) return bad(res, 'not_found', 404);
   const pl = meetingPlace(req, meetings.oneForEditor(id)); if (pl.error) return res.status(400).json(pl);
-  out(res, meetings.update(id, { ...req.body, ...pl }));
+  const before = db.prepare('SELECT venue, city, country FROM meetings WHERE id = ?').get(id);
+  const r0 = meetings.update(id, { ...req.body, ...pl });
+  if (r0.ok) safe(() => events.placeChanged(id, before, req.user.id));
+  out(res, r0);
 });
 r.post('/api/fac/meetings/:id/dates', fac, (req, res) => {
   const id = Number(req.params.id);
@@ -477,7 +495,11 @@ r.post('/api/fac/meetings/:id/publish', fac, (req, res) => {
 r.patch('/api/fac/dates/:id', fac, (req, res) => {
   const mid = meetings.meetingOfDate(Number(req.params.id));
   if (!mid || !ownsMeeting(req, mid)) return bad(res, 'not_found', 404);
-  out(res, meetings.setDate(Number(req.params.id), req.body || {}));
+  const did = Number(req.params.id);
+  const was = db.prepare('SELECT status FROM meeting_dates WHERE id = ?').get(did);
+  const r0 = meetings.setDate(did, req.body || {});
+  if (r0.ok && was && was.status !== 'cancelled' && req.body && req.body.status === 'cancelled') safe(() => events.dateCancelled(did, req.user.id));
+  out(res, r0);
 });
 
 // ---------- встреча по телефонам (live): пульт фасилитатора и экран участника ----------
@@ -566,7 +588,7 @@ r.post('/api/live/feedback/:id', feedbackUpload.single('media'), (req, res) => {
 // ---------- игры компанией (без фасилитатора): комната по QR/коду ----------
 const group = require('./group');
 const groupDone = (res, x, status = 200) => { if (x && x.ok && x.id) group.touch(x.id); out(res, x, status); };
-r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo }), 201); });
+r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
 r.get('/api/group/:code/state', (req, res) => {
   const d = liveDevice(req, res); if (!d) return;
   const st = group.state(req.params.code, d, req.showDemo);
@@ -608,7 +630,7 @@ r.post('/api/fac/application', auth.requireUser, (req, res) => res.json({ applic
 r.put('/api/fac/application', auth.requireUser, (req, res) => out(res, community.saveApplication(req.user, req.body || {})));
 // Заявка на роль куратора (вошедший пользователь); решение — администратор.
 r.get('/api/curator/application', auth.requireUser, (req, res) => res.json({ isCurator: req.roles.includes('curator'), application: community.curatorApplication(req.user.id) }));
-r.post('/api/curator/application', auth.requireUser, (req, res) => out(res, community.submitCuratorApplication(req.user, req.body || {}), 201));
+r.post('/api/curator/application', auth.requireUser, (req, res) => { const r0 = community.submitCuratorApplication(req.user, req.body || {}); if (r0.ok) safe(() => events.applicationSubmitted('curator', req.user.id)); out(res, r0, 201); });
 // Запрос фасилитатора на готовую печатную колоду: уходит команде проекта (виден администратору).
 r.post('/api/fac/print-request', fac, (req, res) => {
   const note = String((req.body && req.body.note) || '').trim().slice(0, 1000);
@@ -616,9 +638,9 @@ r.post('/api/fac/print-request', fac, (req, res) => {
   if (!dup) db.prepare('INSERT INTO print_requests (user_id, note, is_demo) VALUES (?, ?, ?)').run(req.user.id, note, req.user.is_demo ? 1 : 0);
   res.status(201).json({ ok: true, already: !!dup });
 });
-r.post('/api/fac/application/submit', auth.requireUser, (req, res) => out(res, community.submitApplication(req.user)));
+r.post('/api/fac/application/submit', auth.requireUser, (req, res) => { const r0 = community.submitApplication(req.user); if (r0.ok) safe(() => events.applicationSubmitted('facilitator', req.user.id)); out(res, r0); });
 r.post('/api/fac/application/quiz', auth.requireUser, (req, res) => out(res, community.checkQuiz(req.user, (req.body || {}).answers)));
-r.post('/api/fac/application/manual', auth.requireUser, (req, res) => out(res, community.manualReview(req.user, req.body || {})));
+r.post('/api/fac/application/manual', auth.requireUser, (req, res) => { const r0 = community.manualReview(req.user, req.body || {}); if (r0.ok) safe(() => events.applicationSubmitted('facilitator', req.user.id, { manual: true })); out(res, r0); });
 
 // ---------- печатное направление ----------
 r.get('/api/print', auth.requireUser, (req, res) => {
@@ -706,11 +728,11 @@ admin.get('/print-requests', (req, res) => res.json({ requests: db.prepare(`SELE
   .map((p) => ({ id: p.id, name: p.name, email: p.email, note: p.note, status: p.status, createdAt: p.created_at, isDemo: !!p.is_demo })) }));
 admin.post('/print-requests/:id/done', (req, res) => { db.prepare(`UPDATE print_requests SET status = 'done' WHERE id = ?`).run(Number(req.params.id)); res.json({ ok: true }); });
 admin.get('/curator-applications', (req, res) => res.json({ applications: community.curatorApplications(req.showDemo) }));
-admin.post('/curator-applications/:userId/decide', (req, res) => out(res, community.decideCuratorApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note)));
+admin.post('/curator-applications/:userId/decide', (req, res) => { const r0 = community.decideCuratorApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note); if (r0.ok) safe(() => events.applicationDecided('curator', Number(req.params.userId), !!req.body.approve)); out(res, r0); });
 admin.get('/applications', (req, res) => res.json({ applications: community.applications(req.showDemo) }));
-admin.post('/applications/:userId/decide', (req, res) => out(res, community.decideApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note)));
+admin.post('/applications/:userId/decide', (req, res) => { const r0 = community.decideApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note); if (r0.ok) safe(() => events.applicationDecided('facilitator', Number(req.params.userId), !!req.body.approve)); out(res, r0); });
 admin.get('/meetings', (req, res) => res.json({ meetings: meetings.allForAdmin(req.showDemo) }));
-admin.post('/meetings/:id/remove', (req, res) => out(res, meetings.removeByAdmin(req.user.id, Number(req.params.id), req.body.reason)));
+admin.post('/meetings/:id/remove', (req, res) => { const r0 = meetings.removeByAdmin(req.user.id, Number(req.params.id), req.body.reason); if (r0.ok) safe(() => events.meetingRemoved(Number(req.params.id))); out(res, r0); });
 admin.post('/meetings/:id/restore', (req, res) => out(res, meetings.restoreByAdmin(Number(req.params.id))));
 admin.get('/comments', (req, res) => res.json({ comments: community.recentComments(req.showDemo) }));
 admin.put('/criteria', (req, res) => out(res, works.setCriteria(req.body && req.body.criteria)));
@@ -718,7 +740,7 @@ admin.put('/criteria', (req, res) => out(res, works.setCriteria(req.body && req.
 admin.get('/works', (req, res) => res.json({ recommended: works.recommendedQueue(req.showDemo), decisions: works.decisionsLog(req.showDemo), criteria: works.criteriaList() }));
 admin.post('/works/:id/decide', (req, res) => {
   const result = works.adminDecide(req.user, Number(req.params.id), req.body || {});
-  if (result.decisionId) push.onWorkDecision(result.decisionId).catch(() => {}); // автору — о публикации, возврате или отклонении
+  if (result.decisionId) { push.onWorkDecision(result.decisionId).catch(() => {}); safe(() => events.workDecided(result.decisionId)); } // автору — о публикации, возврате или отклонении
   out(res, result);
 });
 admin.get('/outbox', (req, res) => res.json({ letters: db.prepare('SELECT id, to_email AS "to", subject, status, created_at AS createdAt FROM outbox ORDER BY id DESC LIMIT 50').all() }));
@@ -778,6 +800,47 @@ admin.post('/cards/:code/restore', (req, res) => {
   if (!x.changes) return bad(res, 'not_found', 404);
   res.json({ ok: true });
 });
+// ---------- обмен с другом «Что ты здесь видишь?» (exchanges.js) ----------
+const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND status = 'published'").get(String(code || ''));
+r.post('/api/exchanges', (req, res) => {
+  const b = req.body || {}; const c = pubCard(b.code);
+  if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
+  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, clientKey: b.clientKey }), 201);
+});
+r.get('/api/exchanges', (req, res) => res.json({ exchanges: exchanges.mine(req.user, req.visitor, req.query.card ? String(req.query.card) : null) }));
+r.get('/api/x/:token', (req, res) => {
+  const { x, role } = exchanges.resolve(String(req.params.token), req.user, req.visitor);
+  if (!x) return bad(res, 'not_found', 404);
+  res.set('Cache-Control', 'no-store').json(exchanges.view(x, role));
+});
+r.post('/api/x/:token/answer', (req, res) => {
+  const b = req.body || {};
+  const r0 = exchanges.answer(String(req.params.token), req.user, req.visitor, { text: b.text, name: b.name, answerKey: b.answerKey });
+  if (r0.error) return out(res, r0);
+  const { x, role } = exchanges.resolve(r0.secret, req.user, req.visitor);
+  res.status(201).json({ ok: true, repeated: !!r0.repeated, exchange: exchanges.view(x, role) });
+});
+r.post('/api/x/:token/story', (req, res) => out(res, exchanges.story(String(req.params.token), req.user, req.visitor, req.body || {})));
+
+// ---------- колокольчик (bell.js) ----------
+r.get('/api/bell', (req, res) => res.set('Cache-Control', 'no-store').json(bell.list(req.user, req.visitor, req.showDemo)));
+r.post('/api/bell/read', (req, res) => out(res, bell.markRead(req.user, req.visitor, (req.body || {}).all ? 'all' : (req.body || {}).ids)));
+// версия приложения: клиент сравнивает с загруженной и предлагает «Обновить»
+const BUILD = String(Date.now());
+r.get('/api/version', (req, res) => res.set('Cache-Control', 'no-store').json({ build: BUILD }));
+
+// ---------- личное: заметки, избранное, подборки (personal.js); у гостя — в браузере ----------
+r.get('/api/me/personal', auth.requireUser, (req, res) => res.json(personal.state(req.user.id)));
+r.put('/api/me/notes/:code', auth.requireUser, (req, res) => out(res, personal.setNote(req.user.id, req.params.code, (req.body || {}).text)));
+r.post('/api/me/collections', auth.requireUser, (req, res) => out(res, personal.createCollection(req.user.id, (req.body || {}).title), 201));
+r.patch('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, personal.renameCollection(req.user.id, req.params.id, (req.body || {}).title)));
+r.delete('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, personal.deleteCollection(req.user.id, req.params.id)));
+r.post('/api/me/collections/:id/cards', auth.requireUser, (req, res) => out(res, personal.toggle(req.user.id, req.params.id === 'favorites' ? 'favorites' : req.params.id, (req.body || {}).code, (req.body || {}).on !== false)));
+// после входа: обмены и колокольчик этого браузера — в аккаунт; личные данные гостя — по согласию (merge)
+r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id) }));
+r.post('/api/me/merge', auth.requireUser, (req, res) => out(res, personal.merge(req.user.id, req.body || {})));
+r.post('/api/cards-by-codes', (req, res) => res.json({ cards: personal.cardsOf((Array.isArray((req.body || {}).codes) ? req.body.codes : []).slice(0, 200).map(String)) }));
+
 r.use('/api/admin', admin);
 r.use('/api', (req, res) => bad(res, 'not_found', 404));
 

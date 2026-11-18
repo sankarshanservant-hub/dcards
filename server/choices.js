@@ -5,7 +5,8 @@ const db = require('./db');
 
 /** SQL-выражение общего числа выборов карты; alias — псевдоним таблицы cards в запросе. */
 const totalSql = (alias = 'k') => `((SELECT COUNT(*) FROM selections s WHERE s.card_id = ${alias}.id AND s.cancelled_at IS NULL AND s.is_test = 0 AND s.counted = 1)
-  + (SELECT COUNT(*) FROM library_choices l WHERE l.card_id = ${alias}.id AND l.cancelled_at IS NULL AND l.counted = 1))`;
+  + (SELECT COUNT(*) FROM library_choices l WHERE l.card_id = ${alias}.id AND l.cancelled_at IS NULL AND l.counted = 1)
+  + ${require('./talk').sql(alias)})`; // обмены с другом и игры компанией (talk.js)
 
 const stmt = {
   total: db.prepare(`SELECT ${totalSql('k')} AS n FROM cards k WHERE k.id = ?`),
