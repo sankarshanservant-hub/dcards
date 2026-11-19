@@ -53,6 +53,25 @@ const r = express.Router();
 r.use(express.json({ limit: '200kb' }));
 r.use(cookieParser());
 r.use(auth.loadUser);
+// Подделка запросов с чужих сайтов (CSRF): изменяющий запрос к /api принимается только со своего сайта.
+// Браузеры присылают Origin (или хотя бы Sec-Fetch-Site) — чужой источник отклоняется всегда. Запрос с cookie сессии без
+// обоих заголовков тоже отклоняется (так поступает только не браузер — а ему cookie сессии ни к чему). Запросы гостей
+// без cookie (их узнают по заголовку X-DC-Visitor, который чужая страница прислать не может) работают как раньше.
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const ownOrigins = (req) => {
+  const list = [`${req.protocol}://${req.get('host')}`];
+  if (config.publicUrl) { try { list.push(new URL(config.publicUrl).origin); } catch { /* неверный PUBLIC_URL */ } }
+  return list;
+};
+r.use((req, res, next) => {
+  if (!MUTATING.has(req.method) || !req.path.startsWith('/api/')) return next();
+  const origin = req.get('origin');
+  const site = req.get('sec-fetch-site');
+  if (origin) return ownOrigins(req).includes(origin) ? next() : bad(res, 'bad_origin', 403);
+  if (site) return site === 'same-origin' ? next() : bad(res, 'bad_origin', 403);
+  if (req.cookies && req.cookies[auth.COOKIE]) return bad(res, 'bad_origin', 403);
+  next();
+});
 // Гость: случайный идентификатор этого браузера (заголовок X-DC-Visitor) — привязка его обменов, колокольчика, записей.
 r.use((req, res, next) => { const v = String(req.get('x-dc-visitor') || ''); req.visitor = /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null; next(); });
 

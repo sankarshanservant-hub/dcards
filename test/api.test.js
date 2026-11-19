@@ -32,8 +32,10 @@ let server; let base;
 const visitorA = 'a'.repeat(32);
 const visitorB = 'b'.repeat(32);
 
-async function call(method, url, body, { cookie, form, visitor } = {}) {
-  const headers = {};
+// Как браузер: изменяющие запросы приходят с Origin своего сайта (origin: false — без него, строка — чужой источник).
+async function call(method, url, body, { cookie, form, visitor, origin, headers: extra } = {}) {
+  const headers = { ...(extra || {}) };
+  if (origin !== false && method !== 'GET') headers.Origin = typeof origin === 'string' ? origin : base;
   if (visitor) headers['X-DC-Visitor'] = visitor;
   if (body) headers['Content-Type'] = 'application/json';
   if (cookie) headers.Cookie = cookie;
@@ -1471,4 +1473,20 @@ test('Владелец входит аккаунтом сайта только �
   // аккаунт сайта, привязанный к аккаунту с правами, другой человек к себе не перетянет
   const stranger = await emailLogin('stranger-link@example.org', 'Чужой');
   assert.equal((await call('POST', '/api/auth/site/link', { session: 'curator-site-session' }, { cookie: stranger.cookie })).json.error, 'site_account_in_use');
+});
+
+test('Подделка запросов: изменяющий запрос с чужого сайта отклоняется, свой и гостевой — проходят', async () => {
+  const u = await emailLogin('csrf@example.org', 'Проверка');
+  const patch = (opts) => call('PATCH', '/api/me', { name: 'Изменено' }, { cookie: u.cookie, ...opts });
+  assert.equal((await patch({ origin: 'https://evil.example' })).status, 403, 'чужой Origin');
+  assert.equal((await patch({ origin: 'null' })).status, 403, 'Origin: null');
+  assert.equal((await patch({ origin: false })).status, 403, 'с cookie сессии, но без Origin и Sec-Fetch-Site');
+  assert.equal((await patch({ origin: false, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await patch({ origin: false, headers: { 'Sec-Fetch-Site': 'same-site' } })).status, 403, 'соседний поддомен — тоже чужой');
+  assert.equal((await patch({ origin: false, headers: { 'Sec-Fetch-Site': 'same-origin' } })).status, 200);
+  assert.equal((await patch({})).status, 200, 'свой Origin');
+  assert.equal((await call('POST', '/api/auth/owner', { password: 'test-password' }, { origin: 'https://evil.example' })).status, 403, 'вход с чужой страницы — тоже нет');
+  assert.equal((await call('GET', '/api/me', null, { cookie: u.cookie, origin: 'https://evil.example' })).status, 200, 'чтение не затронуто');
+  // гость без cookie (не браузер или старый браузер): по заголовку X-DC-Visitor, как раньше
+  assert.equal((await call('POST', '/api/bell/read', { all: true }, { visitor: visitorA, origin: false })).status, 200);
 });
