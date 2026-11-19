@@ -19,6 +19,7 @@ const openFromQuery = (cards, openAt) => {
 // По общей центральной оси: вопрос, три карты, «Все карты», две кнопки отправки. Ниже — два самостоятельных входа
 // и «Участвовать в проекте». Карточка направления целиком — ссылка; пиктограмма рядом с заголовком.
 const ENTRIES = [
+  ['/games', 'dice', 'Играть', 'Play', 'Игры с картами — одному или компанией.', 'Card games — on your own or with friends.'],
   ['/meetings', 'chat', 'Найти встречу', 'Find a meeting', 'Приходите на Dialogue Flow, чтобы познакомиться и пообщаться с другими участниками.', 'Come to Dialogue Flow to meet and talk with other participants.'],
   ['/chats', 'chats', 'Общаться с участниками', 'Talk with participants', 'Чаты участников, фасилитаторов и кураторов проекта.', 'Chats for participants, facilitators and curators of the project.'],
 ];
@@ -36,7 +37,7 @@ export async function home(ctx) {
       <div class="home-axis">
         <h2 class="home-q">${esc(tt('Что ты здесь видишь?', 'What do you see here?'))}</h2>
         <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
-        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards"><span class="stack3" aria-hidden="true"><i class="s-l"></i><i class="s-r"></i><i class="s-f"><b></b></i></span>${esc(tt('Все карты', 'All cards'))}</a>
+        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards"><span class="cards2" aria-hidden="true"><i class="c-back"></i><i class="c-front"><b></b></i></span>${esc(tt('Все карты', 'All cards'))}</a>
         <div class="home-send">
           <a class="btn home-out" href="${u('/library?play=friend')}">${ic.people}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
           <a class="btn home-out" href="${u('/library?play=postcard')}">${ic.mail || ic.cards}<span>${esc(tt('Отправить открытку', 'Send a postcard'))}</span></a>
@@ -50,7 +51,12 @@ export async function home(ctx) {
     </section>`;
   // «Все карты»: стопка на пиктограмме один раз раздвигается, переход — сразу (анимация только у пиктограммы)
   const all = ctx.main.querySelector('#all-cards');
-  if (all) all.addEventListener('click', () => { if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { all.classList.remove('fan'); void all.offsetWidth; all.classList.add('fan'); } });
+  // задняя карта коротко выезжает из-под передней (как отклик кубика), затем сразу галерея; при уменьшении движения — сразу
+  if (all) all.addEventListener('click', (e) => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || e.metaKey || e.ctrlKey) return;
+    e.preventDefault(); e.stopPropagation(); all.classList.remove('fan'); void all.offsetWidth; all.classList.add('fan');
+    setTimeout(() => { if (ctx.alive()) ctx.navigate('/library'); }, 230);
+  });
   // Три вертикальные иллюстрации в ровном ряду с небольшим перекрытием; при новом заходе — другие работы.
   try {
     const { cards } = await api('/api/cards');
@@ -119,7 +125,7 @@ export function games(ctx) {
     <div class="page-head"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1></div>
     <div class="list">
       <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b></span></a>
-      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub">${esc(tt('2–20 участников', '2–20 players'))}</span></span></a>
+      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub2">${esc(tt('Для живой встречи · 2–20 человек', 'For a live meeting · 2–20 people'))}<br>${esc(tt('Каждый со своего телефона.', 'Everyone on their own phone.'))}</span></span></a>
     </div></div>`;
 }
 

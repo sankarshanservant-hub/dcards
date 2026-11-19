@@ -30,6 +30,7 @@ export const ic = {
   home: P('<path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h12V9.5"/>'),
   mail: P('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5 12 13l8.5-6.5"/>'),
   arrowLeft: P('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
+  share: P('<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M6.5 11H5v9h14v-9h-1.5"/>'),
   chevronLeft: P('<path d="M15 5l-7 7 7 7"/>'),
   chevronRight: P('<path d="M9 5l7 7-7 7"/>'),
   close: P('<path d="M6 6l12 12M18 6L6 18"/>'),

@@ -5,6 +5,7 @@ import { lang } from '../i18n.js';
 import { esc, tt, u, api } from '../util.js';
 import { ic, loading, failed, session } from '../ui.js';
 import { openViewer } from '../viewer.js';
+import * as personal from '../personal.js';
 
 export const SOLO_GAMES = [
   { key: 'story', path: '/group/solo/story', ru: 'История из трёх карт', en: 'A story from three cards', dru: 'Три карты по очереди: первая начинает историю, вторая меняет её ход, третья помогает закончить.', den: 'Three cards in turn: the first starts a story, the second changes its course, the third helps end it.' },
@@ -33,7 +34,7 @@ async function loadCards(ctx) {
 const pickOther = (cards, avoid) => { const pool = cards.filter((c) => !avoid.includes(c.code)); const from = pool.length ? pool : cards; return from[Math.floor(Math.random() * from.length)]; };
 const cardImg = (c, cls = 'live-card') => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="${cls}" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
 const frame = (g, inner) => `<div class="wrap page narrow stack solo-page"><p class="eyebrow" style="margin:0"><a href="${u('/group/solo')}">${esc(tt('Играть одному', 'Play solo'))}</a></p><h1 style="margin:0">${esc(T(g))}</h1>${inner}</div>`;
-function zoomer(ctx, cards) { ctx.main.addEventListener('click', (e) => { const z = e.target.closest('[data-zoom]'); if (z) { const c = cards.find((x) => x.code === z.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin' }); } }); }
+function zoomer(ctx, cards) { ctx.main.addEventListener('click', (e) => { const z = e.target.closest('[data-zoom]'); if (z) { const c = cards.find((x) => x.code === z.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); } }); }
 const keep = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
 const restore = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch { return null; } };
 
@@ -113,100 +114,159 @@ export async function eagle(ctx) {
 // и вопрос, как они могли бы встретиться на одной картинке. Всё хранится только в этой вкладке.
 let nid = 1;
 const node = (word, parent = null) => ({ id: `n${Date.now().toString(36)}${nid++}`, word, parent });
-// «Придумай ассоциации» (21.11.2026): четыре шага на одном экране, у каждого заголовок рядом со своим действием.
-// Карту листают стрелками и свайпом в порядке галереи. Пример — свёрнутый, со своей миниатюрой, поля игрока не заполняет.
+// «Придумай ассоциации» (21.11.2026; 22.11.2026 — две ветки рядом, выбор пары, «Сохранить образ»).
+// Шаги: карта (стрелки и свайп по порядку галереи) → две детали → ветки ассоциаций (тап по любому слову добавляет к нему) →
+// пара (по одному слову из каждой ветки, вручную или случайно) → новый образ (по желанию — записать и сохранить в «Мои образы»).
+// Пример — свёрнутый, со своей миниатюрой, поля игрока не заполняет.
 const EXAMPLE_CODE = 'DC-0038'; // море и облачный корабль
 export async function imagine(ctx) {
   loading(ctx.main);
   let cards; try { cards = await loadCards(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   if (!cards.length) { ctx.main.innerHTML = frame(G('imagine'), `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards yet.'))}</p>`); return; }
-  const blank = (code) => ({ v: 2, code, roots: ['', ''], assoc: [[], []], pair: [null, null], hold: [false, false], note: '', ex: false });
+  const blank = (code) => ({ v: 3, code, roots: ['', ''], nodes: [], adding: null, pair: [null, null], stage: 'build', note: '', saved: '', ex: false });
   let st = restore('dc_solo_imagine');
-  if (!st || st.v !== 2 || !cards.some((c) => c.code === st.code)) st = blank(cards[0].code);
+  if (!st || st.v !== 3 || !cards.some((c) => c.code === st.code)) st = blank(cards[0].code);
   const ex = cards.find((c) => c.code === EXAMPLE_CODE);
   const idx = () => Math.max(0, cards.findIndex((c) => c.code === st.code));
   const save = () => keep('dc_solo_imagine', st);
-  const chipsOf = (i) => st.assoc[i].map((w, k) => `<span class="assoc-chip">${esc(w)}<button type="button" data-rm="${i}:${k}" aria-label="${esc(tt(`Убрать «${w}»`, `Remove “${w}”`))}">×</button></span>`).join('');
-  const groupHtml = (i) => st.roots[i].trim() ? `<div class="assoc-group" data-g="${i}"><b>${esc(st.roots[i].trim())}</b><div class="assoc-chips" id="ac-${i}">${chipsOf(i)}</div>
-      <form class="assoc-add" data-addto="${i}"><label class="sr-only" for="as-${i}">${esc(tt(`Ассоциации к детали «${st.roots[i].trim()}»`, `Associations for “${st.roots[i].trim()}”`))}</label><input id="as-${i}" maxlength="60" placeholder="${esc(tt('Что приходит в голову?', 'What comes to mind?'))}" autocomplete="off"><button class="btn sm" type="submit">${esc(tt('Добавить', 'Add'))}</button></form></div>` : '';
-  const pairHtml = () => {
-    const ready = st.assoc[0].length && st.assoc[1].length;
-    if (!ready) return `<p class="vb-note" style="margin:0">${esc(tt('Сначала добавь хотя бы по одной ассоциации к каждой детали.', 'First add at least one association to each detail.'))}</p>`;
-    const w = [0, 1].map((i) => (st.pair[i] != null ? st.assoc[i][st.pair[i]] : null));
-    return `${[0, 1].map((i) => `<fieldset class="pair-pick"><legend>${esc(st.roots[i].trim())}</legend><div class="pc-row">${st.assoc[i].map((x, k) => `<button type="button" class="chip ${st.pair[i] === k ? 'on' : ''}" data-pick="${i}:${k}" aria-pressed="${st.pair[i] === k}">${esc(x)}</button>`).join('')}</div>
-        ${st.pair[i] != null ? `<label class="check small"><input type="checkbox" data-hold="${i}" ${st.hold[i] ? 'checked' : ''}> <span>${esc(tt('Оставить это слово', 'Keep this word'))}</span></label>` : ''}</fieldset>`).join('')}
-      <div class="row"><button class="btn light" type="button" data-random>${esc(tt('Случайная пара', 'Random pair'))}</button></div>
-      ${w[0] && w[1] ? `<div class="imag-pair" aria-live="polite"><span>${esc(w[0])}</span><b>+</b><span>${esc(w[1])}</span></div>
-        <label class="sr-only" for="imn">${esc(tt('Мой образ', 'My image'))}</label><textarea id="imn" rows="2" maxlength="300" placeholder="${esc(tt('Какой образ получается?', 'What image do you get?'))}">${esc(st.note)}</textarea>` : ''}`;
-  };
+  let seq = st.nodes.reduce((m, n) => Math.max(m, Number(String(n.id).slice(1)) || 0), 0);
+  const nid = () => `n${++seq}`;
+  const rootOf = (i) => st.nodes.find((n) => n.parent === null && n.branch === i);
+  const words = (i) => st.nodes.filter((n) => n.branch === i && n.parent !== null);
+  const ready = () => words(0).length > 0 && words(1).length > 0;
+  // ветка: исходное слово — крупно, ассоциации — ниже, тонкие линии ветвления; тап по слову — поле добавления под ним
+  const addForm = (n) => `<form class="assoc-add" data-addto="${n.id}"><label class="sr-only" for="as-${n.id}">${esc(tt(`Ассоциация к слову «${n.word}»`, `Association for “${n.word}”`))}</label><input id="as-${n.id}" maxlength="40" placeholder="${esc(tt('Что приходит в голову?', 'What comes to mind?'))}" autocomplete="off"><button class="btn sm" type="submit" aria-label="${esc(tt('Добавить', 'Add'))}">+</button></form>`;
+  const sub = (id) => { const kids = st.nodes.filter((n) => n.parent === id); return kids.length ? `<ul>${kids.map((n) => `<li><button type="button" class="assoc-w ${st.adding === n.id ? 'on' : ''}" data-node="${n.id}">${esc(n.word)}</button>${st.adding === n.id ? addForm(n) : ''}${sub(n.id)}</li>`).join('')}</ul>` : ''; };
+  const branchHtml = (i) => { const r = rootOf(i); if (!r) return ''; return `<div class="branch"><button type="button" class="assoc-root ${st.adding === r.id ? 'on' : ''}" data-node="${r.id}">${esc(r.word)}</button>${st.adding === r.id ? addForm(r) : ''}${sub(r.id)}</div>`; };
+  const pairCol = (i) => { const r = rootOf(i); return `<div class="branch pick"><span class="assoc-root static">${esc(r ? r.word : '')}</span><div class="pick-words">${words(i).map((n) => `<button type="button" class="chip ${st.pair[i] === n.id ? 'on' : ''}" data-pick="${i}:${n.id}" aria-pressed="${st.pair[i] === n.id}">${esc(n.word)}</button>`).join('')}</div></div>`; };
+  const wordOf = (id) => (st.nodes.find((n) => n.id === id) || {}).word || '';
   const draw = (focus) => {
     save();
     const c = cards[idx()];
+    const hasRoots = st.nodes.length > 0;
+    let tail = '';
+    if (hasRoots) {
+      tail += `<section class="imag-step"><h2><span class="n">3</span>${esc(tt('Придумай ассоциации', 'Find associations'))}</h2>
+        <p style="margin:0">${esc(tt('Нажми на любое слово и добавь к нему ассоциацию', 'Tap any word and add an association to it'))}</p>
+        <div class="branches">${branchHtml(0)}${branchHtml(1)}</div>
+        ${ready() ? '' : `<p class="vb-note" style="margin:0">${esc(tt('Добавь хотя бы по одной ассоциации в каждую ветку', 'Add at least one association to each branch'))}</p>`}</section>`;
+      if (ready()) {
+        tail += `<section class="imag-step" id="pairstep"><h2><span class="n">4</span>${esc(tt('Выбери пару', 'Choose a pair'))}</h2>
+          <p style="margin:0">${esc(tt('Выбери по одному слову из каждой ветки. Сам или рандомно.', 'Choose one word from each branch. Yourself or at random.'))}</p>
+          <div class="branches">${pairCol(0)}${pairCol(1)}</div>
+          <div class="row"><button class="btn light" type="button" data-random>${esc(tt('Случайная пара', 'Random pair'))}</button>${st.stage === 'build' ? `<button class="btn yellow" type="button" data-toimg ${st.pair[0] && st.pair[1] ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button>` : ''}</div></section>`;
+      }
+      if (st.stage === 'image' && st.pair[0] && st.pair[1]) {
+        tail += `<section class="imag-step" id="imgstep"><h2><span class="n">5</span>${esc(tt('Представь новый образ', 'Imagine a new image'))}</h2>
+          <div class="imag-pair"><span>${esc(wordOf(st.pair[0]))}</span><b>+</b><span>${esc(wordOf(st.pair[1]))}</span></div>
+          <p style="margin:0">${esc(tt('Как бы эти два слова встретились на одной картинке?', 'How would these two words meet in one picture?'))}</p>
+          <label class="sr-only" for="imn">${esc(tt('Мой образ', 'My image'))}</label><textarea id="imn" rows="2" maxlength="300">${esc(st.note)}</textarea>
+          <div class="row"><button class="btn yellow" type="button" data-saveimg ${st.note.trim() ? '' : 'disabled'}>${esc(tt('Сохранить образ', 'Save the image'))}</button>
+            <span class="imag-saved" role="status">${st.saved && st.saved === st.note.trim() ? `${esc(tt('Образ сохранён', 'Image saved'))} · <a href="${u('/me/images')}">${esc(tt('Мои образы', 'My images'))}</a>` : ''}</span></div>
+          <div class="row"><button class="btn light" type="button" data-otherpair>${esc(tt('Другая пара', 'Another pair'))}</button><button class="btn light" type="button" data-restart>${esc(tt('Новая карта', 'New card'))}</button></div></section>`;
+      }
+    }
     ctx.main.innerHTML = frame(G('imagine'), `
       <section class="imag-step"><h2><span class="n">1</span>${esc(tt('Выбери карту', 'Choose a card'))}</h2>
-        <div class="imag-carousel"><button class="icon-btn" type="button" data-step="-1" aria-label="${esc(tt('Предыдущая карта', 'Previous card'))}">${ic.chevronLeft || '‹'}</button>
+        <div class="imag-carousel"><button class="icon-btn" type="button" data-step="-1" aria-label="${esc(tt('Предыдущая карта', 'Previous card'))}">${ic.chevronLeft}</button>
           <div class="imag-card" id="imcard">${cardImg(c, 'live-card sm-card')}</div>
-          <button class="icon-btn" type="button" data-step="1" aria-label="${esc(tt('Следующая карта', 'Next card'))}">${ic.chevronRight || '›'}</button></div>
+          <button class="icon-btn" type="button" data-step="1" aria-label="${esc(tt('Следующая карта', 'Next card'))}">${ic.chevronRight}</button></div>
         <p class="small muted" style="margin:0;text-align:center">${idx() + 1} / ${cards.length}</p></section>
       <section class="imag-step"><h2><span class="n">2</span>${esc(tt('Найди на карте две детали', 'Find two details on the card'))}</h2>
-        <div class="row"><label class="field small" style="flex:1">${esc(tt('Первая деталь', 'First detail'))}<input data-root="0" maxlength="30" value="${esc(st.roots[0])}" autocomplete="off"></label>
-          <label class="field small" style="flex:1">${esc(tt('Вторая деталь', 'Second detail'))}<input data-root="1" maxlength="30" value="${esc(st.roots[1])}" autocomplete="off"></label></div></section>
-      <section class="imag-step"><h2><span class="n">3</span>${esc(tt('Придумай ассоциации', 'Find associations'))}</h2>
-        <div class="assoc-groups" id="groups">${groupHtml(0)}${groupHtml(1)}${!st.roots[0].trim() && !st.roots[1].trim() ? `<p class="vb-note" style="margin:0">${esc(tt('Здесь появятся детали, которые ты назовёшь.', 'The details you name will appear here.'))}</p>` : ''}</div></section>
-      <section class="imag-step"><h2><span class="n">4</span>${esc(tt('Представь новый образ', 'Imagine a new image'))}</h2>
-        <p style="margin:0">${esc(tt('Возьми по одной ассоциации из каждого списка и соедини их. Какой образ получается?', 'Take one association from each list and combine them. What image do you get?'))}</p>
-        <div id="pairs" class="stack" style="gap:10px">${pairHtml()}</div></section>
+        <form class="stack" id="roots" style="gap:8px"><div class="row"><label class="field small" style="flex:1">${esc(tt('Первая деталь', 'First detail'))}<input name="r0" maxlength="30" value="${esc(st.roots[0])}" autocomplete="off"></label>
+          <label class="field small" style="flex:1">${esc(tt('Вторая деталь', 'Second detail'))}<input name="r1" maxlength="30" value="${esc(st.roots[1])}" autocomplete="off"></label></div>
+          ${hasRoots ? '' : `<div><button class="btn yellow" type="submit">${esc(tt('Дальше', 'Next'))}</button></div>`}</form></section>
+      ${tail}
       <details class="imag-example" ${st.ex ? 'open' : ''}><summary>${esc(tt('Показать пример', 'Show an example'))}</summary>
         <div class="imag-ex-body">${ex ? `<img src="${esc(ex.thumb)}" alt="${esc(tt('Пример: карта с морем и облачным кораблём', 'Example: a card with the sea and a cloud ship'))}" width="90">` : ''}
           <div><p><b>${esc(tt('море', 'sea'))}</b> → ${esc(tt('глубина, свобода', 'depth, freedom'))}</p><p><b>${esc(tt('облачный корабль', 'cloud ship'))}</b> → ${esc(tt('парус, путешествие', 'sail, journey'))}</p>
-          <p>«${esc(tt('глубина', 'depth'))}» + «${esc(tt('парус', 'sail'))}» → ${esc(tt('корабль под водой с парусами из света', 'a ship under water with sails of light'))}</p></div></div></details>
-      <div class="row"><button class="link-btn" type="button" data-restart>${esc(tt('Начать заново', 'Start over'))}</button></div>`);
+          <p>«${esc(tt('глубина', 'depth'))}» + «${esc(tt('парус', 'sail'))}» → ${esc(tt('корабль под водой с парусами из света', 'a ship under water with sails of light'))}</p></div></div></details>`);
     wireSwipe();
-    const f = focus && ctx.main.querySelector(focus); if (f) { f.focus(); if (f.setSelectionRange && f.value) f.setSelectionRange(f.value.length, f.value.length); }
+    const f = focus && ctx.main.querySelector(focus); if (f) { f.focus({ preventScroll: false }); }
   };
   const go = (d) => { const n = cards.length; st.code = cards[(idx() + d + n) % n].code; draw(); };
-  // свайп по иллюстрации листает карты (короткий тап — рассмотреть)
   function wireSwipe() {
     const el = ctx.main.querySelector('#imcard'); if (!el) return; let x0 = null; let y0 = 0;
     el.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
     el.addEventListener('pointerup', (e) => { if (x0 == null) return; const dx = e.clientX - x0; const dy = e.clientY - y0; x0 = null; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) { el.dataset.swiped = '1'; go(dx < 0 ? 1 : -1); } });
     el.addEventListener('click', (e) => { if (el.dataset.swiped) { e.stopPropagation(); e.preventDefault(); delete el.dataset.swiped; } }, true);
-    el.style.touchAction = 'pan-y';
   }
-  const refresh = (part) => { // перерисовать только шаги 3–4, не теряя фокус в полях деталей
-    if (part !== 'pairs') ctx.main.querySelector('#groups').innerHTML = `${groupHtml(0)}${groupHtml(1)}${!st.roots[0].trim() && !st.roots[1].trim() ? `<p class="vb-note" style="margin:0">${esc(tt('Здесь появятся детали, которые ты назовёшь.', 'The details you name will appear here.'))}</p>` : ''}`;
-    ctx.main.querySelector('#pairs').innerHTML = pairHtml(); save();
-  };
-  ctx.main.addEventListener('submit', (e) => {
-    const add = e.target.closest('[data-addto]'); if (!add) return; e.preventDefault();
-    const i = Number(add.dataset.addto); const inp = add.querySelector('input');
-    const words = inp.value.split(/[,;]/).map((w) => w.trim()).filter(Boolean); if (!words.length) return;
-    for (const w of words) if (!st.assoc[i].includes(w) && st.assoc[i].length < 30) st.assoc[i].push(w);
-    refresh(); const n = ctx.main.querySelector(`#as-${i}`); if (n) n.focus(); // можно сразу добавить ещё
-  });
+  // детали: «Дальше» создаёт две ветки; изменение детали потом — переименовывает исходное слово ветки
   ctx.main.addEventListener('input', (e) => {
-    const r = e.target.closest('[data-root]');
-    if (r) { const i = Number(r.dataset.root); const had = !!st.roots[i].trim(); st.roots[i] = r.value; if (had !== !!r.value.trim()) { if (!r.value.trim()) { st.assoc[i] = []; st.pair[i] = null; } refresh(); } else { const b = ctx.main.querySelector(`.assoc-group[data-g="${i}"] > b`); if (b) b.textContent = r.value.trim(); save(); } return; }
-    if (e.target.id === 'imn') { st.note = e.target.value; save(); }
+    const r = e.target.closest('#roots input');
+    if (r) { const i = r.name === 'r0' ? 0 : 1; st.roots[i] = r.value; const root = rootOf(i); if (root && r.value.trim()) { root.word = r.value.trim(); const b = ctx.main.querySelector(`[data-node="${root.id}"]`); if (b) b.textContent = root.word; } save(); return; }
+    if (e.target.id === 'imn') { st.note = e.target.value; const b = ctx.main.querySelector('[data-saveimg]'); if (b) b.disabled = !st.note.trim(); const s = ctx.main.querySelector('.imag-saved'); if (s && st.saved !== st.note.trim()) s.textContent = ''; save(); }
   });
-  ctx.main.addEventListener('change', (e) => { const h = e.target.closest('[data-hold]'); if (h) { st.hold[Number(h.dataset.hold)] = h.checked; save(); } });
-  ctx.main.addEventListener('toggle', (e) => { if (e.target.classList && e.target.classList.contains('imag-example')) { st.ex = e.target.open; save(); } }, true);
-  ctx.main.addEventListener('click', (e) => {
-    const sb = e.target.closest('[data-step]'); if (sb) { go(Number(sb.dataset.step)); return; }
-    const rm = e.target.closest('[data-rm]'); if (rm) { const [i, k] = rm.dataset.rm.split(':').map(Number); st.assoc[i].splice(k, 1); if (st.pair[i] === k) st.pair[i] = null; else if (st.pair[i] > k) st.pair[i]--; refresh(); return; }
-    const pk = e.target.closest('[data-pick]'); if (pk) { const [i, k] = pk.dataset.pick.split(':').map(Number); st.pair[i] = k; st.note = ''; refresh('pairs'); return; }
-    if (e.target.closest('[data-random]')) {
-      // случайная пара — по одной ассоциации из двух списков; удержанное слово остаётся
-      for (const i of [0, 1]) {
-        if (st.hold[i] && st.pair[i] != null) continue;
-        const n = st.assoc[i].length; if (!n) continue;
-        const pool = [...Array(n).keys()].filter((k) => n === 1 || k !== st.pair[i]);
-        st.pair[i] = pool[Math.floor(Math.random() * pool.length)];
-      }
-      st.note = ''; refresh('pairs'); return;
+  ctx.main.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (e.target.id === 'roots') {
+      const r0 = e.target.r0.value.trim(); const r1 = e.target.r1.value.trim();
+      if (!r0 || !r1) { (r0 ? e.target.r1 : e.target.r0).focus(); return; }
+      st.roots = [r0, r1]; const a = { id: nid(), word: r0, parent: null, branch: 0 }; const b = { id: nid(), word: r1, parent: null, branch: 1 };
+      st.nodes = [a, b]; st.adding = a.id; st.pair = [null, null]; st.stage = 'build'; draw(`#as-${a.id}`); return;
     }
-    if (e.target.closest('[data-restart]')) { st = blank(st.code); draw(); window.scrollTo(0, 0); }
+    const add = e.target.closest('[data-addto]'); if (!add) return;
+    const inp = add.querySelector('input'); const list = inp.value.split(/[,;]/).map((w) => w.trim()).filter(Boolean); if (!list.length) return;
+    const parent = st.nodes.find((n) => n.id === add.dataset.addto); if (!parent) return;
+    for (const w of list) if (st.nodes.length < 80) st.nodes.push({ id: nid(), word: w, parent: parent.id, branch: parent.branch });
+    draw(`#as-${parent.id}`); // можно сразу добавить ещё к тому же слову
+  });
+  ctx.main.addEventListener('toggle', (e) => { if (e.target.classList && e.target.classList.contains('imag-example')) { st.ex = e.target.open; save(); } }, true);
+  ctx.main.addEventListener('click', async (e) => {
+    const sb = e.target.closest('[data-step]'); if (sb) { go(Number(sb.dataset.step)); return; }
+    const nb = e.target.closest('[data-node]'); if (nb) { st.adding = st.adding === nb.dataset.node ? null : nb.dataset.node; draw(st.adding ? `#as-${st.adding}` : null); return; }
+    const pk = e.target.closest('[data-pick]'); if (pk) { const [i, id] = pk.dataset.pick.split(':'); st.pair[Number(i)] = id; if (st.stage === 'image') { st.note = ''; st.saved = ''; } draw(); return; }
+    if (e.target.closest('[data-random]')) {
+      // по одному слову из каждой ветки; по возможности не то же самое, что было
+      for (const i of [0, 1]) { const ws = words(i); if (!ws.length) continue; const pool = ws.length > 1 ? ws.filter((n) => n.id !== st.pair[i]) : ws; st.pair[i] = pool[Math.floor(Math.random() * pool.length)].id; }
+      if (st.stage === 'image') { st.note = ''; st.saved = ''; } draw(); return;
+    }
+    if (e.target.closest('[data-toimg]')) { st.stage = 'image'; st.adding = null; draw('#imn'); const s = ctx.main.querySelector('#imgstep'); if (s) s.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+    if (e.target.closest('[data-saveimg]')) {
+      const text = st.note.trim(); if (!text) return;
+      const b = e.target.closest('[data-saveimg]'); b.disabled = true;
+      try {
+        st.imgId = st.imgId && st.saved ? st.imgId : personal.newPostcardId();
+        await personal.saveImageNote({ id: st.imgId, code: st.code, words: [wordOf(st.pair[0]), wordOf(st.pair[1])], text });
+        st.saved = text; draw();
+      } catch { b.disabled = false; const s = ctx.main.querySelector('.imag-saved'); if (s) s.textContent = tt('Не удалось сохранить — попробуйте ещё раз.', 'Could not save — try again.'); }
+      return;
+    }
+    if (e.target.closest('[data-otherpair]')) { st.stage = 'build'; st.pair = [null, null]; st.note = ''; st.saved = ''; st.imgId = null; draw(); const p = ctx.main.querySelector('#pairstep'); if (p) p.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+    if (e.target.closest('[data-restart]')) { st = blank(cards[(idx() + 1) % cards.length].code); draw(); window.scrollTo(0, 0); }
   });
   zoomer(ctx, cards); draw();
 }
+
+// ---------- «Мои образы» (внутри «Моих подборок») ----------
+export async function myImages(ctx) {
+  loading(ctx.main);
+  let s; let cards;
+  try { [s, cards] = await Promise.all([personal.load(true), loadCards(ctx)]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  if (!ctx.alive()) return;
+  const by = new Map(cards.map((c) => [c.code, c]));
+  const list = (s.images || []).filter((x) => by.has(x.code));
+  const open = ctx.query.get('i');
+  const cur = open && list.find((x) => x.id === open);
+  if (cur) {
+    const c = by.get(cur.code);
+    ctx.main.innerHTML = `<div class="wrap page narrow stack"><a class="small" href="${u('/me/images')}">← ${esc(tt('Мои образы', 'My images'))}</a>
+      <div class="imag-pair"><span>${esc(cur.words[0])}</span><b>+</b><span>${esc(cur.words[1])}</span></div>
+      <div class="row" style="justify-content:center">${cardImg(c, 'live-card sm-card')}</div>
+      <p class="lead" style="margin:0">${esc(cur.text)}</p>
+      <p class="small muted" style="margin:0">${esc(new Date(cur.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }))}</p>
+      <div class="row"><a class="btn light" href="${u('/group/solo/imagine')}">${esc(tt('Играть ещё', 'Play again'))}</a><button class="link-btn" type="button" data-del>${esc(tt('Удалить', 'Delete'))}</button></div></div>`;
+    zoomer(ctx, cards);
+    ctx.main.querySelector('[data-del]').onclick = async () => { if (!confirm(tt('Удалить образ?', 'Delete the image?'))) return; await personal.deleteImageNote(cur.id).catch(() => {}); ctx.navigate('/me/images', { replace: true }); };
+    return;
+  }
+  ctx.main.innerHTML = `<div class="wrap page narrow stack"><a class="small" href="${u('/me/collections')}">← ${esc(tt('Мои подборки', 'My collections'))}</a>
+    <h1 style="margin:0">${esc(tt('Мои образы', 'My images'))}</h1>
+    ${s.server ? '' : `<p class="vb-note">${esc(tt('Сохранено в этом браузере. Войдите, чтобы видеть на других устройствах.', 'Saved in this browser. Sign in to see them on other devices.'))}</p>`}
+    ${list.length ? `<div class="list">${list.map((x) => `<a class="item" href="${u('/me/images?i=' + encodeURIComponent(x.id))}"><img src="${esc(by.get(x.code).thumb)}" alt="" width="44" height="75" style="border-radius:8px;flex:none">
+      <span class="body"><b>${esc(x.words[0])} + ${esc(x.words[1])}</b><span class="small">${esc(x.text.slice(0, 90))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>`
+      : `<p class="empty">${esc(tt('Здесь появятся образы из игры «Придумай ассоциации».', 'Images from the “Find associations” game will appear here.'))}</p><a class="btn yellow" href="${u('/group/solo/imagine')}" style="justify-self:start">${esc(tt('Придумай ассоциации', 'Find associations'))}</a>`}
+  </div>`;
+}
+

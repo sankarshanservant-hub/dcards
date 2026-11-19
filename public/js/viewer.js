@@ -66,14 +66,14 @@ export function openViewer(opts) {
       <span class="vt-start"><button class="icon-btn plain" type="button" data-close aria-label="${esc(t('viewer.close'))}" title="${esc(t('viewer.close'))}">${icons.close}</button></span>
       ${withQ ? `<div class="vt-seg" role="tablist" aria-label="${esc(tt('Что показать', 'What to show'))}">
         <button type="button" role="tab" data-view="card" aria-selected="true">${esc(tt('Карта', 'Card'))}</button>
-        <button type="button" role="tab" data-view="questions" aria-selected="false">${esc(tt('Вопросы', 'Questions'))}</button></div>` : '<span class="viewer-counter" data-counter></span>'}
-      <span class="vt-end">
+        <button type="button" role="tab" data-view="questions" aria-selected="false">${esc(tt('Вопросы', 'Questions'))}</button></div>` : (opts.simple ? '' : '<span class="viewer-counter" data-counter></span>')}
+      ${opts.simple ? '' : `<span class="vt-end">
         ${withQ ? '' : `<button class="icon-btn vt-nav" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
         <button class="icon-btn vt-nav" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>`}
         <button class="icon-btn plain full-btn" type="button" data-full aria-label="${esc(tt('На весь экран', 'Full screen'))}" title="${esc(tt('На весь экран', 'Full screen'))}">${icons.expand}</button>
         <button class="icon-btn plain full-btn" type="button" data-unfull hidden aria-label="${esc(tt('Выйти из полноэкранного режима', 'Exit full screen'))}" title="${esc(tt('Выйти из полноэкранного режима', 'Exit full screen'))}">${icons.collapse}</button>
         ${withQ ? '' : `<button class="icon-btn" type="button" data-info aria-label="${esc(t('viewer.info'))}" aria-expanded="false">${icons.info}</button>`}
-      </span>
+      </span>`}
     </div>
     ${withQ ? '<div class="viewer-bottom chrome" data-bottom></div>' : ''}
     <div class="viewer-sheet" data-sheet hidden></div>
@@ -96,7 +96,9 @@ export function openViewer(opts) {
     .then((d) => { detailsCache.set(code, d); return d; });
 
   // Режимы: view — 'card' | 'questions'; full — на весь экран; talk — экран выбранной карты (карты не листаются).
-  const mode = { view: 'card', full: false, nativeFull: false, talk: false };
+  // simple (22.11.2026): карта во весь экран с одним крестиком — без «О карте» и повторного раскрытия (форма обмена)
+  const mode = { view: 'card', full: !!opts.simple, nativeFull: false, talk: false };
+  if (opts.simple) el.classList.add('is-full', 'viewer--simple');
   const state = {
     el, opts, opener,
     get code() { return opts.cards[index].code; },
@@ -683,8 +685,7 @@ export function openViewer(opts) {
 
   // ---------- кнопки и клавиатура ----------
   $('[data-close]').addEventListener('click', () => closeViewer());
-  $('[data-full]').addEventListener('click', () => setFull(true));
-  $('[data-unfull]').addEventListener('click', () => setFull(false));
+  if (!opts.simple) { $('[data-full]').addEventListener('click', () => setFull(true)); $('[data-unfull]').addEventListener('click', () => setFull(false)); }
   const topInfo = el.querySelector('.viewer-top [data-info]'); if (topInfo) topInfo.addEventListener('click', () => toggleSheet());
   el.addEventListener('click', (e) => { if (e.target.closest('[data-prev]')) go(-1); else if (e.target.closest('[data-next]')) go(1); });
   sheet.addEventListener('click', (e) => {

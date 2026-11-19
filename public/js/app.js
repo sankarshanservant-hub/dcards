@@ -35,6 +35,7 @@ const routes = [
   [/^\/postcard\/?$/, (ctx) => pc.postcard(ctx, null)],
   [/^\/postcard\/(DC-\d{4,6})\/?$/, pc.postcard],
   [/^\/me\/postcards\/?$/, pc.myPostcards],
+  [/^\/me\/images\/?$/, solo.myImages],
   [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
   [/^\/me\/exchanges\/?$/, xch.myExchanges],
@@ -102,6 +103,7 @@ const PARENTS = [
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
   [/^\/about\/flow/, '/about', 'О проекте', 'About'],
   [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],
+  [/^\/me\/images/, '/me/collections', 'Мои подборки', 'My collections'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
   [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
@@ -279,6 +281,15 @@ document.getElementById('acct').addEventListener('click', (e) => { if (e.target.
 function mi(href, icon, ru, en, noteRu = '', noteEn = '', hl = false, badge = '') {
   return `<a class="mi ${hl ? 'hl' : ''}" href="${u(href)}"><span class="ic">${icon}</span><span><b>${esc(tt(ru, en))}</b>${noteRu ? `<small>${esc(tt(noteRu, noteEn))}</small>` : ''}</span>${badge ? `<span class="badge">${esc(badge)}</span>` : ''}</a>`;
 }
+// «Поделиться приложением» (22.11.2026): публичный адрес главной, без параметров текущего экрана и личных обменов.
+// Закрытие системного меню ничего не меняет — человек остаётся на своём экране.
+async function shareApp() {
+  const url = `${location.origin}${u('/')}`;
+  const text = tt('Dialogue Cards — яркий повод для интересного разговора', 'Dialogue Cards — a bright reason for an interesting conversation');
+  if (navigator.share) { try { await navigator.share({ title: 'Dialogue Cards', text, url }); } catch { /* отмена */ } return; }
+  try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
+  catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), url); }
+}
 function openMenu() {
   const opener = document.activeElement;
   closeMenu();
@@ -320,6 +331,7 @@ function openMenu() {
       <div class="chips">${demoRoles.map(([k, ru, en]) => `<button class="chip" type="button" data-demo="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
       <a class="small" href="${u('/demo')}">${esc(tt('Все демо-роли →', 'All demo roles →'))}</a>
     </div>` : ''}
+    <button class="mi mi-btn" type="button" data-share-app><span class="ic">${ic.share}</span><span><b>${esc(tt('Поделиться приложением', 'Share the app'))}</b></span></button>
     ${s ? `<button class="btn light sm" type="button" data-logout style="margin-top:14px">${esc(tt('Выйти', 'Sign out'))}</button>` : ''}
   </div>`;
   document.body.appendChild(el); document.body.classList.add('no-scroll');
@@ -331,6 +343,7 @@ function openMenu() {
       try { await api('/api/demo/login', { method: 'POST', body: { as: d.dataset.demo } }); await refreshSession(); closeMenu(); toast(tt('Вы вошли как: ', 'Signed in as: ') + session.user.publicName); navigate(homeFor()); }
       catch (err) { toast(errorText(err)); }
     }
+    if (e.target.closest('[data-share-app]')) { shareApp(); return; }
     if (e.target.closest('[data-logout]')) { skipSiteAutoLogin(); await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); await refreshSession(); closeMenu(); navigate('/'); refreshBell(); }
   });
   // Escape закрывает; Tab не уходит из меню на страницу под ним; после закрытия фокус возвращается к кнопке.

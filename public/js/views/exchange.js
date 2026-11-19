@@ -11,7 +11,8 @@ import * as personal from '../personal.js';
 // «для Ани», «для Бориса»: простые правила склонения одного слова; не вышло — без имени
 const forName = (n) => { const g = n && /^[А-ЯЁ][а-яё]+$/.test(n) ? cityCase(n, 'gen') : null; return g || (n && /^[A-Z][a-z]+$/.test(n) ? n : null); };
 const when = (iso) => fmtDate(iso, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const cardBtn = (c, cls = '') => `<button type="button" class="live-card-btn ${cls}" data-zoom aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="live-card" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
+const ZOOM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6"/></svg>';
+const cardBtn = (c, cls = '') => `<button type="button" class="live-card-btn ${cls}" data-zoom aria-label="${esc(tt('Рассмотреть карту на весь экран', 'View the card full screen'))} ${esc(c.code)}"><img class="live-card" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"><span class="zoom-ic" aria-hidden="true">${ZOOM}</span></button>`;
 // сведения о карте (художник, номер) — не главная информация: компактно, за значком ⓘ
 // вопрос другу (20.11.2026): стандартный — на языке интерфейса, изменённый — как написал отправитель
 const DEFAULT_Q = 'Что тебе откликается в этой карте?';
@@ -103,7 +104,7 @@ export async function page(ctx, token) {
   }
   function wire() {
     const $ = (q) => ctx.main.querySelector(q);
-    const z = $('[data-zoom]'); if (z) z.onclick = () => openViewer({ cards: [v.card], index: 0, mode: 'admin' });
+    const z = $('[data-zoom]'); if (z) z.onclick = () => openViewer({ cards: [v.card], index: 0, mode: 'admin', simple: true });
     const f = $('#xa');
     if (f) {
       f.xt.addEventListener('input', () => storage.set(TKEY, f.xt.value));
@@ -239,6 +240,17 @@ export async function storyPage(ctx, token) {
 }
 async function copyText(t) { try { await navigator.clipboard.writeText(t); return true; } catch { prompt(tt('Скопируйте:', 'Copy:'), t); return true; } }
 
+// Поле в одну строку; при фокусе — две; дальше растёт по тексту (ввод, вставка, черновик).
+function autogrow(t) {
+  const fit = () => {
+    t.style.height = 'auto'; const cs = getComputedStyle(t);
+    const lh = parseFloat(cs.lineHeight) || 22; const pv = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom); const bd = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    let h = t.scrollHeight + bd; if (document.activeElement === t) h = Math.max(h, lh * 2 + pv + bd);
+    t.style.height = `${Math.ceil(h)}px`;
+  };
+  ['input', 'focus', 'blur'].forEach((ev) => t.addEventListener(ev, fit)); requestAnimationFrame(fit);
+}
+
 const markSent = (secret, via) => api(`/api/x/${encodeURIComponent(secret)}/sent`, { method: 'POST', body: { via } }).catch(() => {});
 
 // «Сообщить, когда друг ответит?» — только по действию человека и с учётом того, что умеет браузер
@@ -310,23 +322,24 @@ export async function playPage(ctx, code) {
     }
     ctx.main.innerHTML = `<div class="wrap page narrow stack x-page">
       ${reply ? `<p class="eyebrow" style="margin:0">${esc(tt('Твоя очередь', 'Your turn'))}</p>` : ''}
-      <h1 class="x-h">${esc(reply ? (other && forName(other) ? tt(`Карта для ${forName(other)}: что ты здесь видишь?`, `A card for ${other}: what do you see here?`) : tt('Ответь своей картой: что ты здесь видишь?', 'Reply with your card: what do you see here?')) : tt('Что ты здесь видишь?', 'What do you see here?'))}</h1>
-      ${withInfo(card, 'sm')}
+      <h1 class="x-h x-center">${esc(reply ? (other && forName(other) ? tt(`Карта для ${forName(other)}: что ты здесь видишь?`, `A card for ${other}: what do you see here?`) : tt('Ответь своей картой: что ты здесь видишь?', 'Reply with your card: what do you see here?')) : tt('Что ты здесь видишь?', 'What do you see here?'))}</h1>
+      ${withInfo(card, 'md')}
       <div class="row" style="justify-content:center"><button class="btn sm light" type="button" data-other>${esc(tt('Другая карта', 'Another card'))}</button><a class="btn sm light" href="${u('/library?play=friend' + (reply ? '&reply=' + encodeURIComponent(reply) : ''))}">${esc(tt('Все карты', 'All cards'))}</a></div>
       ${multi ? `<p class="eyebrow" style="margin:0">${esc(tt('Отправить нескольким людям', 'Send to several people'))}</p>` : ''}
       <form class="form" id="pf"><label class="field" for="pq">${esc(tt('Вопрос другу', 'Question to your friend'))}</label>
-        <textarea id="pq" class="ask-q" maxlength="200" rows="2">${esc(dr.q != null ? dr.q : defaultQ())}</textarea>
+        <textarea id="pq" class="ask-q autogrow" maxlength="200" rows="1">${esc(dr.q != null ? dr.q : defaultQ())}</textarea>
         <label class="field" for="pt">${esc(tt('Твой ответ', 'Your answer'))}</label>
         <p class="vb-note" style="margin:-4px 0 0" id="pt-h">${esc(multi ? tt('Каждый увидит твой ответ, когда напишет свой.', 'Everyone will see your answer once they write theirs.') : tt('Друг увидит твой ответ, когда напишет свой.', 'Your friend will see your answer once they write theirs.'))}</p>
-        <textarea id="pt" maxlength="300" rows="3" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}" aria-describedby="pt-h">${esc(dr.text || '')}</textarea>
+        <textarea id="pt" class="autogrow" maxlength="300" rows="1" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}" aria-describedby="pt-h">${esc(dr.text || '')}</textarea>
         ${session.user || reply ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))}<input id="pn" maxlength="40" value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : ''}
         <button class="btn yellow big" type="submit" ${ui.sending || !String(dr.text || '').trim() ? 'disabled' : ''}>${esc(ui.sending ? tt('Готовим приглашение…', 'Preparing…') : reply ? tt('Отправить карту', 'Send the card') : tt('Отправить другу', 'Send to a friend'))}</button></form></div>`;
     const f = ctx.main.querySelector('#pf');
     f.pt.addEventListener('input', () => { drafts[card.code] = { ...(drafts[card.code] || {}), text: f.pt.value }; keep(); f.querySelector('[type=submit]').disabled = ui.sending || !f.pt.value.trim(); });
+    f.querySelectorAll('.autogrow').forEach(autogrow);
     f.pq.addEventListener('input', () => { drafts[card.code] = { ...(drafts[card.code] || {}), q: f.pq.value }; keep(); });
     f.pt.addEventListener('focus', () => setTimeout(() => f.pt.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250)); // клавиатура не закрывает поле
-    ctx.main.querySelector('[data-zoom]').onclick = () => openViewer({ cards: [card], index: 0, mode: 'admin' });
+    ctx.main.querySelector('[data-zoom]').onclick = () => openViewer({ cards: [card], index: 0, mode: 'admin', simple: true });
     // автор иллюстрации: в списке галереи его нет — берём из сведений карты
     if (!card.author) api(`/api/cards/${encodeURIComponent(card.code)}`).then((d) => { if (d.author) { card.author = d.author; const al = ctx.main.querySelector('.x-page .card-info'); if (al) al.outerHTML = authorLine(card); } }).catch(() => {});
     ctx.main.querySelector('[data-other]').onclick = () => { card = pick(card.code); draw(); }; // черновик остаётся у своей карты
@@ -428,7 +441,7 @@ export async function myCollections(ctx) {
       ${s.server ? '' : `<p class="vb-note">${esc(tt('Сохранено в этом браузере. Войдите, чтобы видеть на других устройствах.', 'Saved in this browser. Sign in to see them on other devices.'))}</p>`}
       <form class="row" id="nc"><label class="sr-only" for="nct">${esc(tt('Название новой подборки', 'New collection name'))}</label><input id="nct" maxlength="80" placeholder="${esc(tt('Новая подборка…', 'New collection…'))}" style="flex:1;min-width:0"><button class="btn sm" type="submit">${esc(tt('Создать', 'Create'))}</button></form>
       <div class="list">${s.collections.map((c) => `<a class="item" href="${u('/me/collections?c=' + encodeURIComponent(c.id))}"><span class="mini-strip">${c.codes.slice(0, 4).map((k) => by.get(k)).filter(Boolean).map((k) => `<img src="${esc(k.thumb)}" alt="">`).join('') || `<span class="muted small">—</span>`}</span>
-        <span class="body"><b>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)}</b><span class="small">${c.codes.length} ${esc(tt('карт', 'cards'))}${c.favorites ? ` · ${esc(tt('открыток', 'postcards'))}: ${(s.postcards || []).length}` : ''}</span></span><span aria-hidden="true">→</span></a>${c.favorites ? `<a class="item sub-item" href="${u('/me/postcards')}"><span class="body"><b>${esc(tt('Мои открытки', 'My postcards'))}</b><span class="small">${(s.postcards || []).length}</span></span><span aria-hidden="true">→</span></a>` : ''}`).join('')}</div></div>`;
+        <span class="body"><b>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)}</b><span class="small">${c.codes.length} ${esc(tt('карт', 'cards'))}${c.favorites ? ` · ${esc(tt('открыток', 'postcards'))}: ${(s.postcards || []).length}` : ''}</span></span><span aria-hidden="true">→</span></a>${c.favorites ? `<a class="item sub-item" href="${u('/me/postcards')}"><span class="body"><b>${esc(tt('Мои открытки', 'My postcards'))}</b><span class="small">${(s.postcards || []).length}</span></span><span aria-hidden="true">→</span></a>` : ''}`).join('')}<a class="item" href="${u('/me/images')}"><span class="mini-strip" aria-hidden="true"></span><span class="body"><b>${esc(tt('Мои образы', 'My images'))}</b><span class="small">${(s.images || []).length}</span></span><span aria-hidden="true">→</span></a></div></div>`;
     ctx.main.querySelector('#nc').onsubmit = async (e) => { e.preventDefault(); const t0 = ctx.main.querySelector('#nct').value; if (!t0.trim()) return; await personal.createCollection(t0); draw(); };
   };
   draw();

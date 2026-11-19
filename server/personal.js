@@ -56,6 +56,30 @@ function savePostcard(userId, { id, code, design }) {
 }
 function deletePostcard(userId, id) { db.prepare('DELETE FROM user_postcards WHERE user_id = ? AND cid = ?').run(userId, cleanCid(id)); return { ok: true }; }
 
+// «Мои образы» (22.11.2026) — внутри «Моих подборок»: запись из игры «Придумай ассоциации» вместе с картой и парой слов.
+db.exec(`CREATE TABLE IF NOT EXISTS user_images (
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), card_id INTEGER NOT NULL REFERENCES cards(id),
+  cid TEXT NOT NULL, words TEXT NOT NULL, text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ui_cid ON user_images(user_id, cid);`);
+const MAX_IMAGES = 200;
+const cleanLine = (t, n) => String(t || '').replace(/\s+/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, n);
+function images(userId) {
+  return db.prepare("SELECT i.cid, i.words, i.text, i.created_at, k.code FROM user_images i JOIN cards k ON k.id = i.card_id WHERE i.user_id = ? AND k.status = 'published' ORDER BY i.created_at DESC").all(userId)
+    .map((r) => ({ id: r.cid, code: r.code, words: JSON.parse(r.words), text: r.text, createdAt: r.created_at }));
+}
+function saveImage(userId, { id, code, words, text }) {
+  const k = cardByCode(code); if (!k) return { error: 'not_found' };
+  const cid = cleanCid(id); const t = cleanLine(text, 300); if (!cid || !t) return { error: 'text_required' };
+  const w = (Array.isArray(words) ? words : []).slice(0, 2).map((x) => cleanLine(x, 60)); if (w.length !== 2 || !w[0] || !w[1]) return { error: 'bad_request' };
+  if (db.prepare('SELECT 1 FROM user_images WHERE user_id = ? AND cid = ?').get(userId, cid)) { db.prepare('UPDATE user_images SET text = ?, words = ?, card_id = ? WHERE user_id = ? AND cid = ?').run(t, JSON.stringify(w), k.id, userId, cid); return { ok: true, id: cid }; }
+  if (db.prepare('SELECT COUNT(*) AS n FROM user_images WHERE user_id = ?').get(userId).n >= MAX_IMAGES) return { error: 'collection_full' };
+  db.prepare('INSERT INTO user_images (user_id, card_id, cid, words, text) VALUES (?, ?, ?, ?, ?)').run(userId, k.id, cid, JSON.stringify(w), t);
+  return { ok: true, id: cid };
+}
+function deleteImage(userId, id) { db.prepare('DELETE FROM user_images WHERE user_id = ? AND cid = ?').run(userId, cleanCid(id)); return { ok: true }; }
+
 const MAX = 40; // как у подборки фасилитатора
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const cardByCode = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND status = 'published'").get(String(code || ''));
@@ -73,7 +97,7 @@ function state(userId) {
     id: c.id, title: c.title, favorites: !!c.is_favorites, updatedAt: c.updated_at,
     codes: db.prepare("SELECT k.code FROM user_collection_cards x JOIN cards k ON k.id = x.card_id WHERE x.collection_id = ? AND k.status = 'published' ORDER BY x.position, x.added_at").all(c.id).map((r) => r.code),
   }));
-  return { notes, collections, postcards: postcards(userId), max: MAX };
+  return { notes, collections, postcards: postcards(userId), images: images(userId), max: MAX };
 }
 function setNote(userId, code, text) {
   const c = cardByCode(code); if (!c) return { error: 'not_found' };
@@ -129,6 +153,9 @@ function merge(userId, local) {
     const fav = favorites(userId);
     const add = (cid, code) => { const k = cardByCode(code); if (!k) return; const n = db.prepare('SELECT COUNT(*) AS n FROM user_collection_cards WHERE collection_id = ?').get(cid).n; if (n >= MAX) return; cards += db.prepare('INSERT OR IGNORE INTO user_collection_cards (collection_id, card_id, position) VALUES (?, ?, ?)').run(cid, k.id, n).changes; };
     for (const code of (L.favorites || []).slice(0, 200)) add(fav.id, code);
+    for (const im of (Array.isArray(L.images) ? L.images : []).slice(0, MAX_IMAGES)) {
+      if (im && !db.prepare('SELECT 1 FROM user_images WHERE user_id = ? AND cid = ?').get(userId, cleanCid(im.id)) && saveImage(userId, im).ok) cards++;
+    }
     for (const p of (Array.isArray(L.postcards) ? L.postcards : []).slice(0, MAX_POSTCARDS)) {
       if (p && !db.prepare('SELECT 1 FROM user_postcards WHERE user_id = ? AND cid = ?').get(userId, cleanCid(p.id)) && savePostcard(userId, p).ok) cards++;
     }
@@ -148,4 +175,4 @@ function collectionCodes(userId, id) {
 }
 const cardsOf = (codes) => codes.map(cardByCode).filter(Boolean).map((k) => publicCard(k));
 
-module.exports = { postcards, savePostcard, deletePostcard, state, setNote, createCollection, renameCollection, deleteCollection, toggle, merge, collectionCodes, cardsOf, MAX };
+module.exports = { images, saveImage, deleteImage, postcards, savePostcard, deletePostcard, state, setNote, createCollection, renameCollection, deleteCollection, toggle, merge, collectionCodes, cardsOf, MAX };

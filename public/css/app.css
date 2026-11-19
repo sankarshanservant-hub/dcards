@@ -1291,3 +1291,52 @@ ol.qlist { list-style: none; }
 .about-flow-link { font-weight: 600; }
 .bell-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .q-note { font-size: .88rem; color: var(--text-2); }
+
+/* ---------- 22.11: главная ---------- */
+.home-title h1 { font-size: clamp(3.13rem, 10.8vw, 5.6rem); white-space: nowrap; }
+.home-axis .home-q { margin-bottom: 10px; }
+.home-axis .home-all { margin-top: 10px; margin-bottom: 10px; }
+/* «Все карты»: две вытянутые карты, слегка наклонены в разные стороны, с перекрытием */
+.cards2 { position: relative; display: inline-block; width: 30px; height: 28px; flex: none; }
+.cards2 i { position: absolute; top: 3px; width: 14px; height: 22px; border-radius: 3.5px; }
+.cards2 .c-back { left: 4px; background: #a9d6f2; border: 1.5px solid #f6eedc; transform: rotate(-12deg); box-shadow: 0 2px 4px rgba(0,0,0,.28); }
+.cards2 .c-front { left: 12px; background: #1b2350; border: 1.5px solid #f6eedc; transform: rotate(9deg); box-shadow: 0 3px 6px rgba(0,0,0,.4); }
+.cards2 .c-front b { position: absolute; left: 3px; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: #f6eedc; }
+.home-all.fan .c-back { animation: c-out .23s cubic-bezier(.3,.7,.3,1) forwards; }
+@keyframes c-out { to { transform: translate(-6px, -5px) rotate(-20deg); } }
+@media (prefers-reduced-motion: reduce) { .home-all.fan .c-back { animation: none; } }
+/* «Поиграем?»: пояснение внутри плитки */
+.game-sub2 { display: block; margin-top: 4px; color: var(--text-2); font-size: .92rem; line-height: 1.4; font-weight: 400; }
+.mi.mi-btn { width: 100%; background: transparent; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+/* 22.11: форма «Отправить другу с вопросом» */
+.x-center { text-align: center; }
+.live-card-btn { position: relative; }
+.live-card-btn.md .live-card { width: auto; height: min(56vh, 480px); max-width: 86vw; }
+.live-card-btn .zoom-ic { position: absolute; right: 8px; bottom: 8px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: rgba(6,12,30,.62); color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); pointer-events: none; }
+.live-card-btn .zoom-ic svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.live-card-btn.xs .zoom-ic { display: none; }
+textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 1.45; }
+.viewer--simple .viewer-top { background: transparent; }
+/* 22.11: «Придумай ассоциации» — две ветки рядом */
+.branches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.branch { min-width: 0; display: grid; gap: 4px; justify-items: start; }
+.branch ul { list-style: none; margin: 0 0 0 8px; padding: 0 0 0 10px; border-left: 1.5px solid var(--border-strong, #888); display: grid; gap: 4px; }
+.branch li { position: relative; display: grid; gap: 4px; justify-items: start; }
+.branch li::before { content: ''; position: absolute; left: -10px; top: 1.05em; width: 8px; border-top: 1.5px solid var(--border-strong, #888); }
+.assoc-root { background: transparent; border: 0; padding: 2px 0; color: var(--text); font: 800 1.12rem var(--font-head); text-align: left; overflow-wrap: anywhere; cursor: pointer; border-bottom: 2px solid var(--accent); }
+.assoc-root.static { cursor: default; }
+.assoc-w { background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 3px 6px; color: var(--text); font: 500 .98rem var(--font-ui); text-align: left; overflow-wrap: anywhere; cursor: pointer; max-width: 100%; }
+.assoc-w:hover { border-color: var(--border); }
+.assoc-root.on, .assoc-w.on { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.branch .assoc-add { display: flex; gap: 4px; width: 100%; margin: 2px 0 4px; }
+.branch .assoc-add input { flex: 1; min-width: 0; padding: 6px 8px; font-size: .95rem; }
+.branch .assoc-add .btn { min-width: 38px; padding: 0 10px; }
+.pick-words { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick-words .chip { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.imag-saved { align-self: center; font-weight: 600; }
+.hero.home .home-title h1 { font-size: clamp(2.6rem, 10.6vw, 5rem); line-height: 1.04; }
+.hero.home .wrap.home-wrap { padding-top: 30px; }
+@media (min-width: 900px) { .hero.home .wrap.home-wrap { padding-top: 56px; } }
+.branch .assoc-add { max-width: 100%; }
+.branch .assoc-add input { width: 0; flex: 1 1 auto; font-size: 16px; }
+.branch .assoc-add input::placeholder { font-size: .85rem; }

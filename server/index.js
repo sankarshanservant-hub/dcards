@@ -948,6 +948,8 @@ r.delete('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, per
 r.post('/api/me/collections/:id/cards', auth.requireUser, (req, res) => out(res, personal.toggle(req.user.id, req.params.id === 'favorites' ? 'favorites' : req.params.id, (req.body || {}).code, (req.body || {}).on !== false)));
 // после входа: обмены и колокольчик этого браузера — в аккаунт; личные данные гостя — по согласию (merge)
 r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id) + xgroups.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id) }));
+r.put('/api/me/images/:id', auth.requireUser, (req, res) => out(res, personal.saveImage(req.user.id, { ...(req.body || {}), id: req.params.id })));
+r.delete('/api/me/images/:id', auth.requireUser, (req, res) => out(res, personal.deleteImage(req.user.id, req.params.id)));
 r.put('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.savePostcard(req.user.id, { ...(req.body || {}), id: req.params.id })));
 r.delete('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.deletePostcard(req.user.id, req.params.id)));
 r.post('/api/me/merge', auth.requireUser, (req, res) => out(res, personal.merge(req.user.id, req.body || {})));
