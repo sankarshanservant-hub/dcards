@@ -304,7 +304,7 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.equal((await call('POST', '/api/fac/meetings', { title: 'Платная без валюты', country: 'Россия', city: 'Казань', language: 'ru', priceType: 'paid', priceAmount: 100, capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie })).json.error, 'currency_required');
   assert.equal(first.startsAt, `${day}T16:00:00.000Z`, 'местное время 19:00 в Москве = 16:00 UTC');
   assert.equal(list.json.dates[1].capacity, 2, 'у каждой даты свои места');
-  const reg = (name, email) => call('POST', `/api/meetings/dates/${first.id}/register`, { name, email, contact: '@tg' });
+  const reg = (name, email) => call('POST', `/api/meetings/dates/${first.id}/register`, { name, email, contact: '@tg' }, { visitor: visitorA });
   assert.equal((await reg('', 'a@b.org')).json.error, 'name_required');
   const r1 = await reg('Аня', 'anya@example.org');
   assert.equal(r1.status, 201);
@@ -322,7 +322,9 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.match(icsText, /LOCATION:Кафе\\, Казань\\, Россия/);
   assert.match(icsText.replace(/\r\n /g, ''), new RegExp(`/r/${r1.json.token}`));
   assert.equal((await fetch(`${base}/api/registrations/nope/ics`)).status, 404);
-  assert.equal((await reg('Аня', 'anya@example.org')).json.error, 'already_registered');
+  const rep = await reg('Аня', 'anya@example.org');
+  assert.equal(rep.status, 201, 'повтор отправки — тот же ответ, без «уже записан»');
+  assert.equal(rep.json.token, r1.json.token, 'повтор с того же браузера — та же запись, второе место не занято');
   const r2 = await reg('Борис', 'boris@example.org');
   assert.equal(r2.status, 201, 'запись на последнее свободное место');
   assert.equal((await reg('Вера', 'vera@example.org')).json.error, 'full', 'запись закрывается при заполнении');
@@ -1555,4 +1557,47 @@ test('Игры компанией: не участник видит только
   for (let i = 0; i < 30; i++) assert.equal((await call('GET', `/api/group/ZZ${String(i).padStart(3, '0')}/state?device=${D(9)}`, null, h)).status, 404);
   assert.equal((await call('GET', `/api/group/${code}/state?device=${D(9)}`, null, h)).status, 429);
   assert.equal((await call('GET', `/api/group/${code}/state?device=${D(2)}`)).status, 200, 'с другого адреса — работает');
+});
+
+test('Запись на встречу: ответ не выдаёт, записан ли адрес; с почтой — место после подтверждения по ссылке', async () => {
+  const mail = require('../server/mail'); const db = authDb();
+  const day = new Date(Date.now() + 11 * 86400000).toISOString().slice(0, 10);
+  const c = await call('POST', '/api/fac/meetings', { title: 'С подтверждением', city: 'Казань', language: 'ru', priceType: 'free', capacity: 20, firstDate: `${day}T18:00` }, { cookie: facil.cookie });
+  const dateId = (await call('GET', `/api/fac/meetings/${c.json.id}`, null, { cookie: facil.cookie })).json.dates[0].id;
+  const reg = (email, visitor, n = 1) => call('POST', `/api/meetings/dates/${dateId}/register`, { name: 'Гость\u0007 Имя', email }, { visitor, headers: { 'X-Forwarded-For': `192.0.2.${n}` } });
+  // без почты: запись сразу; тот же адрес с другого устройства — такой же ответ, как для нового адреса
+  const a = await reg('same@example.org', 'confirm-visitor-a-0000');
+  const b = await reg('same@example.org', 'confirm-visitor-b-0000', 2);
+  assert.equal(a.status, 201); assert.equal(b.status, 201);
+  assert.deepEqual(Object.keys(a.json).sort(), Object.keys(b.json).sort());
+  assert.notEqual(a.json.token, b.json.token);
+  assert.equal(db.prepare('SELECT name FROM registrations WHERE token = ?').get(a.json.token).name, 'Гость Имя', 'управляющие символы из имени убраны');
+  await call('POST', `/api/registrations/${b.json.token}/cancel`);
+  // ограничение с одного адреса на одну дату
+  for (let i = 0; i < 8; i++) assert.equal((await reg(`ip${i}@example.org`, 'confirm-visitor-c-0000', 3)).status, 201);
+  assert.equal((await reg('ip9@example.org', 'confirm-visitor-c-0000', 3)).status, 429);
+  for (const x of db.prepare("SELECT token FROM registrations WHERE email LIKE 'ip%@example.org'").all()) await call('POST', `/api/registrations/${x.token}/cancel`);
+  // с почтой: «проверьте почту» и для нового, и для уже записанного адреса; место — после перехода по ссылке
+  const letters = [];
+  mail.setTransport({ sendMail: async (m) => { letters.push(m); } });
+  try {
+    assert.equal((await call('GET', '/api/config')).json.meetingConfirm, true);
+    const left0 = (await call('GET', `/api/meetings/dates/${dateId}`)).json.left;
+    const fresh = await reg('new-person@example.org', 'confirm-visitor-d-0000', 4);
+    const known = await reg('same@example.org', 'confirm-visitor-e-0000', 5);
+    assert.equal(fresh.status, 201); assert.equal(known.status, 201);
+    assert.deepEqual(fresh.json, known.json, 'ответы одинаковые');
+    assert.equal(fresh.json.pending, true); assert.equal(fresh.json.token, undefined, 'ссылки на запись в ответе нет');
+    assert.equal((await call('GET', `/api/meetings/dates/${dateId}`)).json.left, left0, 'место не занято до подтверждения');
+    const toFresh = letters.find((l) => l.to === 'new-person@example.org'); const toKnown = letters.find((l) => l.to === 'same@example.org');
+    assert.match(toKnown.text, new RegExp(`/r/${a.json.token}`), 'уже записанному — ссылка на его запись');
+    const ct = toFresh.text.match(/\/rc\/([A-Za-z0-9_-]+)/)[1];
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM registration_requests WHERE token_hash = ?').get(ct).n, 0, 'в базе — только хеш ссылки');
+    assert.equal((await call('POST', '/api/registrations/confirm', { token: 'x'.repeat(32) })).status, 404);
+    const ok = await call('POST', '/api/registrations/confirm', { token: ct });
+    assert.equal(ok.status, 200); assert.ok(ok.json.token);
+    assert.equal((await call('GET', `/api/meetings/dates/${dateId}`)).json.left, left0 - 1, 'после подтверждения место занято');
+    assert.equal((await call('POST', '/api/registrations/confirm', { token: ct })).json.token, ok.json.token, 'повтор ссылки — та же запись');
+    assert.ok(letters.some((l) => l.to === 'new-person@example.org' && /Вы записаны/.test(l.subject)), 'письмо с отменой и календарём');
+  } finally { mail.setTransport(null); }
 });

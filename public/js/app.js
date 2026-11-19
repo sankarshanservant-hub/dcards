@@ -53,6 +53,7 @@ const routes = [
   [/^\/meetings\/([^/]+)\/([^/]+)\/?$/, meet.search],
   [/^\/m\/(\d+)\/?$/, meet.datePage],
   [/^\/r\/([A-Za-z0-9_-]{10,})\/?$/, meet.registration],
+  [/^\/rc\/([A-Za-z0-9_-]{20,64})\/?$/, meet.confirmRegistration],
   [/^\/login\/?$/, acc.login],
   [/^\/me\/?$/, acc.profile],
   [/^\/artist\/?$/, artist.cabinet],

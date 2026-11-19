@@ -147,7 +147,7 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
   demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl, translationConnected: false,
-  termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
+  termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS, meetingConfirm: meetings.confirmOn(),
 }));
 r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo, sessions: req.user ? auth.sessionCount(req.user.id) : 0 }));
 r.patch('/api/me', auth.requireUser, (req, res) => {
@@ -320,10 +320,19 @@ r.get('/api/meetings/dates/:id', (req, res) => {
   if (!d) return bad(res, 'not_found', 404);
   res.json(d);
 });
-r.post('/api/meetings/dates/:id/register', wrap(async (req, res) => {
+// Запись на встречу без аккаунта: с одного адреса — 20 в час и 60 в сутки, на одну дату — 8 в сутки; на дату всего — 60 в час.
+Object.assign(Q, { regIpH: limits.win(HOUR, 20), regIpD: limits.win(DAY, 60), regIpDate: limits.win(DAY, 8), regDate: limits.win(HOUR, 60), regConfirm: limits.win(HOUR, 30) });
+const registerQuota = limits.guard((req) => [[Q.regIpH, req.ip], [Q.regIpD, req.ip], [Q.regIpDate, `${req.ip}|${req.params.id}`], [Q.regDate, String(req.params.id)]]);
+r.post('/api/meetings/dates/:id/register', registerQuota, wrap(async (req, res) => {
   const r0 = await meetings.register(Number(req.params.id), { ...(req.body || {}), userId: req.user && !req.user.is_demo ? req.user.id : null, visitorId: req.visitor }, baseUrl(req), req.body.lang === 'en' ? 'en' : 'ru');
   if (r0.ok) safe(() => events.registered(r0.token));
   out(res, r0, 201);
+}));
+// Подтверждение записи по ссылке из письма: место занимается сейчас.
+r.post('/api/registrations/confirm', limits.guard((req) => [[Q.regConfirm, req.ip]]), wrap(async (req, res) => {
+  const x = await meetings.confirmRegistration((req.body || {}).token, baseUrl(req));
+  if (x.ok && x.created) safe(() => events.registered(x.token));
+  out(res, x);
 }));
 r.get('/api/registrations/:token', (req, res) => {
   const x = meetings.registrationByToken(String(req.params.token));

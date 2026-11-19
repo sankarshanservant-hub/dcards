@@ -26,4 +26,7 @@ async function send(to, subject, body) {
   }
 }
 
-module.exports = { send, connected: () => !!transport };
+// Для проверок: подставить отправку (или null — «почта не подключена»).
+const setTransport = (t) => { transport = t; };
+
+module.exports = { send, connected: () => !!transport, setTransport };
