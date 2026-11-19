@@ -360,9 +360,7 @@ export function openViewer(opts) {
         const saved = pstate && pstate.notes[c.code] ? pstate.notes[c.code].text : '';
         const noteVal = dr.note != null ? dr.note : saved;
         const fav = pstate && personal.isFav(pstate, c.code);
-        if (!xCache.has(c.code)) { xCache.set(c.code, null); loadX(c.code); }
-        const xs = xCache.get(c.code) || [];
-        const xLine = xs.length ? `<div class="x-status">${xs.slice(0, 3).map((x) => `<a class="x-item" href="${u('/x/' + x.secret)}" data-xopen><span class="x-dot ${x.answered ? 'on' : ''}" aria-hidden="true"></span><span>${esc(x.answered ? tt('Друг ответил', 'Your friend answered') + (x.otherName ? ` · ${x.otherName}` : '') : tt('Ждём ответа', 'Waiting for an answer'))}${xs.length > 1 ? ` · ${esc(new Date(x.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }))}` : ''}</span><b>${esc(tt('Открыть обмен', 'Open exchange'))}</b></a>`).join('')}${xs.length > 3 ? `<a class="small" href="${u('/me/exchanges')}" data-xopen>${esc(tt(`Все обмены (${xs.length})`, `All exchanges (${xs.length})`))}</a>` : ''}</div>` : '';
+        // плашка «Друг ответил» убрана (21.11.2026): ответы — в уведомлениях и «Моих обменах»
         bottom.innerHTML = `
           <div class="vb-nav">
             <button class="icon-btn sm plain" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button>
@@ -375,7 +373,6 @@ export function openViewer(opts) {
           </div>
           ${ui.fav ? favPanel(c.code) : ''}
           ${shareField()}
-          ${xLine}
           <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
             <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${icons.mail}<span>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</span></a></div>
           <div class="card-play"><a class="btn light" href="${u('/games')}" data-xopen>${esc(tt('Поиграем?', 'Shall we play?'))}</a></div>`;
@@ -409,7 +406,7 @@ export function openViewer(opts) {
     return `<div class="friend-form" role="region" aria-label="${esc(tt('Сыграть с другом', 'Play with a friend'))}">
       <label for="vf-${c.code}" class="note-q">${esc(tt('Что тебе откликнулось в этой карте?', 'What speaks to you in this card?'))}</label>
       <textarea id="vf-${c.code}" data-friend-text rows="3" maxlength="300" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}">${esc(text)}</textarea>
-      ${session.user ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))} <span class="hint">${esc(tt('по желанию', 'optional'))}</span><input data-friend-name maxlength="40" value="${esc(dr.name || storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
+      ${session.user ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))}<input data-friend-name maxlength="40" value="${esc(dr.name || storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
       <p class="vb-note">${esc(tt('Друг увидит твой ответ, когда напишет свой.', 'Your friend will see your answer once they write theirs.'))} <button class="link-btn" type="button" data-how aria-expanded="${ui.how}">${esc(tt('Как это работает', 'How it works'))}</button></p>
       ${ui.how ? `<ol class="vb-note" style="margin:0;padding-left:1.2em"><li>${esc(tt('Ты отправляешь карту и свой ответ — ответ пока скрыт.', 'You send the card and your answer — the answer stays hidden.'))}</li><li>${esc(tt('Друг пишет, что видит он.', 'Your friend writes what they see.'))}</li><li>${esc(tt('Вы оба видите два взгляда на одну карту.', 'You both see two views of one card.'))}</li></ol>` : ''}
       ${ui.sendErr ? `<p class="field-error" role="alert">${esc(ui.sendErr)}</p>` : ''}
@@ -505,7 +502,8 @@ export function openViewer(opts) {
   // Высота панели снизу → место для картинки (картинка всегда целиком и не под панелью).
   function syncBottom() {
     const hideBottom = !bottom || mode.full || (mode.view === 'questions' && !el.classList.contains('q-side'));
-    el.style.setProperty('--bottom', hideBottom ? '0px' : `${bottom.offsetHeight + 4}px`);
+    // во весь экран: карта целиком по центру между верхними кнопками и нижней безопасной зоной
+    el.style.setProperty('--bottom', mode.full ? 'calc(12px + var(--safe-b, 0px))' : hideBottom ? '0px' : `${bottom.offsetHeight + 4}px`);
     layout();
   }
   // «Поделиться картой»: системное меню, где оно есть; иначе копирование. Отмена — без сообщений; не вышло — показываем ссылку.
@@ -658,7 +656,7 @@ export function openViewer(opts) {
           ${info && info.publishedAt ? `<div><dt>${esc(t('viewer.published'))}</dt><dd>${esc(dateLabel(info.publishedAt))}</dd></div>` : ''}
         </dl>
         ${countLine}
-        <p class="sheet-hint">${esc(t('viewer.zoomHint'))}</p>`;
+`;
     };
     draw(d || c);
     if (!d && opts.mode !== 'admin') {

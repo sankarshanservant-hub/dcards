@@ -1,4 +1,4 @@
-import { monthLabel } from '../i18n.js';
+import { monthLabel, t } from '../i18n.js';
 import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { SLOGAN, TAGLINE } from '../share.js';
@@ -82,11 +82,34 @@ export async function about(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Что такое Dialogue Cards?', 'What is Dialogue Cards?'))}</h1>
       <p class="sub">${esc(SLOGAN())}</p></div>
+    <div class="about-intro stack" style="gap:10px">
+      <p>${esc(tt('Dialogue Cards — иллюстрации, с которых легко начать разговор. У карты нет правильного значения: то, что ты в ней видишь, то она и означает.', 'Dialogue Cards are illustrations that make it easy to start a conversation. A card has no correct meaning: whatever you see in it is what it means.'))}</p>
+      <p><b>${esc(tt('Обмен взглядами', 'Exchanging views'))}</b></p>
+      <ol class="steps"><li>${esc(tt('Выбери карту.', 'Choose a card.'))}</li><li>${esc(tt('Напиши, что тебе в ней откликнулось.', 'Write what speaks to you in it.'))}</li>
+        <li>${esc(tt('Отправь карту другу. Он увидит твой ответ, когда напишет свой.', 'Send the card to a friend. They will see your answer once they write theirs.'))}</li><li>${esc(tt('Посмотрите, что увидел каждый.', 'See what each of you saw.'))}</li></ol>
+      <a class="about-flow-link" href="${u('/about/flow')}">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))} →</a>
+    </div>
     <div class="stack" style="gap:8px">${ABOUT.map(([ru, en], i) => `<details class="about-df card-ui flat" id="about-${i + 1}"><summary><span class="grow">${esc(tt(ru, en))}</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="about-body"><p class="muted">${esc(tt('Текст готовят авторы проекта.', 'The project authors are preparing this text.'))}</p></div></details>`).join('')}</div>
     <div class="card-ui flat stack"><b>${esc(tt('Полный документ о проекте', 'The full project document'))}</b>
       ${assets.pdf ? `<a class="btn yellow" href="${u('/guides/project/guide.pdf')}" download style="justify-self:start">${esc(tt('Скачать документ (PDF)', 'Download the document (PDF)'))}</a>` : `<p class="muted" style="margin:0">${esc(tt('Полный документ проекта готовится.', 'The full project document is being prepared.'))}</p>`}</div>
-    <div class="row"><a class="btn" href="${u('/play')}">${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</a><a class="btn light" href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></div>
+  </div>`;
+}
+
+// ---------- «Что такое Dialogue Flow?» — для тех, кто впервые идёт на встречу (21.11.2026; тексты — как в поиске встреч) ----------
+export function aboutFlow(ctx) {
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">
+    <div class="page-head"><p class="eyebrow">Dialogue Flow</p><h1>${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</h1></div>
+    <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet.'))}</p>
+    <h2 style="margin:0;font-size:1.2rem">${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h2>
+    <ol class="steps">
+      <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
+      <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в естественном потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a natural flow.'))}</li>
+      <li>${esc(tt('В конце участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
+    </ol>
+    <h2 style="margin:0;font-size:1.2rem">${esc(tt('Как выбирают карты', 'How cards are chosen'))}</h2>
+    <ol class="steps"><li>${esc(t('home.how1'))}</li><li>${esc(t('home.how2'))}</li><li>${esc(t('home.how3'))}</li></ol>
+    <a class="btn yellow" href="${u('/meetings')}" style="justify-self:start">${esc(tt('Найти встречу', 'Find a meeting'))}</a>
   </div>`;
 }
 

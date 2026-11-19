@@ -142,7 +142,7 @@ export function submit(ctx) {
             <li>${esc(tt('Формат печатной карты — 70 × 120 мм.', 'The printed card is 70 × 120 mm.'))}</li></ul>
           <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The artist name under the cards comes from your profile. You can change it there.'))}</p>
           <label class="check"><input type="checkbox" id="gok" ${guideOk ? 'checked' : ''}> <span>${esc(tt('Я ознакомился(ась) с кратким руководством', 'I have read the short guide'))}</span></label></section>
-        <section class="card-ui flat stack" aria-labelledby="g-full"><h2 id="g-full" style="margin:0">${esc(tt('Полное руководство', 'Full guide'))} <span class="small muted">· ${esc(tt('по желанию', 'optional'))}</span></h2>
+        <section class="card-ui flat stack" aria-labelledby="g-full"><h2 id="g-full" style="margin:0">${esc(tt('Полное руководство', 'Full guide'))}</h2>
           ${gAssets && gAssets.pdf ? `<p style="margin:0"><a class="btn sm light" href="${u('/guides/artist/guide.pdf')}" target="_blank" rel="noopener">${esc(tt('Открыть полное руководство (PDF)', 'Open the full guide (PDF)'))}</a></p>` : `<p class="small muted" style="margin:0">${esc(tt('Появится здесь, когда владелец проекта его передаст.', 'It will appear here once the project owner provides it.'))}</p>`}</section>
         <div class="row"><button class="btn light" type="button" id="back">${esc(tt('Назад', 'Back'))}</button><button class="btn yellow" type="button" id="next" ${guideOk ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button></div>`;
     } else if (step === 3) {

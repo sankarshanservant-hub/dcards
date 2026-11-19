@@ -38,6 +38,8 @@ addCol('target_user_id', 'INTEGER'); addCol('target_visitor', 'TEXT');
 // Вопрос другу (20.11.2026): отправитель может изменить стандартный вопрос; хранится у конкретного обмена.
 // Пустой или из пробелов — стандартная формулировка; у прежних обменов (question IS NULL) — тоже стандартная.
 addCol('question', 'TEXT');
+// фрагменты длинных ответов для сторис (21.11.2026): выбирает предложивший, согласие относится именно к ним
+addCol('story_frag', 'TEXT');
 const DEFAULT_QUESTION = 'Что тебе откликается в этой карте?';
 const questionOf = (x) => (x && x.question) || DEFAULT_QUESTION;
 const tok = () => crypto.randomBytes(18).toString('base64url');
@@ -49,10 +51,13 @@ const nameOf = (userId, typed, fallback) => {
 };
 const same = (x, side, user, visitor) => (user && x[`${side}_user_id`] === user.id) || (visitor && x[`${side}_visitor`] === visitor);
 /** Макет сторис: что именно увидят люди. Любое изменение — новый отпечаток и новые согласия. */
-function storyHash(x) {
+function storyHash(x, frag = fragOf(x)) {
   const c = db.prepare('SELECT code, image_full, author FROM cards WHERE id = ?').get(x.card_id);
-  return crypto.createHash('sha256').update(JSON.stringify([c.code, c.image_full, c.author, x.a_name, x.a_text, x.b_name, x.b_text])).digest('hex').slice(0, 16);
+  return crypto.createHash('sha256').update(JSON.stringify(['v2', c.code, c.image_full, c.author, x.a_name, frag.a, x.b_name, frag.b])).digest('hex').slice(0, 16);
 }
+/** Что из ответов попадёт в сторис: целиком или выбранный фрагмент (только подстрока самого ответа). */
+function fragOf(x) { let f = {}; try { f = JSON.parse(x.story_frag || '{}') || {}; } catch { /* */ } return { a: validFrag(x.a_text, f.a), b: validFrag(x.b_text, f.b) }; }
+function validFrag(full, f) { const t = String(full || ''); const s = String(f || '').trim(); return s && s.length >= 3 && s.length <= 220 && t.includes(s) ? s : t; }
 
 function create(card, user, visitor, { text, name, question, clientKey, origin = 'fresh', parent = null, sourceEx = null }) {
   const t = clean(text, 300); if (!t) return { error: 'text_required' };
@@ -107,7 +112,8 @@ function view(x, role) {
     out.otherText = x[`${other}_text`];
     const h = storyHash(x);
     const st = (v) => (v === 'declined' ? 'declined' : v === `agreed:${h}` ? 'agreed' : null);
-    out.story = { hash: h, proposedBy: x.story_hash === h && x.story_proposed_by ? (x.story_proposed_by === me ? 'me' : 'other') : null,
+    const fr = fragOf(x);
+    out.story = { hash: h, frag: { mine: fr[me], other: fr[other] }, proposedBy: x.story_hash === h && x.story_proposed_by ? (x.story_proposed_by === me ? 'me' : 'other') : null,
       me: st(x[`story_${me}`]), other: st(x[`story_${other}`]),
       // ссылка, по которой другой участник вернётся к этому макету (узнаёт только его)
       otherDoor: me === 'a' ? x.invite_token : x.a_door };
@@ -168,10 +174,17 @@ function answer(token, user, visitor, { text, name, answerKey }) {
 }
 
 /** Сторис: предложить (= согласиться на этот макет), согласиться, отказаться. */
-function story(token, user, visitor, { action, hash }) {
+function story(token, user, visitor, { action, hash, frag }) {
   const { x, role } = resolve(token, user, visitor);
   if (!x) return { error: 'not_found' };
   if (!['a', 'b'].includes(role) || !x.b_answered_at) return { error: 'forbidden' };
+  // предложение может выбрать фрагменты длинных ответов — это новый макет со своим отпечатком
+  if (action === 'propose' && frag && typeof frag === 'object') {
+    const f = { a: validFrag(x.a_text, frag.a), b: validFrag(x.b_text, frag.b) };
+    const nf = JSON.stringify({ a: f.a === x.a_text ? null : f.a, b: f.b === x.b_text ? null : f.b });
+    if (nf !== (x.story_frag || JSON.stringify({ a: null, b: null }))) { db.prepare('UPDATE exchanges SET story_frag = ? WHERE id = ?').run(nf, x.id); x.story_frag = nf; }
+    hash = storyHash(x);
+  }
   const h = storyHash(x);
   if (hash !== h) return { error: 'story_changed' }; // человек соглашался на другой макет
   const me = role; const other = role === 'a' ? 'b' : 'a';
@@ -184,9 +197,9 @@ function story(token, user, visitor, { action, hash }) {
     const y = db.prepare('SELECT * FROM exchanges WHERE id = ?').get(x.id);
     if (!wasAgreed) {
       if (y.story_proposed_by === me && y[`story_${other}`] !== `agreed:${h}`) {
-        bell.add(target(other), { kind: 'story_proposed', title: 'Тебе предложили поделиться ответами в сторис', body: 'Посмотри макет и реши', url: `/x/${y[`${other}_secret`]}?story=1`, dedupe: `x:${x.id}:story:${h}:to:${other}`, isDemo: !!x.is_demo });
+        bell.add(target(other), { kind: 'story_proposed', title: 'Тебе предложили поделиться ответами в сторис', body: 'Посмотри макет и реши', url: `/x/${y[`${other}_secret`]}/story`, dedupe: `x:${x.id}:story:${h}:to:${other}`, isDemo: !!x.is_demo });
       } else if (y[`story_${other}`] === `agreed:${h}`) {
-        bell.add(target(other), { kind: 'story_agreed', title: 'Друг согласился поделиться в сторис', body: 'Можно сохранить картинку для сторис', url: `/x/${y[`${other}_secret`]}?story=1`, dedupe: `x:${x.id}:story:${h}:agreed:${me}`, isDemo: !!x.is_demo });
+        bell.add(target(other), { kind: 'story_agreed', title: 'Друг согласился поделиться в сторис', body: 'Можно сохранить картинку для сторис', url: `/x/${y[`${other}_secret`]}/story`, dedupe: `x:${x.id}:story:${h}:agreed:${me}`, isDemo: !!x.is_demo });
       }
     }
   } else if (action === 'decline') {

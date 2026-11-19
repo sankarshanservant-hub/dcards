@@ -20,6 +20,7 @@ const push = require('./push');
 const bell = require('./bell');
 const events = require('./events');
 const exchanges = require('./exchanges');
+const xgroups = require('./xgroups');
 const personal = require('./personal');
 const safe = (fn) => { try { fn(); } catch (e) { console.error('event:', e.message); } }; // событие не должно ломать основное действие
 const demo = require('./demo');
@@ -833,12 +834,21 @@ const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND sta
 r.post('/api/exchanges', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
+  if (b.multi) return out(res, xgroups.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201); // «Отправить нескольким людям»
   out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey, origin: ['fresh', 'forward', 'public'].includes(b.origin) ? b.origin : 'fresh' }), 201);
 });
-r.get('/api/exchanges', (req, res) => res.json({ exchanges: exchanges.mine(req.user, req.visitor, req.query.card ? String(req.query.card) : null) }));
+r.get('/api/exchanges', (req, res) => {
+  const list = exchanges.mine(req.user, req.visitor, req.query.card ? String(req.query.card) : null);
+  const groups = req.query.card ? [] : xgroups.mine(req.user, req.visitor);
+  res.json({ exchanges: [...list, ...groups].sort((p, q) => String(q.createdAt).localeCompare(String(p.createdAt))) });
+});
 r.get('/api/x/:token', (req, res) => {
   const { x, role } = exchanges.resolve(String(req.params.token), req.user, req.visitor);
-  if (!x) return bad(res, 'not_found', 404);
+  if (!x) {
+    const G = xgroups.resolve(String(req.params.token), req.user, req.visitor);
+    if (!G.g) return bad(res, 'not_found', 404);
+    return res.set('Cache-Control', 'no-store').json(xgroups.view(G.g, G.role, G.m));
+  }
   exchanges.opened(x, role, req.get('user-agent')); // первое открытие человеком (не превью и не сам отправитель)
   res.set('Cache-Control', 'no-store').json(exchanges.view(x, role));
 });
@@ -850,6 +860,8 @@ r.post('/api/x/:token/reply', (req, res) => {
 r.post('/api/x/:token/sent', (req, res) => out(res, exchanges.sent(String(req.params.token), req.user, req.visitor, String((req.body || {}).via || ''))));
 r.post('/api/x/:token/answer', (req, res) => {
   const b = req.body || {};
+  const G = xgroups.answer(String(req.params.token), req.user, req.visitor, { text: b.text, name: b.name, answerKey: b.answerKey });
+  if (G.error !== 'not_found') { if (G.error) return out(res, G); return res.status(201).json({ ok: true, repeated: !!G.repeated, exchange: xgroups.view(G.g, 'member', G.m) }); }
   const r0 = exchanges.answer(String(req.params.token), req.user, req.visitor, { text: b.text, name: b.name, answerKey: b.answerKey });
   if (r0.error) return out(res, r0);
   const { x, role } = exchanges.resolve(r0.secret, req.user, req.visitor);
@@ -872,7 +884,7 @@ r.patch('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, pers
 r.delete('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, personal.deleteCollection(req.user.id, req.params.id)));
 r.post('/api/me/collections/:id/cards', auth.requireUser, (req, res) => out(res, personal.toggle(req.user.id, req.params.id === 'favorites' ? 'favorites' : req.params.id, (req.body || {}).code, (req.body || {}).on !== false)));
 // после входа: обмены и колокольчик этого браузера — в аккаунт; личные данные гостя — по согласию (merge)
-r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id) }));
+r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id) + xgroups.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id) }));
 r.put('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.savePostcard(req.user.id, { ...(req.body || {}), id: req.params.id })));
 r.delete('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.deletePostcard(req.user.id, req.params.id)));
 r.post('/api/me/merge', auth.requireUser, (req, res) => out(res, personal.merge(req.user.id, req.body || {})));
@@ -898,7 +910,7 @@ function ogFor(req) {
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
   let code = m && m[3];
   let title = 'Что ты здесь видишь?';
-  if (m && m[2]) { const x = db.prepare('SELECT card_id, question FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(m[2], m[2], m[2], m[2]); code = x && (db.prepare('SELECT code FROM cards WHERE id = ?').get(x.card_id) || {}).code; if (x) title = exchanges.questionOf(x); }
+  if (m && m[2]) { const x = db.prepare('SELECT card_id, question FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(m[2], m[2], m[2], m[2]) || xgroups.cardCodeOf(m[2]); code = x && (db.prepare('SELECT code FROM cards WHERE id = ?').get(x.card_id) || {}).code; if (x) title = exchanges.questionOf(x); }
   if (!code && req.path.startsWith('/library') && /^DC-\d{4,6}$/.test(String(req.query.card || ''))) code = String(req.query.card);
   const c = code && pubCard(code); if (!c || c.is_demo) return null;
   return { code: c.code, title, image: `${baseUrl(req)}${B}/og/${c.code}.jpg`, url: `${baseUrl(req)}${B}${req.path}` };
