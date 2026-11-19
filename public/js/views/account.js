@@ -148,13 +148,13 @@ function securityHtml(s) {
   const siteOn = !!session.config.siteLogin;
   const privileged = s.isOwner || ['admin', 'curator', 'facilitator'].some((r) => s.roles.includes(r));
   const site = !siteOn ? '' : s.siteLinked
-    ? `<p class="small" style="margin:0">${ic.check} ${esc(tt('Вход аккаунтом сайта harekrishna.info подключён.', 'Sign-in with the harekrishna.info site account is connected.'))}${s.isOwner ? ' ' + esc(tt('Пароль владельца остаётся запасным способом входа.', 'The owner password stays as a backup way to sign in.')) : ''}</p>`
+    ? `<p class="small" style="margin:0">✓ ${esc(tt('Вход аккаунтом сайта harekrishna.info подключён.', 'Sign-in with the harekrishna.info site account is connected.'))}${s.isOwner ? ' ' + esc(tt('Пароль владельца остаётся запасным способом входа.', 'The owner password stays as a backup way to sign in.')) : ''}</p>`
     : `<p class="small muted" style="margin:0">${esc(s.isOwner
       ? tt('Входите через аккаунт сайта (Google или Яндекс — включите там двухэтапную проверку), а пароль оставьте на крайний случай.', 'Sign in with the site account (Google or Yandex — turn on 2-step verification there) and keep the password for emergencies.')
       : privileged ? tt('Аккаунт с правами не подключается к аккаунту сайта сам — только по этой кнопке.', 'An account with special rights is connected to the site account only with this button.')
         : tt('Чтобы входить тем же аккаунтом, что на всём сайте.', 'To sign in with the same account as on the rest of the site.'))}</p>
       <div><button class="btn light" type="button" id="site-link">${esc(tt('Привязать к моему аккаунту сайта', 'Link to my site account'))}</button></div>
-      <p class="form-error" id="link-err" role="alert"></p>`;
+      <p class="form-error" id="link-err" role="alert" style="margin:0"></p>`;
   return `<div class="card-ui flat stack"><h2 style="margin:0">${esc(tt('Вход и устройства', 'Sign-in and devices'))}</h2>${site}
     <div><button class="btn light" type="button" id="logout-all">${esc(tt('Выйти на всех устройствах', 'Sign out on all devices'))}</button></div>
     <p class="small muted" style="margin:0">${esc(tt('Завершает вход везде, включая это устройство. Пригодится, если телефон потерян или вы входили на чужом компьютере.', 'Ends every session, including this device. Useful if a phone is lost or you signed in on someone else’s computer.'))}</p></div>`;
