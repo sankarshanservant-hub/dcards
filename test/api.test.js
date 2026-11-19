@@ -1037,6 +1037,7 @@ test('Встреча по телефонам: вход по QR, деление �
   await act('end');
   const fin = await st(1);
   assert.equal(fin.status, 'ended');
+  assert.ok(/^DC-\d+$/.test(fin.lastCard), 'в конце встречи — карта, которую участник фактически выбрал (для «Отправить карту»)');
   assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(1) })).json.error, 'feedback_empty');
   assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(1), text: 'Было тепло', mayPublish: true })).status, 201);
   assert.equal((await st(1)).feedbackSent, true);

@@ -121,6 +121,10 @@ export function participant(ctx, slug, col, first) {
       ['/meetings', ic.calendar, 'Найти следующую встречу', 'Find the next meeting', '', '']];
     return frame(`<p class="eyebrow">Dialogue Flow</p><h1>${esc(tt('Спасибо за встречу!', 'Thank you for the meeting!'))}</h1>
       <p class="lead">${esc(tt('Спасибо за доверие и за разговор. Каждый разговор сегодня был непохож на остальные — именно это делает Dialogue Flow живым.', 'Thank you for your trust and for the conversation. Every conversation today was unlike the others — that is what keeps Dialogue Flow alive.'))}</p>
+      <section class="card-ui stack" aria-labelledby="after-h"><h2 id="after-h" style="margin:0;font-size:1.15rem">${esc(tt('Хочешь обсудить эту карту? Отправь её тому, с кем хочешь пообщаться', 'Want to talk about this card? Send it to someone you would like to talk with'))}</h2>
+        ${s.lastCard ? `<div class="row"><img src="${u('/og/' + s.lastCard + '.jpg')}" alt="" style="height:72px;border-radius:10px"><a class="btn yellow" href="${u('/play/' + s.lastCard)}">${esc(tt('Отправить карту', 'Send the card'))}</a></div>`
+          : `<p class="small muted" style="margin:0">${esc(tt('Карта в этой встрече не выбрана — выберите любую.', 'No card was chosen in this meeting — choose any.'))}</p><div><a class="btn yellow" href="${u('/play')}">${esc(tt('Выбрать карту', 'Choose a card'))}</a></div>`}
+        <a class="small" href="${u('/meetings')}">${esc(tt('Найти встречу в своём городе', 'Find a meeting in your city'))}</a></section>
       ${sent ? `<div class="notice green">${ic.check} ${esc(tt('Спасибо за отзыв!', 'Thank you for your feedback!'))}</div>` : `<form class="card-ui flat form" id="fb">
         <h2 style="margin:0;font-size:1.15rem">${esc(tt('Отзыв о встрече', 'Feedback on the meeting'))}</h2>
         <p class="small muted" style="margin:0">${esc(tt('Что понравилось, что было трудно, что можно сделать лучше? Критика здесь — помощь.', 'What did you like, what was hard, what could be better? Criticism helps here.'))}</p>

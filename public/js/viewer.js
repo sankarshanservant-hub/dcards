@@ -376,7 +376,8 @@ export function openViewer(opts) {
           ${ui.fav ? favPanel(c.code) : ''}
           ${shareField()}
           ${xLine}
-          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></a></div>
+          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></a>
+            <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</a></div>
           <div class="vb-panel">
             <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('Попробуй другие форматы', 'Try other formats'))}</span>${chev(ui.guide)}</button>
             ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>

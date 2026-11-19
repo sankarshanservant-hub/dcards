@@ -18,6 +18,7 @@ import * as team from './views/team.js';
 import * as adm from './views/admin.js';
 import * as xch from './views/exchange.js';
 import * as personal from './personal.js';
+import * as pc from './views/postcard.js';
 
 const main = document.getElementById('app');
 let renderToken = 0;
@@ -29,6 +30,8 @@ const routes = [
   [/^\/library\/?$/, pub.library],
   [/^\/x\/([A-Za-z0-9_-]{16,40})\/?$/, xch.page],
   [/^\/play\/?$/, (ctx) => xch.playPage(ctx, null)],
+  [/^\/postcard\/?$/, (ctx) => pc.postcard(ctx, null)],
+  [/^\/postcard\/(DC-\d{4,6})\/?$/, pc.postcard],
   [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
   [/^\/me\/exchanges\/?$/, xch.myExchanges],

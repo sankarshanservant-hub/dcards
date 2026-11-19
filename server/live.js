@@ -285,7 +285,9 @@ function participantState(slug, deviceId) {
     // Встреча закончилась недавно, а этот телефон в ней был — экран благодарности и отзыв.
     if (last && last.status === 'ended' && Date.now() - Date.parse(last.ended_at) < 12 * 3600e3) {
       const m = S.member.get(last.id, deviceId);
-      if (m) return { ...base, live: { id: last.id, status: 'ended', me: { name: m.name }, feedbackSent: !!db.prepare('SELECT id FROM live_feedback WHERE session_id = ? AND member_id = ?').get(last.id, m.id) } };
+      // карта, которую участник фактически выбрал (или получил в паре) в последнем раунде, — для «Отправь её тому, с кем хочешь пообщаться»
+      const myLast = m && db.prepare('SELECT card_code FROM live_slots WHERE session_id = ? AND (holder_id = ? OR listener_id = ? OR extra_listener_id = ?) AND card_code IS NOT NULL ORDER BY round DESC, id DESC LIMIT 1').get(last.id, m.id, m.id, m.id);
+      if (m) return { ...base, live: { id: last.id, status: 'ended', me: { name: m.name }, lastCard: myLast ? myLast.card_code : null, feedbackSent: !!db.prepare('SELECT id FROM live_feedback WHERE session_id = ? AND member_id = ?').get(last.id, m.id) } };
     }
     return { ...base, live: null };
   }

@@ -43,6 +43,7 @@ export async function home(ctx) {
         </div>
       </div>
       <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
+      <div class="home-postcard"><a class="btn light" href="${u('/library?play=postcard')}">${ic.mail || ic.cards} ${esc(tt('Отправить открытку', 'Send a postcard'))}</a></div>
     </div></section>
     <section class="wrap band">
       <div class="roles">${JOIN.map(([href, icon, ru, en, dru, den]) => `<a class="role" href="${u(href)}"><span class="role-head"><span class="ic">${ic[icon]}</span><b>${esc(tt(ru, en))}</b></span><p>${esc(tt(dru, den))}</p></a>`).join('')}</div>
@@ -69,7 +70,8 @@ export async function home(ctx) {
 // ---------- библиотека ----------
 export async function library(ctx) {
   // «Попробовать» с главной: намерение «Сыграть с другом» сохраняется — у выбранной карты сразу форма для друга
-  const play = ctx.query.get('play') === 'friend';
+  const intent = ['friend', 'postcard'].includes(ctx.query.get('play')) ? ctx.query.get('play') : null;
+  const play = !!intent;
   loading(ctx.main);
   let cards;
   try { ({ cards } = await api('/api/cards')); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
@@ -83,7 +85,8 @@ export async function library(ctx) {
   ctx.main.innerHTML = `<div class="wrap page">
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted">${esc(tt(`${cards.length} карт · новые сверху · нажмите на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
-      ${play ? `<div class="play-intent" role="status">${ic.people}<span><b>${esc(tt('Сыграть с другом', 'Play with a friend'))}</b> — ${esc(tt('выбери карту для игры.', 'choose a card for the game.'))}</span><a class="link-btn" href="${u('/play')}">${esc(tt('Вернуться к игре', 'Back to the game'))}</a></div>` : ''}
+      ${intent === 'friend' ? `<div class="play-intent" role="status">${ic.people}<span><b>${esc(tt('Сыграть с другом', 'Play with a friend'))}</b> — ${esc(tt('выбери карту для игры.', 'choose a card for the game.'))}</span><a class="link-btn" href="${u('/play')}">${esc(tt('Вернуться к игре', 'Back to the game'))}</a></div>` : ''}
+      ${intent === 'postcard' ? `<div class="play-intent" role="status">${ic.cards}<span><b>${esc(tt('Открытка', 'Postcard'))}</b> — ${esc(tt('выбери иллюстрацию для открытки.', 'choose an illustration for the postcard.'))}</span><a class="link-btn" href="${u('/library')}">${esc(tt('Просто смотреть', 'Just browse'))}</a></div>` : ''}
       <div class="play-rows" id="play"><div>${diceButtonHtml()}</div>
         <div class="play-two"><a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть с компанией', 'Play with friends'))}</a>
         <a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a></div></div></div>
@@ -92,7 +95,7 @@ export async function library(ctx) {
       <p class="muted small">${esc(tt('Предложить иллюстрацию, провести встречу, стать куратором', 'Suggest an illustration, host a meeting, become a curator'))}</p></div>
   </div>`;
   const openAt = (i) => openViewer({ cards, index: i, mode: 'library', playFriend: new URL(location.href).searchParams.get('play') === 'friend' });
-  ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => (play ? ctx.navigate('/play/' + cards[Number(b.dataset.i)].code + (ctx.query.get('reply') ? '?reply=' + encodeURIComponent(ctx.query.get('reply')) : '')) : openAt(Number(b.dataset.i)))));
+  ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => (play ? ctx.navigate((intent === 'postcard' ? '/postcard/' : '/play/') + cards[Number(b.dataset.i)].code + (intent === 'friend' && ctx.query.get('reply') ? '?reply=' + encodeURIComponent(ctx.query.get('reply')) : '')) : openAt(Number(b.dataset.i)))));
   // Случайное открытие — только просмотр: счётчик выборов не меняется.
   wireDice(ctx.main.querySelector('#rnd'), () => cards.length && openAt(Math.floor(Math.random() * cards.length)), ctx.alive);
   openFromQuery(cards, openAt);
