@@ -1004,7 +1004,9 @@ app.use(B || '/', r);
 if (B) app.get('/', (req, res) => res.redirect(B + '/'));
 
 if (require.main === module) {
-  if (!config.adminPassword) {
+  if (auth.ownerPasswordTooShort()) {
+    console.error(`ERROR: ADMIN_PASSWORD is shorter than ${config.minAdminPassword} characters: owner password login is disabled. Set a longer ADMIN_PASSWORD (for example: openssl rand -base64 24) and restart.`);
+  } else if (!config.adminPassword) {
     console.warn(config.isProduction ? 'ADMIN_PASSWORD is not set: owner login is disabled.' : 'ADMIN_PASSWORD is not set: using development password "dcards-dev".');
   }
   console.log(`Demo mode: ${config.demoMode ? 'on' : 'off'}; mail: ${mail.connected() ? 'SMTP' : 'not connected (letters shown on screen)'}`);

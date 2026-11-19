@@ -163,7 +163,10 @@ async function siteLogin(siteSession) {
 }
 
 // ---------- владелец проекта ----------
+/** Пароль слишком короткий для боевого сервера — такой пароль не принимается. */
+const ownerPasswordTooShort = () => config.isProduction && !!config.adminPassword && config.adminPassword.length < config.minAdminPassword;
 function ownerPassword() {
+  if (ownerPasswordTooShort()) return null;
   if (config.adminPassword) return config.adminPassword;
   return config.isProduction ? null : 'dcards-dev';
 }
@@ -217,5 +220,5 @@ function revoke(userId, role) { stmt.revoke.run(userId, role); }
 module.exports = {
   CPATH, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
   loadUser, requireUser, requireRole, issue, clear, publicUser, displayName, rolesOf,
-  siteLogin, requestCode, checkCode, consumeCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, demoUser, grant, revoke,
+  siteLogin, requestCode, checkCode, consumeCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, ownerPasswordTooShort, demoUser, grant, revoke,
 };

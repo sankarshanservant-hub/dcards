@@ -1338,3 +1338,15 @@ test('Куратор не рассматривает свою работу: ре
   assert.equal((await call('POST', `/api/curation/works/${id}/vote`, { vote: 'approve' }, { cookie: curatorU.cookie })).status, 200);
   assert.equal((await call('POST', `/api/curation/works/${id}/decide`, { action: 'recommend' }, { cookie: curatorU.cookie })).status, 200);
 });
+
+test('Пароль владельца на боевом сервере — не короче 16 символов', () => {
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dcards-pw-'));
+  const owner = (pw, extra = {}) => execFileSync(process.execPath, ['-e', "const a = require('./server/auth'); process.stdout.write(JSON.stringify([a.ownerPassword(), a.ownerPasswordTooShort()]))"],
+    { cwd: path.join(__dirname, '..'), env: { ...process.env, DATA_DIR: dir, ADMIN_PASSWORD: pw, ...extra } }).toString();
+  try {
+    assert.equal(owner('short-pass-14ch', { NODE_ENV: 'production' }), '[null,true]', 'короткий пароль на боевом сервере не принимается');
+    assert.equal(owner('a-long-password-16+', { NODE_ENV: 'production' }), '["a-long-password-16+",false]');
+    assert.equal(owner('test-password', { NODE_ENV: 'development' }), '["test-password",false]', 'при разработке длина не проверяется');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
