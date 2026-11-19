@@ -33,8 +33,10 @@ export async function choose(ctx) {
   if (!ctx.alive()) return;
   const pre = ctx.query.get('collection');
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть с компанией', 'Play with friends'))}</h1><span class="pill" style="justify-self:start">${esc(tt('От двух человек', 'From two people'))}</span>
-      <p class="sub">${esc(tt('Для друзей и семьи, от 2 до 20 человек. Один открывает игру и показывает QR, остальные заходят со своих телефонов. Регистрация не нужна.', 'For friends and family, 2 to 20 people. One person opens a game and shows the QR code; the others join from their phones. No sign-up needed.'))}</p></div>
+    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией', 'Play with friends'))}</h1>
+      <p class="game-lead">${esc(tt('2–20 участников', '2–20 players'))}</p>
+      <div class="game-how"><p>${esc(tt('Один участник открывает игру и создаёт QR-код. Остальные заходят по этому коду со своих телефонов.', 'One player opens the game and creates a QR code. The others join with this code from their own phones.'))}</p>
+        <p>${esc(tt('Регистрация не нужна.', 'No sign-up needed.'))}</p></div></div>
     <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
     <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
     ${cols.length ? `<label class="field" for="gsrc">${esc(tt('Какие карты', 'Which cards'))}</label><select id="gsrc"><option value="">${esc(tt('Вся галерея', 'The whole gallery'))}</option>${cols.map((c) => `<option value="${esc(String(c.id))}" ${pre === String(c.id) ? 'selected' : ''}>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)} · ${c.codes.length}</option>`).join('')}</select>` : ''}

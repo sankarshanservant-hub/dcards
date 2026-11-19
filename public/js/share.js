@@ -2,9 +2,11 @@
 // даёт само устройство (системное меню). Где системного меню нет (компьютер) — небольшой выбор: Telegram, WhatsApp,
 // скопировать. Человек сам подтверждает отправку — открытие меню не означает доставку. Возвращает true, если человек
 // воспользовался действием (для аналитики); отменённое системное меню — false.
-import { tt, toast, esc } from './util.js';
+import { tt, toast, esc, u } from './util.js';
 
-export const SLOGAN = () => tt('Dialogue Cards — повод начать интересный диалог.', 'Dialogue Cards — a reason to start an interesting dialogue.');
+// Подпись проекта (21.11.2026, окончательная): одна строка для интерфейса, сообщений и метаданных.
+export const TAGLINE = () => tt('Яркий повод для интересного разговора', 'A bright reason for an interesting conversation');
+export const SLOGAN = () => tt('Dialogue Cards — яркий повод для интересного разговора', 'Dialogue Cards — a bright reason for an interesting conversation');
 export const friendText = () => tt('Мне интересно, что ты увидишь в этой карте. Напиши пару слов о том, что тебе откликнулось, и увидишь мой ответ.',
   'I wonder what you will see in this card. Write a few words about what speaks to you, and you will see my answer.');
 export const storyText = () => tt('Хочешь поделиться нашими ответами в сторис? Открой эту ссылку и посмотри, как это будет выглядеть.',
@@ -63,17 +65,47 @@ export const STORY_APPS = [
   { key: 'vk', name: tt('ВКонтакте', 'VK'), app: 'vk://', web: 'https://vk.com/',
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M7 9c.3 3.6 2.2 6 5.4 6h.3v-2.2c1.2.1 2.1 1 2.5 2.2h1.6c-.4-1.5-1.5-2.5-2.3-2.9.8-.4 1.8-1.4 2.1-2.9h-1.5c-.3 1.1-1.3 2.1-2.4 2.2V9h-1.5v3.9C10.3 12.6 9.3 11 9.2 9z" class="dot"/></svg>' },
 ];
-/** Сохранить картинку: на телефоне — системное меню (там «Сохранить изображение» в Фото), иначе — скачивание. */
-export async function saveImage(blob, name) {
+/**
+ * Сохранить картинку (21.11.2026, исправлено): раньше на iPhone ссылка на файл открывала пустую страницу со значком файла.
+ * Теперь: на телефоне с отправкой файлов — системное меню только с картинкой PNG (там «Сохранить изображение» → «Фото»,
+ * «Сохранить в Файлы»); без неё — картинка во весь экран, её сохраняют долгим нажатием; на компьютере — скачивание.
+ * Возвращает 'menu' (открылось меню — сохранено ли, неизвестно), 'cancel', 'overlay' или 'download'.
+ * hint(text) — показать подсказку рядом с кнопкой (на телефоне подтверждения «сохранено» не показываем).
+ */
+export async function saveImage(blob, name, hint) {
   const file = new File([blob], name, { type: 'image/png' });
-  if (navigator.canShare && navigator.canShare({ files: [file] }) && matchMedia('(pointer: coarse)').matches) {
-    try { await navigator.share({ files: [file] }); return true; } catch (e) { if (e && e.name === 'AbortError') return false; }
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (hint) hint(tt('В меню выбери «Сохранить изображение» — картинка попадёт в «Фото». Или «Сохранить в Файлы».', 'In the menu choose “Save Image” to put it in Photos, or “Save to Files”.'));
+    try { await navigator.share({ files: [file] }); return 'menu'; } catch (e) { if (e && e.name === 'AbortError') return 'cancel'; }
   }
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  toast(tt('Картинка сохранена', 'Image saved'));
-  return true;
+  if (touch) { imageOverlay(blob); return 'overlay'; }
+  const a = document.createElement('a'); const url = URL.createObjectURL(blob); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast(tt('Картинка скачана', 'Image downloaded'));
+  return 'download';
 }
+/** Картинка во весь экран: долгое нажатие → «Сохранить в Фото». Закрытие возвращает к прежнему экрану. */
+function imageOverlay(blob) {
+  const url = URL.createObjectURL(blob); const opener = document.activeElement;
+  const el = document.createElement('div'); el.className = 'img-pop'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', tt('Картинка для сохранения', 'Image to save'));
+  el.innerHTML = `<div class="img-pop-in"><img src="${url}" alt="${esc(tt('Готовая картинка', 'The finished image'))}"><p>${esc(tt('Нажми и удерживай картинку, затем выбери «Сохранить в Фото».', 'Press and hold the image, then choose “Save to Photos”.'))}</p>
+    <button class="btn" type="button" data-x>${esc(tt('Готово', 'Done'))}</button></div>`;
+  const done = () => { el.remove(); URL.revokeObjectURL(url); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus({ preventScroll: true }); };
+  const onKey = (e) => { if (e.key === 'Escape') done(); };
+  el.addEventListener('click', (e) => { if (e.target === el || e.target.closest('[data-x]')) done(); });
+  document.addEventListener('keydown', onKey); document.body.appendChild(el); el.querySelector('[data-x]').focus();
+}
+/** Отправить готовую картинку: системное меню с файлом; подпись — слоган и ссылка на проект (личное пожелание уже на картинке). */
+export async function sendImage(blob, name, caption) {
+  const file = new File([blob], name, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], text: caption }); return 'menu'; } catch (e) { if (e && e.name === 'AbortError') return 'cancel'; }
+  }
+  return null; // отправка файлов недоступна — вызывающий предлагает сохранить картинку
+}
+export const projectUrl = () => `${location.origin}${u('/')}`;
+export const postcardCaption = () => `${SLOGAN()}\n${projectUrl()}`;
 export function openStoryApp(key) {
   const a = STORY_APPS.find((x) => x.key === key); if (!a) return;
   const touch = matchMedia('(pointer: coarse)').matches;

@@ -873,6 +873,8 @@ r.delete('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, per
 r.post('/api/me/collections/:id/cards', auth.requireUser, (req, res) => out(res, personal.toggle(req.user.id, req.params.id === 'favorites' ? 'favorites' : req.params.id, (req.body || {}).code, (req.body || {}).on !== false)));
 // после входа: обмены и колокольчик этого браузера — в аккаунт; личные данные гостя — по согласию (merge)
 r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id) }));
+r.put('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.savePostcard(req.user.id, { ...(req.body || {}), id: req.params.id })));
+r.delete('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.deletePostcard(req.user.id, req.params.id)));
 r.post('/api/me/merge', auth.requireUser, (req, res) => out(res, personal.merge(req.user.id, req.body || {})));
 r.post('/api/cards-by-codes', (req, res) => res.json({ cards: personal.cardsOf((Array.isArray((req.body || {}).codes) ? req.body.codes : []).slice(0, 200).map(String)) }));
 
@@ -891,7 +893,7 @@ const indexHtml = () => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf
 let cachedIndex = null;
 // Превью ссылок для мессенджеров (19.11.2026): у приглашения и публичной ссылки карты — сама иллюстрация и вопрос.
 // Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.
-const OG_DESC = 'Dialogue Cards — повод начать интересный диалог.';
+const OG_DESC = 'Dialogue Cards — яркий повод для интересного разговора';
 function ogFor(req) {
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
   let code = m && m[3];

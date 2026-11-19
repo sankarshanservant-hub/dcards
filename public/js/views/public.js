@@ -1,6 +1,7 @@
 import { monthLabel } from '../i18n.js';
 import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js';
 import { openViewer } from '../viewer.js';
+import { SLOGAN, TAGLINE } from '../share.js';
 import { session, ic, tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
 const openFromQuery = (cards, openAt) => {
@@ -31,11 +32,11 @@ export async function home(ctx) {
   ctx.main.innerHTML = `
     <section class="hero home"><div class="wrap home-wrap">
       <div class="home-title"><h1>Dialogue Cards</h1>
-        <p class="greet">${esc(tt('Лёгкий повод для интересного разговора', 'An easy reason for an interesting conversation'))}</p></div>
+        <p class="greet">${esc(TAGLINE())}</p></div>
       <div class="home-axis">
         <h2 class="home-q">${esc(tt('Что ты здесь видишь?', 'What do you see here?'))}</h2>
         <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
-        <a class="btn yellow big home-all" href="${u('/library')}">${ic.cards} ${esc(tt('Все карты', 'All cards'))}</a>
+        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards"><span class="stack3" aria-hidden="true"><i class="s-l"></i><i class="s-r"></i><i class="s-f"><b></b></i></span>${esc(tt('Все карты', 'All cards'))}</a>
         <div class="home-send">
           <a class="btn home-out" href="${u('/library?play=friend')}">${ic.people}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
           <a class="btn home-out" href="${u('/library?play=postcard')}">${ic.mail || ic.cards}<span>${esc(tt('Отправить открытку', 'Send a postcard'))}</span></a>
@@ -47,6 +48,9 @@ export async function home(ctx) {
       <h2 class="home-join-h" id="join">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</h2>
       <div class="roles">${JOIN.map(roleCard).join('')}</div>
     </section>`;
+  // «Все карты»: стопка на пиктограмме один раз раздвигается, переход — сразу (анимация только у пиктограммы)
+  const all = ctx.main.querySelector('#all-cards');
+  if (all) all.addEventListener('click', () => { if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { all.classList.remove('fan'); void all.offsetWidth; all.classList.add('fan'); } });
   // Три вертикальные иллюстрации в ровном ряду с небольшим перекрытием; при новом заходе — другие работы.
   try {
     const { cards } = await api('/api/cards');
@@ -77,7 +81,7 @@ export async function about(ctx) {
   if (!ctx.alive()) return;
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Что такое Dialogue Cards?', 'What is Dialogue Cards?'))}</h1>
-      <p class="sub">${esc(tt('Dialogue Cards — повод начать интересный диалог.', 'Dialogue Cards — a reason to start an interesting dialogue.'))}</p></div>
+      <p class="sub">${esc(SLOGAN())}</p></div>
     <div class="stack" style="gap:8px">${ABOUT.map(([ru, en], i) => `<details class="about-df card-ui flat" id="about-${i + 1}"><summary><span class="grow">${esc(tt(ru, en))}</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="about-body"><p class="muted">${esc(tt('Текст готовят авторы проекта.', 'The project authors are preparing this text.'))}</p></div></details>`).join('')}</div>
     <div class="card-ui flat stack"><b>${esc(tt('Полный документ о проекте', 'The full project document'))}</b>
@@ -91,8 +95,8 @@ export function games(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1></div>
     <div class="list">
-      <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b><span class="small muted">${esc(tt('Игры для себя с картами галереи', 'Games for yourself with the gallery cards'))}</span></span></a>
-      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть с компанией', 'Play with friends'))}</b><span class="small muted">${esc(tt('От двух человек, каждый — со своего телефона', 'From two people, each on their own phone'))}</span></span></a>
+      <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b></span></a>
+      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub">${esc(tt('2–20 участников', '2–20 players'))}</span></span></a>
     </div></div>`;
 }
 
@@ -116,14 +120,14 @@ export async function library(ctx) {
   const pickHtml = () => !intent ? '' : `<div class="pick-mode" role="region" aria-label="${esc(intent === 'postcard' ? tt('Открытка', 'Postcard') : tt('Вопрос другу', 'Question to a friend'))}">
       ${intent === 'postcard' ? (ic.mail || ic.cards) : ic.people}<b>${esc(intent === 'postcard' ? tt('Открытка', 'Postcard') : tt('Вопрос другу', 'Question to a friend'))}</b>
       <button class="pick-x" type="button" data-pick-close aria-label="${esc(intent === 'postcard' ? tt('Закрыть выбор карты для открытки', 'Close card choice for the postcard') : tt('Закрыть выбор карты для друга', 'Close card choice for a friend'))}">${X}</button>
-      <p>${esc(intent === 'postcard' ? tt('Выбери любую карту для открытки', 'Choose any card for the postcard') : tt('Выбери карту, которую хочешь отправить другу', 'Choose the card you want to send to a friend'))}</p></div>`;
+      <p>${esc(intent === 'postcard' ? tt('Выбери любую карту для открытки', 'Choose any card for the postcard') : tt('Выбери карту, которую хочешь отправить', 'Choose the card you want to send'))}</p></div>`;
   ctx.main.innerHTML = `<div class="wrap page">
     <div id="pick">${pickHtml()}</div>
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted">${esc(tt(`${cards.length} карт · новые сверху · нажмите на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
       <div class="play-rows" id="play"><div>${diceButtonHtml()}</div>
-        <div class="play-two"><a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть с компанией', 'Play with friends'))}</a>
-        <a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a></div></div></div>
+        <div class="play-two"><a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a>
+        <a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div></div>
     ${cards.length ? groups.map((g) => `<h2 class="month-title">${esc(g.label)}</h2><div class="grid">${g.items.map(([c, i]) => tileHtml(c, i)).join('')}</div>`).join('') : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
     <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
       <p class="muted small">${esc(tt('Предложить иллюстрацию, провести встречу, стать куратором', 'Suggest an illustration, host a meeting, become a curator'))}</p></div>
@@ -141,9 +145,11 @@ export async function library(ctx) {
     history.replaceState(history.state, '', q.pathname + q.search + q.hash); // остаёмся в той же галерее, без перезагрузки
     const first = ctx.main.querySelector('.tile'); if (first) first.focus({ preventScroll: true });
   });
-  ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => (intent ? ctx.navigate((intent === 'postcard' ? '/postcard/' : '/play/') + cards[Number(b.dataset.i)].code + (intent === 'friend' && ctx.query.get('reply') ? '?reply=' + encodeURIComponent(ctx.query.get('reply')) : '')) : openAt(Number(b.dataset.i)))));
-  // Случайное открытие — только просмотр: счётчик выборов не меняется.
-  wireDice(ctx.main.querySelector('#rnd'), () => cards.length && openAt(Math.floor(Math.random() * cards.length)), ctx.alive);
+  // тап и кубик подчиняются одному активному режиму: просмотр, открытка или вопрос другу
+  const choose = (i) => (intent ? ctx.navigate((intent === 'postcard' ? '/postcard/' : '/play/') + cards[i].code + (intent === 'friend' && ctx.query.get('reply') ? '?reply=' + encodeURIComponent(ctx.query.get('reply')) : '')) : openAt(i));
+  ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => choose(Number(b.dataset.i))));
+  // Случайное открытие — только просмотр (или выбор в режиме): счётчик выборов не меняется.
+  wireDice(ctx.main.querySelector('#rnd'), () => cards.length && choose(Math.floor(Math.random() * cards.length)), ctx.alive);
   openFromQuery(cards, openAt);
 }
 

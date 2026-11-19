@@ -5,7 +5,7 @@ import { esc, api, u, tt, toast, visitorId, errorText, storage } from './util.js
 import { session } from './ui.js';
 import { QUESTION_FORMATS, START_GUIDES } from './content.js';
 import * as personal from './personal.js';
-import { shareInvite, friendText } from './share.js';
+import { shareInvite, friendText, SLOGAN } from './share.js';
 
 let current = null; // открытый просмотр
 // новое поведение (скилл apple-design, vendor/hk-feel): карта листается за пальцем 1:1, бросок по скорости, пружины;
@@ -514,7 +514,7 @@ export function openViewer(opts) {
     const c0 = opts.cards[index]; const inf = detailsCache.get(c0.code);
     const url = `${location.origin}${u('/play/' + encodeURIComponent(c0.code))}`; // публичная ссылка карты: получатель начнёт свой обмен
     if (navigator.share) {
-      try { await navigator.share({ title: 'Dialogue Cards', text: `${tt('Dialogue Cards — повод начать интересный диалог.', 'Dialogue Cards — a reason to start an interesting dialogue.')} ${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      try { await navigator.share({ title: 'Dialogue Cards', text: `${SLOGAN()} ${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
     }
     try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
     catch { ui.share = url; renderBottom(); const inp = bottom.querySelector('[data-share-url]'); if (inp) { inp.focus(); inp.select(); } }

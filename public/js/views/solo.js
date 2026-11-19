@@ -10,7 +10,7 @@ export const SOLO_GAMES = [
   { key: 'story', path: '/group/solo/story', ru: 'История из трёх карт', en: 'A story from three cards', dru: 'Три карты по очереди: первая начинает историю, вторая меняет её ход, третья помогает закончить.', den: 'Three cards in turn: the first starts a story, the second changes its course, the third helps end it.' },
   { key: 'connect', path: '/group/solo/connect', ru: 'Что их связывает?', en: 'What connects them?', dru: 'Две карты рядом. Найди между ними связь — а потом ещё одну.', den: 'Two cards side by side. Find a connection between them — and then another one.' },
   { key: 'eagle', path: '/group/solo/eagle', ru: 'Глаз-алмаз', en: 'Eagle Eye', dru: 'Рассмотри карту, сколько хочешь. Потом она скроется — и будет один вопрос на наблюдательность.', den: 'Look at the card as long as you like. Then it hides — and you get one question about what you noticed.' },
-  { key: 'imagine', path: '/group/solo/imagine', ru: 'Дай волю воображению', en: 'Let your imagination play', dru: 'Выбери две детали на карте. Придумай ассоциации и соедини две из них в новом образе.', den: 'Pick two details on the card. Come up with associations and combine two of them into a new image.' },
+  { key: 'imagine', path: '/group/solo/imagine', ru: 'Придумай ассоциации', en: 'Find associations', dru: 'Найди на карте две детали, придумай к ним ассоциации и соедини по одной в новый образ.', den: 'Find two details on the card, come up with associations and combine one from each into a new image.' },
 ];
 const G = (k) => SOLO_GAMES.find((g) => g.key === k);
 const T = (g) => (lang === 'en' ? g.en : g.ru);
@@ -22,7 +22,7 @@ export function hub(ctx) {
     <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть одному', 'Play solo'))}</h1>
       <p class="sub">${esc(tt('Игры для одного — без регистрации. Отвечай про себя.', 'Games for one — no sign-up. Answer to yourself.'))}</p></div>
     <div class="list">${SOLO_GAMES.map((g) => `<a class="item" href="${u(g.path)}"><span class="body"><b>${esc(T(g))}</b><span class="small">${esc(D(g))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
-    <p class="small muted">${esc(tt('Играть вдвоём или компанией:', 'Play with others:'))} <a href="${u('/group')}">${esc(tt('Играть с компанией', 'Play with friends'))}</a> · <a href="${u('/play')}">${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</a></p>
+    <p class="small muted">${esc(tt('Играть вдвоём или компанией:', 'Play with others:'))} <a href="${u('/group')}">${esc(tt('Играть компанией', 'Play with friends'))}</a> · <a href="${u('/library?play=friend')}">${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</a></p>
   </div>`;
 }
 
@@ -108,105 +108,105 @@ export async function eagle(ctx) {
   zoomer(ctx, cards); draw();
 }
 
-// ---------- «Дай волю воображению» ----------
+// ---------- «Придумай ассоциации» ----------
 // Две ветки ассоциаций от двух деталей, которые игрок сам заметил; затем пара — по одному слову из каждой ветки —
 // и вопрос, как они могли бы встретиться на одной картинке. Всё хранится только в этой вкладке.
 let nid = 1;
 const node = (word, parent = null) => ({ id: `n${Date.now().toString(36)}${nid++}`, word, parent });
+// «Придумай ассоциации» (21.11.2026): четыре шага на одном экране, у каждого заголовок рядом со своим действием.
+// Карту листают стрелками и свайпом в порядке галереи. Пример — свёрнутый, со своей миниатюрой, поля игрока не заполняет.
+const EXAMPLE_CODE = 'DC-0038'; // море и облачный корабль
 export async function imagine(ctx) {
   loading(ctx.main);
   let cards; try { cards = await loadCards(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const by = (c) => cards.find((x) => x.code === c);
+  if (!cards.length) { ctx.main.innerHTML = frame(G('imagine'), `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards yet.'))}</p>`); return; }
+  const blank = (code) => ({ v: 2, code, roots: ['', ''], assoc: [[], []], pair: [null, null], hold: [false, false], note: '', ex: false });
   let st = restore('dc_solo_imagine');
-  if (!st || !by(st.code)) st = { code: pickOther(cards, []).code, step: 1, roots: ['', ''], nodes: [], adding: null, pair: [null, null], hold: [false, false], note: '' };
-  const branch = (i) => { const root = st.nodes.find((n) => n.parent === null && n.branch === i); if (!root) return []; const out = []; const walk = (id) => st.nodes.filter((n) => n.parent === id).forEach((n) => { out.push(n); walk(n.id); }); walk(root.id); return out; };
-  const tree = (parentId, depth = 0) => st.nodes.filter((n) => n.parent === parentId).map((n) => `<li><button type="button" class="assoc ${st.adding === n.id ? 'on' : ''}" data-node="${n.id}" aria-label="${esc(tt(`Добавить ассоциацию к слову «${n.word}»`, `Add an association to “${n.word}”`))}">${esc(n.word)}</button>
-      ${st.adding === n.id ? `<form class="assoc-add" data-addto="${n.id}"><label class="sr-only" for="as-${n.id}">${esc(tt(`Ассоциация к слову «${n.word}»`, `Association for “${n.word}”`))}</label><input id="as-${n.id}" maxlength="30" placeholder="${esc(tt('ассоциация…', 'association…'))}" autocomplete="off"><button class="btn sm" type="submit">${esc(tt('Добавить', 'Add'))}</button></form>` : ''}
-      ${st.nodes.some((x) => x.parent === n.id) ? `<ul>${tree(n.id, depth + 1)}</ul>` : ''}</li>`).join('');
-  const draw = (focus) => {
-    keep('dc_solo_imagine', st);
-    const c = by(st.code); let inner;
-    const steps = `<ol class="imag-steps" aria-label="${esc(tt('Шаги', 'Steps'))}">${[tt('Выбери две детали', 'Pick two details'), tt('Придумай ассоциации', 'Make associations'), tt('Выбери пару', 'Choose a pair'), tt('Представь новый образ', 'Imagine a new image')].map((x, i) => `<li class="${i + 1 === st.step ? 'on' : i + 1 < st.step ? 'done' : ''}">${esc(x)}</li>`).join('')}</ol>`;
-    if (st.step === 1) {
-      inner = `${steps}<p class="vb-note" style="margin:0">${esc(tt('Выбери две детали на карте. Придумай ассоциации и соедини две из них в новом образе.', 'Pick two details on the card. Come up with associations and combine two of them into a new image.'))}</p>
-        ${cardImg(c, 'live-card sm-card')}
-        <form class="form" id="roots"><p style="margin:0"><b>${esc(tt('Выбери две детали', 'Pick two details'))}</b> — ${esc(tt('два символа, предмета или образа, которые ты заметил. Назови каждую коротко.', 'two symbols, objects or images you noticed. Name each briefly.'))}</p>
-          <div class="row"><label class="field small" style="flex:1">${esc(tt('Деталь 1', 'Detail 1'))}<input name="r0" maxlength="30" value="${esc(st.roots[0])}" placeholder="${esc(tt('например, солнце', 'e.g. sun'))}" autocomplete="off"></label>
-          <label class="field small" style="flex:1">${esc(tt('Деталь 2', 'Detail 2'))}<input name="r1" maxlength="30" value="${esc(st.roots[1])}" placeholder="${esc(tt('например, кактус', 'e.g. cactus'))}" autocomplete="off"></label></div>
-          <div class="row"><button class="btn yellow" type="submit">${esc(tt('Дальше', 'Next'))}</button><button class="btn light" type="button" data-newcard>${esc(tt('Другая карта', 'Another card'))}</button></div></form>`;
-    } else if (st.step === 2) {
-      const ok = [0, 1].every((i) => branch(i).length);
-      inner = `${steps}<p style="margin:0"><b>${esc(tt('Придумай ассоциации', 'Make associations'))}</b> — ${esc(tt('нажми на любое слово и добавь к нему ассоциацию. К одному слову можно добавить несколько, можно уходить вглубь цепочки.', 'tap any word and add an association to it. One word can have several; you can go deeper along a chain.'))}</p>
-        <div class="assoc-trees">${[0, 1].map((i) => `<ul class="assoc-tree" aria-label="${esc(tt(`Ветка ${i + 1}`, `Branch ${i + 1}`))}">${treeRoot(i)}</ul>`).join('')}</div>
-        <div class="row"><button class="btn yellow" type="button" data-topair ${ok ? '' : 'disabled'}>${esc(tt('Выбрать пару', 'Choose a pair'))}</button><button class="btn light" type="button" data-back1>${esc(tt('Назад', 'Back'))}</button></div>
-        ${ok ? '' : `<p class="vb-note" style="margin:0">${esc(tt('Добавь хотя бы по одной ассоциации в каждую ветку.', 'Add at least one association to each branch.'))}</p>`}`;
-    } else if (st.step === 3) {
-      const words = [0, 1].map((i) => branch(i));
-      inner = `${steps}<p style="margin:0"><b>${esc(tt('Выбери пару', 'Choose a pair'))}</b> — ${esc(tt('по одному слову из каждой ветки, сам или случайно.', 'one word from each branch, yourself or at random.'))}</p>
-        ${[0, 1].map((i) => `<fieldset class="pair-pick"><legend>${esc(st.roots[i])}</legend><div class="pc-row">${words[i].map((n) => `<button type="button" class="chip ${st.pair[i] === n.id ? 'on' : ''}" data-pick="${i}:${n.id}" aria-pressed="${st.pair[i] === n.id}">${esc(n.word)}</button>`).join('')}</div>
-          ${st.pair[i] ? `<label class="check small"><input type="checkbox" data-hold="${i}" ${st.hold[i] ? 'checked' : ''}> <span>${esc(tt('Оставить это слово', 'Keep this word'))}</span></label>` : ''}</fieldset>`).join('')}
-        <div class="row"><button class="btn light" type="button" data-random>${esc(tt('Случайная пара', 'Random pair'))}</button><button class="btn yellow" type="button" data-toimg ${st.pair[0] && st.pair[1] ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button>
-          <button class="link-btn" type="button" data-back2>${esc(tt('Добавить ассоциации', 'Add associations'))}</button></div>
-        ${words.some((w) => w.length < 2) ? `<p class="vb-note" style="margin:0">${esc(tt('Вариантов пока мало — можно добавить ассоциации.', 'Not many options yet — you can add associations.'))}</p>` : ''}`;
-    } else {
-      const w = st.pair.map((id) => (st.nodes.find((n) => n.id === id) || {}).word || '');
-      inner = `${steps}<div class="imag-pair"><span>${esc(w[0])}</span><b>+</b><span>${esc(w[1])}</span></div>
-        <p class="lead" style="margin:0"><b>${esc(tt('Как эти две находки могли бы встретиться на одной картинке?', 'How could these two finds meet in one picture?'))}</b></p>
-        <p class="vb-note" style="margin:0">${esc(tt('Можно оставить образ в воображении или коротко записать — по желанию.', 'You can keep the image in your imagination or jot it down — if you like.'))}</p>
-        <label class="sr-only" for="imn">${esc(tt('Мой образ', 'My image'))}</label><textarea id="imn" rows="2" maxlength="300" placeholder="${esc(tt('по желанию…', 'optional…'))}">${esc(st.note)}</textarea>
-        <div class="row"><button class="btn yellow" type="button" data-otherpair>${esc(tt('Другая пара', 'Another pair'))}</button><button class="btn light" type="button" data-restart>${esc(tt('Новая карта', 'New card'))}</button></div>`;
-    }
-    ctx.main.innerHTML = frame(G('imagine'), inner);
-    const f = focus && ctx.main.querySelector(focus); if (f) f.focus();
+  if (!st || st.v !== 2 || !cards.some((c) => c.code === st.code)) st = blank(cards[0].code);
+  const ex = cards.find((c) => c.code === EXAMPLE_CODE);
+  const idx = () => Math.max(0, cards.findIndex((c) => c.code === st.code));
+  const save = () => keep('dc_solo_imagine', st);
+  const chipsOf = (i) => st.assoc[i].map((w, k) => `<span class="assoc-chip">${esc(w)}<button type="button" data-rm="${i}:${k}" aria-label="${esc(tt(`Убрать «${w}»`, `Remove “${w}”`))}">×</button></span>`).join('');
+  const groupHtml = (i) => st.roots[i].trim() ? `<div class="assoc-group" data-g="${i}"><b>${esc(st.roots[i].trim())}</b><div class="assoc-chips" id="ac-${i}">${chipsOf(i)}</div>
+      <form class="assoc-add" data-addto="${i}"><label class="sr-only" for="as-${i}">${esc(tt(`Ассоциации к детали «${st.roots[i].trim()}»`, `Associations for “${st.roots[i].trim()}”`))}</label><input id="as-${i}" maxlength="60" placeholder="${esc(tt('Что приходит в голову?', 'What comes to mind?'))}" autocomplete="off"><button class="btn sm" type="submit">${esc(tt('Добавить', 'Add'))}</button></form></div>` : '';
+  const pairHtml = () => {
+    const ready = st.assoc[0].length && st.assoc[1].length;
+    if (!ready) return `<p class="vb-note" style="margin:0">${esc(tt('Сначала добавь хотя бы по одной ассоциации к каждой детали.', 'First add at least one association to each detail.'))}</p>`;
+    const w = [0, 1].map((i) => (st.pair[i] != null ? st.assoc[i][st.pair[i]] : null));
+    return `${[0, 1].map((i) => `<fieldset class="pair-pick"><legend>${esc(st.roots[i].trim())}</legend><div class="pc-row">${st.assoc[i].map((x, k) => `<button type="button" class="chip ${st.pair[i] === k ? 'on' : ''}" data-pick="${i}:${k}" aria-pressed="${st.pair[i] === k}">${esc(x)}</button>`).join('')}</div>
+        ${st.pair[i] != null ? `<label class="check small"><input type="checkbox" data-hold="${i}" ${st.hold[i] ? 'checked' : ''}> <span>${esc(tt('Оставить это слово', 'Keep this word'))}</span></label>` : ''}</fieldset>`).join('')}
+      <div class="row"><button class="btn light" type="button" data-random>${esc(tt('Случайная пара', 'Random pair'))}</button></div>
+      ${w[0] && w[1] ? `<div class="imag-pair" aria-live="polite"><span>${esc(w[0])}</span><b>+</b><span>${esc(w[1])}</span></div>
+        <label class="sr-only" for="imn">${esc(tt('Мой образ', 'My image'))}</label><textarea id="imn" rows="2" maxlength="300" placeholder="${esc(tt('Какой образ получается?', 'What image do you get?'))}">${esc(st.note)}</textarea>` : ''}`;
   };
-  // корень ветки и её дерево: исходная деталь — кнопка, к которой добавляются ассоциации
-  function treeRoot(i) {
-    const r = st.nodes.find((n) => n.parent === null && n.branch === i); if (!r) return '';
-    return `<li><button type="button" class="assoc root ${st.adding === r.id ? 'on' : ''}" data-node="${r.id}" aria-label="${esc(tt(`Добавить ассоциацию к слову «${r.word}»`, `Add an association to “${r.word}”`))}">${esc(r.word)}</button>
-      ${st.adding === r.id ? `<form class="assoc-add" data-addto="${r.id}"><label class="sr-only" for="as-${r.id}">${esc(tt(`Ассоциация к слову «${r.word}»`, `Association for “${r.word}”`))}</label><input id="as-${r.id}" maxlength="30" placeholder="${esc(tt('ассоциация…', 'association…'))}" autocomplete="off"><button class="btn sm" type="submit">${esc(tt('Добавить', 'Add'))}</button></form>` : ''}
-      ${st.nodes.some((x) => x.parent === r.id) ? `<ul>${tree(r.id)}</ul>` : ''}</li>`;
+  const draw = (focus) => {
+    save();
+    const c = cards[idx()];
+    ctx.main.innerHTML = frame(G('imagine'), `
+      <section class="imag-step"><h2><span class="n">1</span>${esc(tt('Выбери карту', 'Choose a card'))}</h2>
+        <div class="imag-carousel"><button class="icon-btn" type="button" data-step="-1" aria-label="${esc(tt('Предыдущая карта', 'Previous card'))}">${ic.chevronLeft || '‹'}</button>
+          <div class="imag-card" id="imcard">${cardImg(c, 'live-card sm-card')}</div>
+          <button class="icon-btn" type="button" data-step="1" aria-label="${esc(tt('Следующая карта', 'Next card'))}">${ic.chevronRight || '›'}</button></div>
+        <p class="small muted" style="margin:0;text-align:center">${idx() + 1} / ${cards.length}</p></section>
+      <section class="imag-step"><h2><span class="n">2</span>${esc(tt('Найди на карте две детали', 'Find two details on the card'))}</h2>
+        <div class="row"><label class="field small" style="flex:1">${esc(tt('Первая деталь', 'First detail'))}<input data-root="0" maxlength="30" value="${esc(st.roots[0])}" autocomplete="off"></label>
+          <label class="field small" style="flex:1">${esc(tt('Вторая деталь', 'Second detail'))}<input data-root="1" maxlength="30" value="${esc(st.roots[1])}" autocomplete="off"></label></div></section>
+      <section class="imag-step"><h2><span class="n">3</span>${esc(tt('Придумай ассоциации', 'Find associations'))}</h2>
+        <div class="assoc-groups" id="groups">${groupHtml(0)}${groupHtml(1)}${!st.roots[0].trim() && !st.roots[1].trim() ? `<p class="vb-note" style="margin:0">${esc(tt('Здесь появятся детали, которые ты назовёшь.', 'The details you name will appear here.'))}</p>` : ''}</div></section>
+      <section class="imag-step"><h2><span class="n">4</span>${esc(tt('Представь новый образ', 'Imagine a new image'))}</h2>
+        <p style="margin:0">${esc(tt('Возьми по одной ассоциации из каждого списка и соедини их. Какой образ получается?', 'Take one association from each list and combine them. What image do you get?'))}</p>
+        <div id="pairs" class="stack" style="gap:10px">${pairHtml()}</div></section>
+      <details class="imag-example" ${st.ex ? 'open' : ''}><summary>${esc(tt('Показать пример', 'Show an example'))}</summary>
+        <div class="imag-ex-body">${ex ? `<img src="${esc(ex.thumb)}" alt="${esc(tt('Пример: карта с морем и облачным кораблём', 'Example: a card with the sea and a cloud ship'))}" width="90">` : ''}
+          <div><p><b>${esc(tt('море', 'sea'))}</b> → ${esc(tt('глубина, свобода', 'depth, freedom'))}</p><p><b>${esc(tt('облачный корабль', 'cloud ship'))}</b> → ${esc(tt('парус, путешествие', 'sail, journey'))}</p>
+          <p>«${esc(tt('глубина', 'depth'))}» + «${esc(tt('парус', 'sail'))}» → ${esc(tt('корабль под водой с парусами из света', 'a ship under water with sails of light'))}</p></div></div></details>
+      <div class="row"><button class="link-btn" type="button" data-restart>${esc(tt('Начать заново', 'Start over'))}</button></div>`);
+    wireSwipe();
+    const f = focus && ctx.main.querySelector(focus); if (f) { f.focus(); if (f.setSelectionRange && f.value) f.setSelectionRange(f.value.length, f.value.length); }
+  };
+  const go = (d) => { const n = cards.length; st.code = cards[(idx() + d + n) % n].code; draw(); };
+  // свайп по иллюстрации листает карты (короткий тап — рассмотреть)
+  function wireSwipe() {
+    const el = ctx.main.querySelector('#imcard'); if (!el) return; let x0 = null; let y0 = 0;
+    el.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
+    el.addEventListener('pointerup', (e) => { if (x0 == null) return; const dx = e.clientX - x0; const dy = e.clientY - y0; x0 = null; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) { el.dataset.swiped = '1'; go(dx < 0 ? 1 : -1); } });
+    el.addEventListener('click', (e) => { if (el.dataset.swiped) { e.stopPropagation(); e.preventDefault(); delete el.dataset.swiped; } }, true);
+    el.style.touchAction = 'pan-y';
   }
+  const refresh = (part) => { // перерисовать только шаги 3–4, не теряя фокус в полях деталей
+    if (part !== 'pairs') ctx.main.querySelector('#groups').innerHTML = `${groupHtml(0)}${groupHtml(1)}${!st.roots[0].trim() && !st.roots[1].trim() ? `<p class="vb-note" style="margin:0">${esc(tt('Здесь появятся детали, которые ты назовёшь.', 'The details you name will appear here.'))}</p>` : ''}`;
+    ctx.main.querySelector('#pairs').innerHTML = pairHtml(); save();
+  };
   ctx.main.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (e.target.id === 'roots') {
-      const r0 = e.target.r0.value.trim(); const r1 = e.target.r1.value.trim();
-      if (!r0 || !r1) { (r0 ? e.target.r1 : e.target.r0).focus(); return; }
-      if (r0 !== st.roots[0] || r1 !== st.roots[1] || !st.nodes.length) {
-        st.roots = [r0, r1]; st.nodes = [{ ...node(r0), branch: 0 }, { ...node(r1), branch: 1 }]; st.pair = [null, null]; st.hold = [false, false];
-      }
-      st.step = 2; st.adding = st.nodes[0].id; draw(`#as-${st.nodes[0].id}`); return;
-    }
-    const add = e.target.closest('[data-addto]');
-    if (add) {
-      const word = add.querySelector('input').value.trim(); if (!word) return;
-      const parent = st.nodes.find((n) => n.id === add.dataset.addto);
-      st.nodes.push({ ...node(word, parent.id), branch: parent.branch });
-      draw(`#as-${parent.id}`); // можно сразу добавить к тому же слову ещё одну ассоциацию
-    }
+    const add = e.target.closest('[data-addto]'); if (!add) return; e.preventDefault();
+    const i = Number(add.dataset.addto); const inp = add.querySelector('input');
+    const words = inp.value.split(/[,;]/).map((w) => w.trim()).filter(Boolean); if (!words.length) return;
+    for (const w of words) if (!st.assoc[i].includes(w) && st.assoc[i].length < 30) st.assoc[i].push(w);
+    refresh(); const n = ctx.main.querySelector(`#as-${i}`); if (n) n.focus(); // можно сразу добавить ещё
   });
+  ctx.main.addEventListener('input', (e) => {
+    const r = e.target.closest('[data-root]');
+    if (r) { const i = Number(r.dataset.root); const had = !!st.roots[i].trim(); st.roots[i] = r.value; if (had !== !!r.value.trim()) { if (!r.value.trim()) { st.assoc[i] = []; st.pair[i] = null; } refresh(); } else { const b = ctx.main.querySelector(`.assoc-group[data-g="${i}"] > b`); if (b) b.textContent = r.value.trim(); save(); } return; }
+    if (e.target.id === 'imn') { st.note = e.target.value; save(); }
+  });
+  ctx.main.addEventListener('change', (e) => { const h = e.target.closest('[data-hold]'); if (h) { st.hold[Number(h.dataset.hold)] = h.checked; save(); } });
+  ctx.main.addEventListener('toggle', (e) => { if (e.target.classList && e.target.classList.contains('imag-example')) { st.ex = e.target.open; save(); } }, true);
   ctx.main.addEventListener('click', (e) => {
-    const nb = e.target.closest('[data-node]'); if (nb) { st.adding = st.adding === nb.dataset.node ? null : nb.dataset.node; draw(st.adding ? `#as-${st.adding}` : null); return; }
-    if (e.target.closest('[data-newcard]')) { st.code = pickOther(cards, [st.code]).code; draw(); return; }
-    if (e.target.closest('[data-back1]')) { st.step = 1; draw(); return; }
-    if (e.target.closest('[data-topair]')) { st.step = 3; st.adding = null; draw(); return; }
-    if (e.target.closest('[data-back2]')) { st.step = 2; draw(); return; }
-    const pk = e.target.closest('[data-pick]'); if (pk) { const [i, id] = pk.dataset.pick.split(':'); st.pair[Number(i)] = id; draw(); return; }
+    const sb = e.target.closest('[data-step]'); if (sb) { go(Number(sb.dataset.step)); return; }
+    const rm = e.target.closest('[data-rm]'); if (rm) { const [i, k] = rm.dataset.rm.split(':').map(Number); st.assoc[i].splice(k, 1); if (st.pair[i] === k) st.pair[i] = null; else if (st.pair[i] > k) st.pair[i]--; refresh(); return; }
+    const pk = e.target.closest('[data-pick]'); if (pk) { const [i, k] = pk.dataset.pick.split(':').map(Number); st.pair[i] = k; st.note = ''; refresh('pairs'); return; }
     if (e.target.closest('[data-random]')) {
-      // случайная пара — из слов самого игрока; удержанное слово остаётся, меняется только второе
+      // случайная пара — по одной ассоциации из двух списков; удержанное слово остаётся
       for (const i of [0, 1]) {
-        if (st.hold[i] && st.pair[i]) continue;
-        const ws = branch(i); if (!ws.length) continue;
-        const pool = ws.length > 1 ? ws.filter((n) => n.id !== st.pair[i]) : ws;
-        st.pair[i] = pool[Math.floor(Math.random() * pool.length)].id;
+        if (st.hold[i] && st.pair[i] != null) continue;
+        const n = st.assoc[i].length; if (!n) continue;
+        const pool = [...Array(n).keys()].filter((k) => n === 1 || k !== st.pair[i]);
+        st.pair[i] = pool[Math.floor(Math.random() * pool.length)];
       }
-      draw(); return;
+      st.note = ''; refresh('pairs'); return;
     }
-    if (e.target.closest('[data-toimg]')) { st.step = 4; draw(); return; }
-    if (e.target.closest('[data-otherpair]')) { st.step = 3; st.note = ''; draw(); return; }
-    if (e.target.closest('[data-restart]')) { st = { code: pickOther(cards, [st.code]).code, step: 1, roots: ['', ''], nodes: [], adding: null, pair: [null, null], hold: [false, false], note: '' }; draw(); window.scrollTo(0, 0); }
+    if (e.target.closest('[data-restart]')) { st = blank(st.code); draw(); window.scrollTo(0, 0); }
   });
-  ctx.main.addEventListener('change', (e) => { const h = e.target.closest('[data-hold]'); if (h) { st.hold[Number(h.dataset.hold)] = h.checked; keep('dc_solo_imagine', st); } });
-  ctx.main.addEventListener('input', (e) => { if (e.target.id === 'imn') { st.note = e.target.value; keep('dc_solo_imagine', st); } });
   zoomer(ctx, cards); draw();
 }

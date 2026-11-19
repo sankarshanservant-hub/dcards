@@ -7,23 +7,23 @@ import { session } from './ui.js';
 
 const KEY = 'dc_personal';
 const MAX = 40;
-const empty = () => ({ notes: {}, favorites: [], collections: [] });
+const empty = () => ({ notes: {}, favorites: [], collections: [], postcards: [] });
 let cache = null; let cacheUser = undefined;
 
 function local() { try { const v = JSON.parse(storage.get(KEY) || 'null'); return v && typeof v === 'object' ? { ...empty(), ...v } : empty(); } catch { return empty(); } }
 function saveLocal(v) { storage.set(KEY, JSON.stringify(v)); }
-export const hasLocal = () => { const v = local(); return Object.keys(v.notes).length || v.favorites.length || v.collections.some((c) => c.codes.length); };
+export const hasLocal = () => { const v = local(); return Object.keys(v.notes).length || v.favorites.length || v.collections.some((c) => c.codes.length) || (v.postcards || []).length; };
 
 /** Текущее состояние в одном виде: { notes: {code: {text}}, collections: [{id, title, favorites, codes}] }. */
 export async function load(force = false) {
   const uid = session.user ? session.user.id : null;
   if (cache && cacheUser === uid && !force) return cache;
   if (uid) {
-    try { const s = await api('/api/me/personal'); cache = { notes: s.notes, collections: s.collections, server: true }; }
-    catch { cache = { notes: {}, collections: [{ id: 'favorites', title: tt('Избранное', 'Favourites'), favorites: true, codes: [] }], server: true }; }
+    try { const s = await api('/api/me/personal'); cache = { notes: s.notes, collections: s.collections, postcards: s.postcards || [], server: true }; }
+    catch { cache = { notes: {}, collections: [{ id: 'favorites', title: tt('Избранное', 'Favourites'), favorites: true, codes: [] }], postcards: [], server: true, failed: true }; }
   } else {
     const v = local();
-    cache = { notes: v.notes, collections: [{ id: 'favorites', title: tt('Избранное', 'Favourites'), favorites: true, codes: v.favorites }, ...v.collections.map((c) => ({ ...c, favorites: false }))], server: false };
+    cache = { notes: v.notes, collections: [{ id: 'favorites', title: tt('Избранное', 'Favourites'), favorites: true, codes: v.favorites }, ...v.collections.map((c) => ({ ...c, favorites: false }))], postcards: v.postcards || [], server: false };
   }
   cacheUser = uid;
   return cache;
@@ -80,19 +80,35 @@ export async function deleteCollection(id) {
   s.collections = s.collections.filter((x) => String(x.id) !== String(id));
 }
 
+// ---------- «Мои открытки» (21.11.2026): внутри «Избранного»; у гостя — в браузере, у вошедшего — на сервере ----------
+export const newPostcardId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+/** Сохранить открытку (новую или изменённую — по id). */
+export async function savePostcard(p) {
+  const s = await load(); const rec = { id: p.id, code: p.code, design: p.design, updatedAt: new Date().toISOString() };
+  if (s.server) { if (s.failed) throw new Error('offline'); await api(`/api/me/postcards/${encodeURIComponent(p.id)}`, { method: 'PUT', body: { code: p.code, design: p.design } }); }
+  else { const v = local(); v.postcards = (v.postcards || []).filter((x) => x.id !== p.id); v.postcards.unshift(rec); saveLocal(v); guestHint(); }
+  s.postcards = [rec, ...(s.postcards || []).filter((x) => x.id !== p.id)];
+}
+export async function deletePostcard(id) {
+  const s = await load();
+  if (s.server) await api(`/api/me/postcards/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  else { const v = local(); v.postcards = (v.postcards || []).filter((x) => x.id !== id); saveLocal(v); }
+  s.postcards = (s.postcards || []).filter((x) => x.id !== id);
+}
+
 /** После входа: обмены и колокольчик браузера — в аккаунт; личные данные — спросить и перенести. */
 export async function afterLogin() {
   cache = null;
   try { await api('/api/me/claim', { method: 'POST' }); } catch { /* не страшно */ }
   if (!hasLocal()) return;
   const v = local();
-  const n = Object.keys(v.notes).length; const f = v.favorites.length; const c = v.collections.length;
-  if (!f && !c && n) { await api('/api/me/merge', { method: 'POST', body: { notes: v.notes } }).catch(() => {}); storage.set(KEY, ''); return; } // заметки скрыты в интерфейсе — переносим молча, чтобы не потерялись
-  const ok = confirm(tt(`В этом браузере сохранено: в избранном — ${f}, подборок — ${c}. Перенести в аккаунт, чтобы видеть их на других устройствах? Ничего не перезапишется.`,
-    `This browser has ${f} favourites and ${c} collections. Move them to your account to see them on other devices? Nothing will be overwritten.`));
+  const n = Object.keys(v.notes).length; const f = v.favorites.length; const c = v.collections.length; const pc = (v.postcards || []).length;
+  if (!f && !c && !pc && n) { await api('/api/me/merge', { method: 'POST', body: { notes: v.notes } }).catch(() => {}); storage.set(KEY, ''); return; } // заметки скрыты в интерфейсе — переносим молча, чтобы не потерялись
+  const ok = confirm(tt(`В этом браузере сохранено: в избранном — ${f}, подборок — ${c}, открыток — ${pc}. Перенести в аккаунт, чтобы видеть их на других устройствах? Ничего не перезапишется.`,
+    `This browser has ${f} favourites, ${c} collections and ${pc} postcards. Move them to your account to see them on other devices? Nothing will be overwritten.`));
   if (!ok) return;
   try {
-    await api('/api/me/merge', { method: 'POST', body: { notes: v.notes, favorites: v.favorites, collections: v.collections.map((x) => ({ title: x.title, codes: x.codes })) } });
+    await api('/api/me/merge', { method: 'POST', body: { notes: v.notes, favorites: v.favorites, collections: v.collections.map((x) => ({ title: x.title, codes: x.codes })), postcards: v.postcards || [] } });
     storage.set(KEY, ''); toast(tt('Перенесено в аккаунт', 'Moved to your account'));
   } catch { toast(tt('Не удалось перенести — данные остались в браузере.', 'Could not move — the data stays in this browser.')); }
 }

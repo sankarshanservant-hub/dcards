@@ -33,6 +33,7 @@ const routes = [
   [/^\/play\/?$/, (ctx) => xch.playPage(ctx, null)],
   [/^\/postcard\/?$/, (ctx) => pc.postcard(ctx, null)],
   [/^\/postcard\/(DC-\d{4,6})\/?$/, pc.postcard],
+  [/^\/me\/postcards\/?$/, pc.myPostcards],
   [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
   [/^\/me\/exchanges\/?$/, xch.myExchanges],
@@ -93,9 +94,11 @@ const depth = () => (history.state && history.state.depth) || 0;
 const PARENTS = [
   [/^\/g\//, '/group', 'К играм', 'To games'],
   [/^\/group\/solo\/./, '/group/solo', 'Играть одному', 'Play solo'],
-  [/^\/group\/solo\/?$/, '/library#play', 'К играм', 'To games'],
+  [/^\/group\/solo\/?$/, '/games', 'К играм', 'To games'],
+  [/^\/group\/?$/, '/games', 'К играм', 'To games'],
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
+  [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
   [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
@@ -294,8 +297,9 @@ function openMenu() {
         : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Иллюстрации для живого разговора', 'Illustrations for real conversation'))}</span></div>`}
       <button class="icon-btn" type="button" data-close aria-label="${esc(tt('Закрыть', 'Close'))}">${ic.close}</button>
     </div>
+    ${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What is Dialogue Cards?')}
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
-    ${mi('/library#play', ic.dice, 'Играть', 'Play')}
+    ${mi('/games', ic.dice, 'Играть', 'Play')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}
     ${mi('/start#join', ic.people, 'Участвовать', 'Take part')}
     ${mi('/chats', ic.chats, 'Общение в чатах', 'Chats', '', '', false, session.unread ? String(session.unread) : '')}
@@ -304,10 +308,9 @@ function openMenu() {
       ${mi('/me', ic.user, 'Профиль', 'Profile')}
       ${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}
       ${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
-      ${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What is Dialogue Cards?')}
       ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications')}
       ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', '', '', true) : ''}`
-    : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What is Dialogue Cards?')}
+    : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
       <div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
     ${session.config.demoMode ? `<div class="demo-box">
       <p>${esc(tt('Демо-режим прототипа: войдите под тестовой ролью, чтобы пройти её путь. Права проверяются на сервере. Демо-данные помечены и не смешиваются с настоящими.', 'Prototype demo mode: sign in as a test role to walk through its path. Permissions are checked on the server. Demo data is labelled and kept apart from real data.'))}</p>

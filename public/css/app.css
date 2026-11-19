@@ -1191,3 +1191,67 @@ ol.qlist { list-style: none; }
 .x-question { overflow-wrap: anywhere; }
 .x-asked { margin: 0; text-align: center; overflow-wrap: anywhere; }
 .ask-q { font-weight: 600; }
+
+/* ---------- 21.11: главная ---------- */
+.hero.home .wrap.home-wrap { padding-top: 44px; gap: 30px; }
+@media (min-width: 900px) { .hero.home .wrap.home-wrap { padding-top: 64px; } }
+.home-title h1 { font-size: clamp(2.9rem, 10vw, 5.2rem); }
+.home-title .greet { margin-top: 4px; }
+.home-all { min-width: 0; padding: 12px 22px 12px 16px; min-height: 50px; gap: 12px; font-size: 1.05rem; }
+/* пиктограмма «Все карты»: объёмная стопка из трёх вертикальных карт */
+.stack3 { position: relative; display: inline-block; width: 30px; height: 28px; flex: none; }
+.stack3 i { position: absolute; top: 2px; width: 15px; height: 23px; border-radius: 3px; box-shadow: 0 2px 4px rgba(0,0,0,.3); transition: transform .32s cubic-bezier(.3,.7,.3,1); }
+.stack3 .s-l { left: 3px; background: #9fd0f0; transform: translate(-1px, 1px); }
+.stack3 .s-r { left: 12px; background: #f6eedc; transform: translate(1px, 1px); }
+.stack3 .s-f { left: 7.5px; top: 3px; background: #1b2350; box-shadow: 0 3px 6px rgba(0,0,0,.45); }
+.stack3 .s-f b { position: absolute; left: 4px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: #f6eedc; box-shadow: 0 6px 0 -2px #9fd0f0; }
+.home-all.fan .s-l { animation: st-l .5s ease; } .home-all.fan .s-r { animation: st-r .5s ease; }
+@keyframes st-l { 40% { transform: translate(-6px, 1px); } 100% { transform: translate(-1px, 1px); } }
+@keyframes st-r { 40% { transform: translate(6px, 1px); } 100% { transform: translate(1px, 1px); } }
+@media (prefers-reduced-motion: reduce) { .home-all.fan .stack3 i { animation: none !important; } }
+.home-send { max-width: 680px; }
+.home-out { flex: 1 1 auto; padding-inline: 16px; }
+.pick-mode p { color: var(--text); }
+.game-sub { display: block; margin-top: 6px; color: var(--text-2); font-size: .92rem; }
+.game-lead { margin: 2px 0 0; color: var(--text); font-weight: 600; font-size: 1.05rem; }
+.game-how { margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2, rgba(127,127,127,.1)); display: grid; gap: 6px; }
+.game-how p { margin: 0; }
+/* 21.11: открытка */
+.pc-title { margin: 0; text-align: center; }
+.pc-tabs.two { grid-template-columns: 1fr 1fr; }
+.pc-sel .pc-handle { right: -14px; bottom: -14px; width: 20px; height: 20px; display: grid; place-items: center; background: var(--accent); border: 1.5px solid #fff; color: #10142a; }
+.pc-sel .pc-handle svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pc-sel .pc-handle::before { content: ''; position: absolute; inset: -12px; border-radius: 50%; } /* область касания ~44 px */
+.pc-acts { justify-content: center; }
+.pc-acts .btn { flex: 1 1 160px; justify-content: center; }
+.pc-status { text-align: center; min-height: 1px; }
+.pc-list { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.pc-item { display: grid; gap: 8px; align-content: start; }
+.pc-thumb { display: block; line-height: 0; }
+.pc-thumb canvas { width: 100%; height: auto; border-radius: 12px; box-shadow: var(--shadow); }
+.sub-item { margin-left: 28px; }
+.pc-fav-link { border: 1px solid var(--border); border-radius: 14px; }
+/* картинка для сохранения долгим нажатием */
+.img-pop { position: fixed; inset: 0; z-index: 210; background: rgba(0,0,0,.82); display: grid; place-items: center; padding: 16px; }
+.img-pop-in { display: grid; gap: 12px; justify-items: center; max-width: 520px; color: #fff; text-align: center; }
+.img-pop-in img { max-width: 100%; max-height: 70vh; border-radius: 10px; -webkit-touch-callout: default; user-select: auto; }
+.img-pop-in p { margin: 0; }
+/* 21.11: «Придумай ассоциации» */
+.imag-step { display: grid; gap: 10px; padding-top: 6px; }
+.imag-step h2 { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 10px; }
+.imag-step h2 .n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #10142a; font-size: .95rem; flex: none; }
+.imag-carousel { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.imag-card { touch-action: pan-y; }
+.imag-card .live-card { width: auto; height: min(42vh, 360px); max-width: 60vw; }
+.assoc-groups { display: grid; gap: 14px; }
+@media (min-width: 640px) { .assoc-groups { grid-template-columns: 1fr 1fr; } }
+.assoc-group { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; }
+.assoc-group > b { font-size: 1.05rem; }
+.assoc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.assoc-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px 5px 12px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--accent); font-weight: 600; }
+.assoc-chip button { border: 0; background: transparent; color: var(--text); width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: 1rem; }
+.imag-example { border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; }
+.imag-example summary { cursor: pointer; font-weight: 600; }
+.imag-ex-body { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; }
+.imag-ex-body img { border-radius: 8px; flex: none; height: auto; }
+.imag-ex-body p { margin: 0 0 6px; }
