@@ -339,6 +339,8 @@ function state(code, deviceId, showDemo) {
   const r = room(code); if (!r) return null;
   const members = R.members.all(r.id);
   const me = R.member.get(r.id, deviceId);
+  // не участник (открыл ссылку или подбирает код) видит только, что комната есть: без имён, карт и выборов
+  if (!me || me.left_at) return { code: r.code, format: r.format, status: r.status, count: members.length, me: null };
   const d = dataOf(r);
   const cardOut = (c) => { if (!c) return null; const k = db.prepare('SELECT * FROM cards WHERE code = ?').get(c); return k ? publicCard(k) : null; };
   const name = (id) => (members.find((m) => m.id === id) || db.prepare('SELECT name FROM group_members WHERE id = ?').get(id) || {}).name || '—';

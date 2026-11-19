@@ -1,7 +1,7 @@
 // Вход по email без пароля (код в письме), вход владельца по паролю, демо-роли; профиль.
 import { lang } from '../i18n.js';
 import { esc, tt, u, api, errorText, toast } from '../util.js';
-import { session, refreshSession, rolesText, needLogin, stepsBar, ic, siteSession, siteProfileName, loginWithSite } from '../ui.js';
+import { session, refreshSession, rolesText, needLogin, stepsBar, ic, siteSession, siteProfileName, loginWithSite, skipSiteAutoLogin } from '../ui.js';
 
 const DEMO_ROLES = [['guest', 'Участник', 'Participant', 'Галерея и встречи', 'Gallery and meetings'], ['facilitator', 'Фасилитатор', 'Facilitator', 'Подборка, QR, встречи', 'Selection, QR, meetings'], ['artist', 'Художник', 'Artist', 'Работы и возвраты', 'Works and returns'], ['curator', 'Куратор', 'Curator', 'Работы на рассмотрении', 'Works under review'], ['admin', 'Администратор', 'Admin', 'Люди, заявки, встречи', 'People, applications, meetings']];
 const demoBtn = ([k, ru, en, dru, den], i) => `<button class="btn ${i === 0 ? 'yellow' : 'light'}" type="button" data-demo="${k}"><b>${esc(tt(ru, en))}</b><span class="small">${esc(tt(dru, den))}</span></button>`;
@@ -76,7 +76,7 @@ export function login(ctx) {
     const sg = ctx.main.querySelector('#site-go');
     if (sg) sg.addEventListener('click', async () => {
       if (await loginWithSite({ force: true })) { await refreshSession(); toast(tt('Вы вошли', 'Signed in')); goAfterLogin(ctx); }
-      else ctx.main.querySelector('#serr').textContent = tt('Сессия сайта устарела — войдите на сайте заново.', 'The site session has expired — sign in on the site again.');
+      else ctx.main.querySelector('#serr').textContent = loginWithSite.lastError && loginWithSite.lastError.code === 'site_link_required' ? errorText(loginWithSite.lastError) : tt('Сессия сайта устарела — войдите на сайте заново.', 'The site session has expired — sign in on the site again.');
     });
     const so = ctx.main.querySelector('#site-open');
     if (so) so.addEventListener('click', () => {
@@ -133,10 +133,50 @@ export function profile(ctx) {
       <div><button class="btn dark" type="submit">${esc(tt('Сохранить', 'Save'))}</button></div></form>
     <div class="list">${[['/me/exchanges', ic.chats, tt('Мои обмены', 'My exchanges')], ['/me/collections', ic.cards, tt('Мои подборки', 'My collections')]].map(([href, icon, label]) => `<a class="item" href="${u(href)}"><span class="ic">${icon}</span><span class="body"><b>${esc(label)}</b></span><span>→</span></a>`).join('')}</div>
     ${links.length ? `<h2 style="margin:8px 0 0">${esc(tt('Мои кабинеты', 'My spaces'))}</h2><div class="list">${links.map(([href, icon, label]) => `<a class="item" href="${u(href)}"><span class="ic">${icon}</span><span class="body"><b>${esc(label)}</b></span><span>→</span></a>`).join('')}</div>` : `<div class="card-ui flat"><p class="muted" style="margin:0 0 10px">${esc(tt('Хотите присоединиться к проекту?', 'Want to join the project?'))}</p><a class="btn dark" href="${u('/start#join')}">${esc(tt('Как участвовать', 'Ways to take part'))}</a></div>`}
+    ${s.isDemo ? '' : securityHtml(s)}
   </div>`;
+  wireSecurity(ctx);
   ctx.main.querySelector('#pf').addEventListener('submit', async (e) => {
     e.preventDefault();
     try { await api('/api/me', { method: 'PATCH', body: { name: e.target.name.value, publicName: e.target.publicName.value } }); await refreshSession(); toast(tt('Сохранено', 'Saved')); ctx.rerender(); }
     catch (x) { toast(errorText(x)); }
+  });
+}
+
+// ---------- безопасность входа: аккаунт сайта и «выйти на всех устройствах» ----------
+function securityHtml(s) {
+  const siteOn = !!session.config.siteLogin;
+  const privileged = s.isOwner || ['admin', 'curator', 'facilitator'].some((r) => s.roles.includes(r));
+  const site = !siteOn ? '' : s.siteLinked
+    ? `<p class="small" style="margin:0">✓ ${esc(tt('Вход аккаунтом сайта harekrishna.info подключён.', 'Sign-in with the harekrishna.info site account is connected.'))}${s.isOwner ? ' ' + esc(tt('Пароль владельца остаётся запасным способом входа.', 'The owner password stays as a backup way to sign in.')) : ''}</p>`
+    : `<p class="small muted" style="margin:0">${esc(s.isOwner
+      ? tt('Входите через аккаунт сайта (Google или Яндекс — включите там двухэтапную проверку), а пароль оставьте на крайний случай.', 'Sign in with the site account (Google or Yandex — turn on 2-step verification there) and keep the password for emergencies.')
+      : privileged ? tt('Аккаунт с правами не подключается к аккаунту сайта сам — только по этой кнопке.', 'An account with special rights is connected to the site account only with this button.')
+        : tt('Чтобы входить тем же аккаунтом, что на всём сайте.', 'To sign in with the same account as on the rest of the site.'))}</p>
+      <div><button class="btn light" type="button" id="site-link">${esc(tt('Привязать к моему аккаунту сайта', 'Link to my site account'))}</button></div>
+      <p class="form-error" id="link-err" role="alert" style="margin:0"></p>`;
+  return `<div class="card-ui flat stack"><h2 style="margin:0">${esc(tt('Вход и устройства', 'Sign-in and devices'))}</h2>${site}
+    <div><button class="btn light" type="button" id="logout-all">${esc(tt('Выйти на всех устройствах', 'Sign out on all devices'))}</button></div>
+    <p class="small muted" style="margin:0">${esc(tt('Завершает вход везде, включая это устройство. Пригодится, если телефон потерян или вы входили на чужом компьютере.', 'Ends every session, including this device. Useful if a phone is lost or you signed in on someone else’s computer.'))}</p></div>`;
+}
+function wireSecurity(ctx) {
+  const lk = ctx.main.querySelector('#site-link');
+  if (lk) lk.addEventListener('click', async () => {
+    const err = ctx.main.querySelector('#link-err'); err.textContent = '';
+    const s = siteSession();
+    if (!s) {
+      err.textContent = tt('Сначала войдите на сайте (откроется в новой вкладке), затем вернитесь и нажмите кнопку ещё раз.', 'First sign in on the site (it opens in a new tab), then come back and press the button again.');
+      window.open('/me/', '_blank', 'opener'); return;
+    }
+    lk.disabled = true;
+    try { await api('/api/auth/site/link', { method: 'POST', body: { session: s } }); await refreshSession(); toast(tt('Аккаунт сайта привязан', 'Site account linked')); ctx.rerender(); }
+    catch (x) { err.textContent = errorText(x); lk.disabled = false; }
+  });
+  const la = ctx.main.querySelector('#logout-all');
+  if (la) la.addEventListener('click', async () => {
+    if (!confirm(tt('Выйти на всех устройствах, включая это?', 'Sign out on all devices, including this one?'))) return;
+    la.disabled = true;
+    try { skipSiteAutoLogin(); await api('/api/auth/logout-all', { method: 'POST' }); await refreshSession(); toast(tt('Вы вышли на всех устройствах', 'Signed out on all devices')); ctx.navigate('/'); }
+    catch (x) { toast(errorText(x)); la.disabled = false; }
   });
 }

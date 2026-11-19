@@ -29,10 +29,14 @@ function mine(cardId, visitorId, user) {
   return (user && stmt.activeByUser.get(cardId, user.id)) || (visitorId && stmt.activeByVisitor.get(cardId, visitorId)) || null;
 }
 
-/** Выбор в библиотеке: повторный выбор той же карты (тем же браузером или аккаунтом) ничего не добавляет. */
-const choose = db.transaction((card, visitorId, user) => {
+/**
+ * Выбор в библиотеке: повторный выбор той же карты (тем же браузером или аккаунтом) ничего не добавляет.
+ * countable() → false — выбор сохраняется, но в общий счёт не идёт (слишком много выборов одной карты с одного адреса);
+ * спрашивается только для нового выбора.
+ */
+const choose = db.transaction((card, visitorId, user, countable = () => true) => {
   const reason = notCountedReason(card, user);
-  if (!mine(card.id, visitorId, user)) stmt.insert.run(card.id, visitorId, user ? user.id : null, reason ? 0 : 1);
+  if (!mine(card.id, visitorId, user)) stmt.insert.run(card.id, visitorId, user ? user.id : null, reason || !countable() ? 0 : 1);
   return { chosen: true, notCounted: reason, selectedCount: total(card.id) };
 });
 const unchoose = db.transaction((card, visitorId, user) => {

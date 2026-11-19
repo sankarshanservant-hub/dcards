@@ -130,6 +130,13 @@ export async function datePage(ctx, id) {
       </div>
       <div class="card-ui" id="reg"></div></div></div>`;
     const reg = ctx.main.querySelector('#reg');
+    if (done && done.pending) {
+      reg.innerHTML = `<span class="pill">${ic.mail} ${esc(tt('Осталось подтвердить', 'One step left'))}</span><h2 style="margin:10px 0 6px">${esc(tt('Проверьте почту', 'Check your email'))}</h2>
+        <p class="muted" style="margin:0">${esc(done.letter && done.letter.failed
+          ? tt('Письмо не удалось отправить. Попробуйте записаться позже.', 'The email could not be sent. Please try again later.')
+          : tt('Мы отправили письмо со ссылкой. Откройте её в течение суток — тогда место будет за вами. Если вы уже записаны, в письме будет ссылка на вашу запись.', 'We have sent you an email with a link. Open it within 24 hours to take your seat. If you are already registered, the email has a link to your registration.'))}</p>`;
+      return;
+    }
     if (done) {
       const mailLine = done.isDemo ? tt('Это демо-встреча: письмо не отправляется. Отменить запись можно по ссылке «Моя запись и отмена».', 'This is a demo meeting: no email is sent. You can cancel via “My registration and cancel”.')
         : done.letter.sent ? tt('Письмо с этими данными и ссылкой для отмены отправлено на вашу почту.', 'An email with these details and a cancel link has been sent to you.')
@@ -146,7 +153,9 @@ export async function datePage(ctx, id) {
         <p class="muted" style="margin:0">${esc(state === 'full' ? tt('Все места на эту дату заняты. Лист ожидания пока не предусмотрен — посмотрите другие даты.', 'All seats for this date are taken. There is no waiting list yet — check other dates.') : tt('На эту дату записаться нельзя.', 'You cannot sign up for this date.'))}</p>`;
       return;
     }
-    const mailHint = session.config.mailConnected && !m.isDemo
+    const mailHint = session.config.meetingConfirm && !m.isDemo
+      ? tt('Пришлём ссылку: место будет за вами, когда вы её откроете. Адрес видит только фасилитатор.', 'We will email you a link: the seat is yours once you open it. Only the facilitator sees your address.')
+      : session.config.mailConnected && !m.isDemo
       ? tt('Пришлём подтверждение и ссылку для отмены записи. Адрес видит только фасилитатор.', 'We will send a confirmation and a cancel link. Only the facilitator sees your address.')
       : tt('Нужен фасилитатору, чтобы связаться с вами. Ссылку для отмены вы получите на этой странице.', 'The facilitator needs it to reach you. You will get the cancel link on this page.');
     reg.innerHTML = `<h2 style="margin:0 0 4px">${esc(tt('Записаться', 'Sign up'))}</h2>
@@ -174,7 +183,9 @@ export async function datePage(ctx, id) {
       sending = true; const btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = tt('Записываем…', 'Signing you up…');
       try {
         done = await api(`/api/meetings/dates/${id}/register`, { method: 'POST', body: { name: f.name.value, email: f.email.value, contact: f.contact ? f.contact.value : '', lang } });
-        d.left = Math.max(0, d.left - 1); sending = false; draw(); toast(tt('Вы записаны', 'You are registered'));
+        sending = false;
+        if (done.pending) { draw(); toast(tt('Письмо отправлено', 'Email sent')); }
+        else { d.left = Math.max(0, d.left - 1); draw(); toast(tt('Вы записаны', 'You are registered')); }
       } catch (err) {
         sending = false;
         if (err.code === 'full') { state = 'full'; d.left = 0; draw(); return; }
@@ -236,4 +247,23 @@ export async function registration(ctx, token) {
     });
   };
   draw();
+}
+
+/** Ссылка из письма «Подтвердите запись»: место занимается сейчас, затем — страница записи. */
+export async function confirmRegistration(ctx, token) {
+  loading(ctx.main);
+  try {
+    const x = await api('/api/registrations/confirm', { method: 'POST', body: { token } });
+    if (!ctx.alive()) return;
+    toast(tt('Запись подтверждена', 'Registration confirmed'));
+    ctx.navigate('/r/' + x.token, { replace: true });
+  } catch (e) {
+    if (!ctx.alive()) return;
+    const msg = e.code === 'full' ? tt('К сожалению, пока вы подтверждали, места закончились.', 'Sorry, the seats ran out before you confirmed.')
+      : e.code === 'closed' || e.code === 'past' ? errorText(e)
+        : e.status === 404 ? tt('Ссылка устарела или уже использована. Запишитесь ещё раз на странице встречи.', 'The link has expired or was already used. Please sign up again on the meeting page.')
+          : null;
+    if (!msg) return failed(ctx.main, e, ctx.rerender);
+    ctx.main.innerHTML = `<div class="wrap page narrow stack"><p class="empty">${esc(msg)}</p><a class="btn" href="${u('/meetings')}">${esc(tt('Все встречи', 'All meetings'))}</a></div>`;
+  }
 }

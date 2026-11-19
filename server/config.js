@@ -30,6 +30,8 @@ module.exports = {
     && (!isProduction || process.env.DEMO_MODE_IN_PRODUCTION === '1'),
   // Отправка писем: SMTP_URL=smtps://user:pass@host:465 и MAIL_FROM="Dialogue Cards <noreply@…>".
   smtpUrl: process.env.SMTP_URL || '',
+  // Запись на встречу с подтверждением по ссылке из письма — включается сама, когда подключена почта; MEETING_CONFIRM=0 — выключить.
+  meetingConfirm: process.env.MEETING_CONFIRM || '',
   mailFrom: process.env.MAIL_FROM || 'Dialogue Cards <noreply@localhost>',
   // Вход общим аккаунтом сайта, на котором стоит приложение (harekrishna.info: Google, Яндекс, письмо).
   // Сервер проверяет сессию сайта запросом «me» к его API. По умолчанию — PUBLIC_URL + '/api/seva'; SITE_AUTH_URL=off — выключить.

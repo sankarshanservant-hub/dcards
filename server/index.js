@@ -29,8 +29,12 @@ const choices = require('./choices');
 const places = require('./places');
 const guide = require('./guide');
 const { cityKey } = require('./places-key');
+const limits = require('./limits');
+const retention = require('./retention');
 
 cards.syncSeed();
+// новый пароль владельца в окружении — прежние сессии владельца отзываются (сравнение отпечатков при запуске)
+if (auth.checkOwnerPasswordRotation()) console.log('Owner password changed: owner sessions revoked.');
 if (config.demoMode) for (const u of auth.DEMO_USERS) auth.demoUser(u.key);
 
 const B = config.basePath;
@@ -51,10 +55,43 @@ const r = express.Router();
 r.use(express.json({ limit: '200kb' }));
 r.use(cookieParser());
 r.use(auth.loadUser);
+// Подделка запросов с чужих сайтов (CSRF): изменяющий запрос к /api принимается только со своего сайта.
+// Браузеры присылают Origin (или хотя бы Sec-Fetch-Site) — чужой источник отклоняется всегда. Запрос с cookie сессии без
+// обоих заголовков тоже отклоняется (так поступает только не браузер — а ему cookie сессии ни к чему). Запросы гостей
+// без cookie (их узнают по заголовку X-DC-Visitor, который чужая страница прислать не может) работают как раньше.
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const ownOrigins = (req) => {
+  const list = [`${req.protocol}://${req.get('host')}`];
+  if (config.publicUrl) { try { list.push(new URL(config.publicUrl).origin); } catch { /* неверный PUBLIC_URL */ } }
+  return list;
+};
+r.use((req, res, next) => {
+  if (!MUTATING.has(req.method) || !req.path.startsWith('/api/')) return next();
+  const origin = req.get('origin');
+  const site = req.get('sec-fetch-site');
+  if (origin) return ownOrigins(req).includes(origin) ? next() : bad(res, 'bad_origin', 403);
+  if (site) return site === 'same-origin' ? next() : bad(res, 'bad_origin', 403);
+  if (req.cookies && req.cookies[auth.COOKIE]) return bad(res, 'bad_origin', 403);
+  next();
+});
 // Гость: случайный идентификатор этого браузера (заголовок X-DC-Visitor) — привязка его обменов, колокольчика, записей.
 r.use((req, res, next) => { const v = String(req.get('x-dc-visitor') || ''); req.visitor = /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null; next(); });
 
 const VISITOR_RE = /^[A-Za-z0-9-]{16,64}$/;
+// ---------- квоты на записи без входа (limits.js): по IP и по браузеру/аккаунту ----------
+const { MIN, HOUR, DAY } = limits;
+const who = (req) => (req.user ? 'u' + req.user.id : req.visitor || (req.body && typeof req.body.visitorId === 'string' && req.body.visitorId) || (req.body && typeof req.body.deviceId === 'string' && req.body.deviceId) || null);
+const Q = {
+  exIpH: limits.win(HOUR, 30), exIpD: limits.win(DAY, 150), exWhoH: limits.win(HOUR, 20), exWhoD: limits.win(DAY, 100),     // обмены
+  ansIpH: limits.win(HOUR, 60), ansIpD: limits.win(DAY, 300),                                                               // ответы на обмены
+  roomIpH: limits.win(HOUR, 20), roomIpD: limits.win(DAY, 60), roomWhoH: limits.win(HOUR, 10),                              // комнаты игр
+  chooseIp: limits.win(HOUR, 120), chooseWho: limits.win(HOUR, 60),                                                         // выбор карты
+  chooseIpCard: limits.win(DAY, 20),            // выборов одной карты с одного адреса в сутки, которые идут в общий счёт
+};
+const exchangeQuota = limits.guard((req) => [[Q.exIpH, req.ip], [Q.exIpD, req.ip], [Q.exWhoH, who(req)], [Q.exWhoD, who(req)]]);
+const answerQuota = limits.guard((req) => [[Q.ansIpH, req.ip], [Q.ansIpD, req.ip]]);
+const roomQuota = limits.guard((req) => [[Q.roomIpH, req.ip], [Q.roomIpD, req.ip], [Q.roomWhoH, who(req)]]);
+const chooseQuota = limits.guard((req) => [[Q.chooseIp, req.ip], [Q.chooseWho, who(req)]]);
 const CODE_RE = /^DC-\d{4,6}$/;
 const baseUrl = (req) => config.publicUrl || `${req.protocol}://${req.get('host')}`;
 const bad = (res, error, status = 400, extra = {}) => res.status(status).json({ error, ...extra });
@@ -110,9 +147,9 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
   demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl, translationConnected: false,
-  termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
+  termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS, meetingConfirm: meetings.confirmOn(),
 }));
-r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
+r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo, sessions: req.user ? auth.sessionCount(req.user.id) : 0 }));
 r.patch('/api/me', auth.requireUser, (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 100);
   const publicName = String(req.body.publicName ?? '').trim().slice(0, 100);
@@ -140,31 +177,39 @@ r.post('/api/auth/verify', (req, res) => {
   if (!exists && !String(req.body.name || '').trim()) return bad(res, 'name_required');
   if (!auth.consumeCode(v.id)) return bad(res, 'no_code', 401);
   const u = auth.findOrCreateUser(email, req.body.name, req.body.publicName);
-  auth.issue(res, req, u.id);
+  auth.issue(res, req, u.id, 'email');
   res.json({ user: auth.publicUser(u) });
 });
 // Вход общим аккаунтом сайта: браузер передаёт сессию сайта, сервер проверяет её у сайта.
 r.post('/api/auth/site', wrap(async (req, res) => {
   const x = await auth.siteLogin(req.body && req.body.session);
   if (x.error) return bad(res, x.error, x.error === 'site_unreachable' ? 502 : 401);
-  auth.issue(res, req, x.user.id);
+  auth.issue(res, req, x.user.id, 'site');
   res.json({ user: auth.publicUser(x.user) });
+}));
+// Явная привязка аккаунта сайта к вошедшему аккаунту (владелец, люди с правами): только по нажатию, не по email.
+r.post('/api/auth/site/link', auth.requireUser, wrap(async (req, res) => {
+  const x = await auth.linkSite(req.user, req.body && req.body.session);
+  if (x.error) return bad(res, x.error, x.error === 'site_unreachable' ? 502 : x.error === 'forbidden' ? 403 : x.error === 'site_account_in_use' ? 409 : 401);
+  res.json({ ok: true, detached: x.detached, user: auth.publicUser(auth.userById(req.user.id)) });
 }));
 r.post('/api/auth/owner', (req, res) => {
   const c = auth.checkOwnerPassword(req, req.body && req.body.password);
   if (!c.ok) return bad(res, c.error, c.error === 'too_many_attempts' ? 429 : 401);
   const u = auth.ownerUser();
-  auth.issue(res, req, u.id);
+  auth.issue(res, req, u.id, 'password');
   res.json({ user: auth.publicUser(u) });
 });
-r.post('/api/auth/logout', (req, res) => { auth.clear(res); res.json({ ok: true }); });
+r.post('/api/auth/logout', (req, res) => { auth.logout(req, res); res.json({ ok: true }); });
+// «Выйти на всех устройствах»: все сессии аккаунта, включая эту, перестают действовать.
+r.post('/api/auth/logout-all', auth.requireUser, (req, res) => { auth.revokeAll(req.user.id); auth.clear(res); res.json({ ok: true }); });
 // Тестовый переключатель ролей (только в демо-режиме). Права всё равно проверяются по ролям демо-пользователя.
 r.post('/api/demo/login', wrap(async (req, res) => {
   if (!config.demoMode) return bad(res, 'demo_disabled', 403);
   const u = auth.demoUser(String(req.body.as || ''));
   if (!u) return bad(res, 'unknown_role');
   try { await demo.ensure(); } catch (e) { console.error('demo seed', e); } // демо-данные создаются при первом входе в демо
-  auth.issue(res, req, u.id);
+  auth.issue(res, req, u.id, 'demo');
   res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
   res.json({ user: auth.publicUser(u) });
 }));
@@ -190,10 +235,11 @@ const publishedCardRow = (req) => {
   const row = CODE_RE.test(req.params.code) && db.prepare('SELECT * FROM cards WHERE code = ?').get(req.params.code);
   return row && row.status === 'published' && (!row.is_demo || req.showDemo) ? row : null;
 };
-r.post('/api/cards/:code/choose', (req, res) => {
+r.post('/api/cards/:code/choose', chooseQuota, (req, res) => {
   const row = publishedCardRow(req); if (!row) return bad(res, 'not_found', 404);
   const v = visitorFrom(req, res); if (!v) return;
-  res.json(choices.choose(row, v, req.user));
+  // идентификатор браузера создаётся свободно: с одного адреса в общий счёт карты идёт не больше 20 выборов в сутки
+  res.json(choices.choose(row, v, req.user, () => Q.chooseIpCard.hit(`${req.ip}|${row.id}`)));
 });
 r.post('/api/cards/:code/unchoose', (req, res) => {
   const row = publishedCardRow(req); if (!row) return bad(res, 'not_found', 404);
@@ -274,10 +320,19 @@ r.get('/api/meetings/dates/:id', (req, res) => {
   if (!d) return bad(res, 'not_found', 404);
   res.json(d);
 });
-r.post('/api/meetings/dates/:id/register', wrap(async (req, res) => {
+// Запись на встречу без аккаунта: с одного адреса — 20 в час и 60 в сутки, на одну дату — 8 в сутки; на дату всего — 60 в час.
+Object.assign(Q, { regIpH: limits.win(HOUR, 20), regIpD: limits.win(DAY, 60), regIpDate: limits.win(DAY, 8), regDate: limits.win(HOUR, 60), regConfirm: limits.win(HOUR, 30) });
+const registerQuota = limits.guard((req) => [[Q.regIpH, req.ip], [Q.regIpD, req.ip], [Q.regIpDate, `${req.ip}|${req.params.id}`], [Q.regDate, String(req.params.id)]]);
+r.post('/api/meetings/dates/:id/register', registerQuota, wrap(async (req, res) => {
   const r0 = await meetings.register(Number(req.params.id), { ...(req.body || {}), userId: req.user && !req.user.is_demo ? req.user.id : null, visitorId: req.visitor }, baseUrl(req), req.body.lang === 'en' ? 'en' : 'ru');
   if (r0.ok) safe(() => events.registered(r0.token));
   out(res, r0, 201);
+}));
+// Подтверждение записи по ссылке из письма: место занимается сейчас.
+r.post('/api/registrations/confirm', limits.guard((req) => [[Q.regConfirm, req.ip]]), wrap(async (req, res) => {
+  const x = await meetings.confirmRegistration((req.body || {}).token, baseUrl(req));
+  if (x.ok && x.created) safe(() => events.registered(x.token));
+  out(res, x);
 }));
 r.get('/api/registrations/:token', (req, res) => {
   const x = meetings.registrationByToken(String(req.params.token));
@@ -438,21 +493,43 @@ r.delete('/api/collections/:id', fac, (req, res) => {
 const ownsMeeting = (req, id) => meetings.facilitatorOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('meetings', 'id', id)));
 r.get('/api/fac/meetings', fac, (req, res) => res.json({ meetings: meetings.mine(req.user.id) }));
 // Поиск места/адреса для точки на карте (через сервер; OpenStreetMap Nominatim). Результат подтверждает фасилитатор.
-const geoCache = new Map(); let geoLast = 0;
+// Правила Nominatim: не чаще 1 запроса в секунду со всего сервера, повторы — из памяти. Поэтому: общая очередь с шагом
+// 1,1 с (дольше 10 с ждать — «попробуйте позже»), одинаковые запросы в пути — один запрос, ответы — в памяти на 30 дней
+// (до 2000 строк), и лимит на человека — 20 в минуту и 300 в сутки (из памяти — не в счёт).
+const GEO_STEP = 1100; const GEO_MAX_WAIT = 10000; const GEO_TTL = 30 * DAY;
+const geoCache = new Map(); const geoPending = new Map(); let geoNext = 0;
+Object.assign(Q, { geoUserM: limits.win(MIN, 20), geoUserD: limits.win(DAY, 300) });
+function geoSlot() { // синхронно: два одновременных запроса не получат одно и то же место в очереди
+  const now = Date.now(); const at = Math.max(now, geoNext);
+  if (at - now > GEO_MAX_WAIT) return -1;
+  geoNext = at + GEO_STEP; return at - now;
+}
+async function geocodeOnce(q, cc, lang) {
+  const wait = geoSlot(); if (wait < 0) throw Object.assign(new Error('busy'), { busy: true });
+  if (wait) await new Promise((r2) => setTimeout(r2, wait));
+  const url = `${process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search'}?${new URLSearchParams({ format: 'jsonv2', limit: '5', q, 'accept-language': lang, ...(cc ? { countrycodes: cc } : {}) })}`;
+  const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://harekrishna.info/dialogue-cards/)' }, signal: AbortSignal.timeout(8000) });
+  if (!rr.ok) throw new Error('geocoder ' + rr.status);
+  return (await rr.json()).slice(0, 5).map((x) => ({ label: String(x.display_name || '').slice(0, 300), lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+}
 r.get('/api/places/geocode', fac, wrap(async (req, res) => {
-  const q = String(req.query.q || '').trim().slice(0, 200); const cc = /^[a-z]{2}$/i.test(req.query.cc || '') ? req.query.cc.toLowerCase() : '';
+  const q = String(req.query.q || '').trim().replace(/\s+/g, ' ').slice(0, 200); const cc = /^[a-z]{2}$/i.test(req.query.cc || '') ? req.query.cc.toLowerCase() : '';
+  const lang = req.query.lang === 'en' ? 'en' : 'ru';
   if (q.length < 3) return res.json({ results: [] });
-  const key = cc + '|' + q.toLowerCase();
-  if (geoCache.has(key)) return res.json({ results: geoCache.get(key) });
-  const wait = Math.max(0, geoLast + 1100 - Date.now()); if (wait) await new Promise((r2) => setTimeout(r2, wait)); geoLast = Date.now(); // не чаще 1 запроса в секунду
+  const key = `${cc}|${lang}|${q.toLowerCase()}`;
+  const hit = geoCache.get(key);
+  if (hit && hit.at + GEO_TTL > Date.now()) return res.json({ results: hit.results });
+  if (!geoPending.has(key)) { // уже идущий такой же запрос — ждём его, не в счёт
+    const wait = limits.take([[Q.geoUserM, 'u' + req.user.id], [Q.geoUserD, 'u' + req.user.id]]);
+    if (wait) return limits.tooMany(res, wait);
+  }
   try {
-    const url = `${process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search'}?${new URLSearchParams({ format: 'jsonv2', limit: '5', q, 'accept-language': req.query.lang === 'en' ? 'en' : 'ru', ...(cc ? { countrycodes: cc } : {}) })}`;
-    const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://harekrishna.info/dialogue-cards/)' }, signal: AbortSignal.timeout(8000) });
-    if (!rr.ok) throw new Error('geocoder ' + rr.status);
-    const results = (await rr.json()).map((x) => ({ label: x.display_name, lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
-    geoCache.set(key, results); if (geoCache.size > 500) geoCache.delete(geoCache.keys().next().value);
+    if (!geoPending.has(key)) geoPending.set(key, geocodeOnce(q, cc, lang).finally(() => geoPending.delete(key)));
+    const results = await geoPending.get(key);
+    geoCache.delete(key); geoCache.set(key, { results, at: Date.now() }); // в конец: давно не нужные уходят первыми
+    if (geoCache.size > 2000) geoCache.delete(geoCache.keys().next().value);
     res.json({ results });
-  } catch { bad(res, 'geocoder_unavailable', 503); }
+  } catch (e) { bad(res, e.busy ? 'geocoder_busy' : 'geocoder_unavailable', 503); }
 }));
 // Город встречи → часовой пояс (пояс вручную не выбирается). ?city=&country=&placeId=
 r.get('/api/places/resolve', fac, (req, res) => res.json(places.resolve({ city: req.query.city, country: req.query.country, placeId: req.query.placeId })));
@@ -650,8 +727,18 @@ r.post('/api/live/feedback/:id', (req, res, next) => {
 
 // ---------- игры компанией (без фасилитатора): комната по QR/коду ----------
 const group = require('./group');
+// Код комнаты — 5 символов: неудачные попытки найти комнату с одного адреса ограничены (30 за 10 минут), остальные
+// запросы к комнатам — щедро (телефоны компании в одной сети перечитывают состояние после каждого хода).
+Object.assign(Q, { roomMiss: limits.win(10 * MIN, 30), roomAny: limits.win(10 * MIN, 3000), roomJoin: limits.win(10 * MIN, 60) });
+r.use('/api/group/:code', (req, res, next) => {
+  const wait = limits.take([[Q.roomAny, req.ip], ...(req.method === 'POST' && /\/join$/.test(req.path) ? [[Q.roomJoin, req.ip]] : [])]);
+  if (wait) return limits.tooMany(res, wait);
+  if (!Q.roomMiss.ok(req.ip)) return limits.tooMany(res, Q.roomMiss.retryAfter(req.ip));
+  if (!group.room(req.params.code)) { Q.roomMiss.hit(req.ip); return bad(res, 'group_not_found', 404); }
+  next();
+});
 const groupDone = (res, x, status = 200) => { if (x && x.ok && x.id) group.touch(x.id); out(res, x, status); };
-r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
+r.post('/api/group', roomQuota, (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
 r.get('/api/group/:code/state', (req, res) => {
   const d = liveDevice(req, res); if (!d) return;
   const st = group.state(req.params.code, d, req.showDemo);
@@ -894,7 +981,7 @@ admin.post('/cards/:code/restore', (req, res) => {
 });
 // ---------- обмен с другом «Что ты здесь видишь?» (exchanges.js) ----------
 const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND status = 'published'").get(String(code || ''));
-r.post('/api/exchanges', (req, res) => {
+r.post('/api/exchanges', exchangeQuota, (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
   if (b.multi) return out(res, xgroups.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201); // «Отправить нескольким людям»
@@ -915,13 +1002,13 @@ r.get('/api/x/:token', (req, res) => {
   exchanges.opened(x, role, req.get('user-agent')); // первое открытие человеком (не превью и не сам отправитель)
   res.set('Cache-Control', 'no-store').json(exchanges.view(x, role));
 });
-r.post('/api/x/:token/reply', (req, res) => {
+r.post('/api/x/:token/reply', exchangeQuota, (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
   out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201);
 });
 r.post('/api/x/:token/sent', (req, res) => out(res, exchanges.sent(String(req.params.token), req.user, req.visitor, String((req.body || {}).via || ''))));
-r.post('/api/x/:token/answer', (req, res) => {
+r.post('/api/x/:token/answer', answerQuota, (req, res) => {
   const b = req.body || {};
   const G = xgroups.answer(String(req.params.token), req.user, req.visitor, { text: b.text, name: b.name, answerKey: b.answerKey });
   if (G.error !== 'not_found') { if (G.error) return out(res, G); return res.status(201).json({ ok: true, repeated: !!G.repeated, exchange: xgroups.view(G.g, 'member', G.m) }); }
@@ -1027,6 +1114,7 @@ if (require.main === module) {
   }
   console.log(`Demo mode: ${config.demoMode ? 'on' : 'off'}; mail: ${mail.connected() ? 'SMTP' : 'not connected (letters shown on screen)'}`);
   app.listen(config.port, () => console.log(`Dialogue Cards: http://localhost:${config.port}${B}/`));
+  retention.schedule(); // удаление устаревших записей без аккаунта: при запуске и раз в 6 часов
 }
 
 module.exports = app;

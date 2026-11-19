@@ -1,6 +1,6 @@
 // Проверки по заданию (разделы 01–20 и «Проверка полноты»). Запуск: npm test.
 // Используется временная папка данных; почта не подключена (код входа и письма возвращаются как демо).
-const { test, before, after } = require('node:test');
+const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -17,7 +17,12 @@ const siteApi = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const s = u.searchParams.get('session');
   res.setHeader('Content-Type', 'application/json');
-  if (u.searchParams.get('api') === 'me' && s === 'good-session-token-1') res.end(JSON.stringify({ ok: true, user: { uid: 'g:123', name: 'Майя', displayName: 'Майя', email: 'maya@example.org' } }));
+  const SITE = {
+    'good-session-token-1': { uid: 'g:123', name: 'Майя', displayName: 'Майя', email: 'maya@example.org' },
+    'owner-site-session-1': { uid: 'g:owner', name: 'Владелец', email: 'owner-site@example.org' },
+    'curator-site-session': { uid: 'g:cur', name: 'Куратор', email: 'curator@example.org' },
+  };
+  if (u.searchParams.get('api') === 'me' && SITE[s]) res.end(JSON.stringify({ ok: true, user: SITE[s] }));
   else res.end(JSON.stringify({ ok: false }));
 }).listen(0);
 process.env.SITE_AUTH_URL = `http://127.0.0.1:${siteApi.address().port}/api/seva`;
@@ -27,8 +32,10 @@ let server; let base;
 const visitorA = 'a'.repeat(32);
 const visitorB = 'b'.repeat(32);
 
-async function call(method, url, body, { cookie, form, visitor } = {}) {
-  const headers = {};
+// Как браузер: изменяющие запросы приходят с Origin своего сайта (origin: false — без него, строка — чужой источник).
+async function call(method, url, body, { cookie, form, visitor, origin, headers: extra } = {}) {
+  const headers = { ...(extra || {}) };
+  if (origin !== false && method !== 'GET') headers.Origin = typeof origin === 'string' ? origin : base;
   if (visitor) headers['X-DC-Visitor'] = visitor;
   if (body) headers['Content-Type'] = 'application/json';
   if (cookie) headers.Cookie = cookie;
@@ -72,6 +79,7 @@ before(async () => {
     assert.equal(r.status, 200);
   }
 });
+beforeEach(() => require('../server/limits').reset()); // у каждой проверки — свежие окна ограничений
 after(() => { server.close(); siteApi.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 
 // ---------- 03 вход и роли, серверные права ----------
@@ -296,7 +304,7 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.equal((await call('POST', '/api/fac/meetings', { title: 'Платная без валюты', country: 'Россия', city: 'Казань', language: 'ru', priceType: 'paid', priceAmount: 100, capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie })).json.error, 'currency_required');
   assert.equal(first.startsAt, `${day}T16:00:00.000Z`, 'местное время 19:00 в Москве = 16:00 UTC');
   assert.equal(list.json.dates[1].capacity, 2, 'у каждой даты свои места');
-  const reg = (name, email) => call('POST', `/api/meetings/dates/${first.id}/register`, { name, email, contact: '@tg' });
+  const reg = (name, email) => call('POST', `/api/meetings/dates/${first.id}/register`, { name, email, contact: '@tg' }, { visitor: visitorA });
   assert.equal((await reg('', 'a@b.org')).json.error, 'name_required');
   const r1 = await reg('Аня', 'anya@example.org');
   assert.equal(r1.status, 201);
@@ -314,7 +322,9 @@ test('Сценарий 3: публикация встречи, поиск, за�
   assert.match(icsText, /LOCATION:Кафе\\, Казань\\, Россия/);
   assert.match(icsText.replace(/\r\n /g, ''), new RegExp(`/r/${r1.json.token}`));
   assert.equal((await fetch(`${base}/api/registrations/nope/ics`)).status, 404);
-  assert.equal((await reg('Аня', 'anya@example.org')).json.error, 'already_registered');
+  const rep = await reg('Аня', 'anya@example.org');
+  assert.equal(rep.status, 201, 'повтор отправки — тот же ответ, без «уже записан»');
+  assert.equal(rep.json.token, r1.json.token, 'повтор с того же браузера — та же запись, второе место не занято');
   const r2 = await reg('Борис', 'boris@example.org');
   assert.equal(r2.status, 201, 'запись на последнее свободное место');
   assert.equal((await reg('Вера', 'vera@example.org')).json.error, 'full', 'запись закрывается при заполнении');
@@ -1362,4 +1372,263 @@ test('22.11: демо-сессия, выданная до выключения �
     const me2 = await call('GET', '/api/me', null, { cookie: d.cookie });
     assert.ok(!me2.json || !me2.json.user, 'без демо-режима старая демо-сессия не принимается');
   } finally { config.demoMode = was; }
+});
+
+// ---------- этап 3: сессии, привязка аккаунта сайта, подделка запросов ----------
+const authDb = () => require('../server/db');
+const sessionRow = (cookie) => {
+  const raw = decodeURIComponent(cookie.split('=').slice(1).join('='));
+  return authDb().prepare('SELECT * FROM sessions WHERE id_hash = ?').get(require('crypto').createHash('sha256').update(raw.slice(3)).digest('hex'));
+};
+const meId = async (cookie) => { const r = await call('GET', '/api/me', null, { cookie }); return r.json && r.json.user ? r.json.user.id : null; };
+
+test('Сессии: в cookie — случайный идентификатор, в базе — только его хеш; «Выйти» удаляет сессию', async () => {
+  const a = await emailLogin('sess-a@example.org', 'Сессия');
+  const raw = decodeURIComponent(a.cookie.split('=').slice(1).join('='));
+  assert.match(raw, /^s2\.[A-Za-z0-9_-]{43}$/, '256 бит, без номера пользователя');
+  const row = sessionRow(a.cookie);
+  assert.ok(row && row.user_id === a.user.id && row.via === 'email');
+  assert.ok(row.expires_at - row.created_at <= 30 * 24 * 3600e3 + 1000);
+  assert.equal(authDb().prepare('SELECT COUNT(*) AS n FROM sessions WHERE id_hash = ?').get(raw).n, 0, 'сам идентификатор не хранится');
+  assert.equal(await meId(a.cookie), a.user.id);
+  assert.equal((await call('POST', '/api/auth/logout', null, { cookie: a.cookie })).status, 200);
+  assert.equal(sessionRow(a.cookie), undefined, 'сессия удалена из базы');
+  assert.equal(await meId(a.cookie), null, 'украденная копия cookie после выхода не действует');
+});
+
+test('Сессии: «Выйти на всех устройствах» завершает все сессии аккаунта', async () => {
+  const a1 = await emailLogin('sess-all@example.org', 'Везде');
+  const a2 = await emailLogin('sess-all@example.org', 'Везде');
+  const other = await emailLogin('sess-other@example.org', 'Другой');
+  assert.equal((await call('GET', '/api/me', null, { cookie: a1.cookie })).json.sessions, 2);
+  assert.equal((await call('POST', '/api/auth/logout-all', null, {})).status, 401, 'без входа — нельзя');
+  assert.equal((await call('POST', '/api/auth/logout-all', null, { cookie: a2.cookie })).status, 200);
+  assert.equal(await meId(a1.cookie), null);
+  assert.equal(await meId(a2.cookie), null);
+  assert.equal(await meId(other.cookie), other.user.id, 'чужие сессии не задеты');
+});
+
+test('Сессии: прежняя подписанная cookie действует и заменяется новой сессией; после «выйти везде» — нет', async () => {
+  const crypto = require('crypto');
+  const secret = fs.readFileSync(path.join(dataDir, 'session-secret'), 'utf8').trim();
+  const u = await emailLogin('legacy@example.org', 'Прежний');
+  const legacy = (issuedAgo = 0) => {
+    const payload = `${u.user.id}.${Date.now() - issuedAgo + 30 * 24 * 3600e3}`;
+    return `dc_session=${payload}.${crypto.createHmac('sha256', secret).update(payload).digest('base64url')}`;
+  };
+  const old = legacy(3600e3);
+  const r = await call('GET', '/api/me', null, { cookie: old });
+  assert.equal(r.json.user.id, u.user.id, 'вход сохраняется — массового выхода нет');
+  assert.match(r.cookie, /^dc_session=s2\./, 'выдана новая сессия');
+  assert.equal(sessionRow(r.cookie).via, 'legacy');
+  assert.equal(await meId(old), u.user.id, 'одновременные запросы при открытии страницы проходят');
+  authDb().prepare('UPDATE legacy_sessions_used SET used_at = used_at - 120000').run();
+  assert.equal(await meId(old), null, 'та же прежняя cookie позже — отказ');
+  assert.equal(await meId(r.cookie), u.user.id, 'новая сессия действует');
+  const other = legacy(7200e3);
+  assert.equal(await meId(other), u.user.id);
+  await call('POST', '/api/auth/logout-all', null, { cookie: r.cookie });
+  assert.equal(await meId(legacy(10e3)), null, 'выданная до «выйти везде» — не действует');
+});
+
+test('Сессии: права администратора — не дольше 7 дней; смена пароля владельца отзывает его сессии', async () => {
+  const config = require('../server/config'); const auth = require('../server/auth');
+  const o = await call('POST', '/api/auth/owner', { password: 'test-password' });
+  const row = sessionRow(o.cookie);
+  assert.ok(row.expires_at - row.created_at <= 7 * 24 * 3600e3 + 1000, 'сессия администратора — 7 дней');
+  authDb().prepare('UPDATE sessions SET created_at = created_at - ? WHERE id_hash = ?').run(8 * 24 * 3600e3, row.id_hash);
+  assert.equal(await meId(o.cookie), null, 'через 7 дней — вход заново');
+  // Администратор, получивший роль во время 30-дневной сессии, тоже ограничен 7 днями от входа.
+  const later = await emailLogin('late-admin@example.org', 'Поздний');
+  await call('POST', `/api/admin/users/${later.user.id}/roles`, { role: 'admin', grant: true }, { cookie: owner.cookie });
+  authDb().prepare('UPDATE sessions SET created_at = created_at - ? WHERE id_hash = ?').run(8 * 24 * 3600e3, sessionRow(later.cookie).id_hash);
+  assert.equal(await meId(later.cookie), null);
+  // смена ADMIN_PASSWORD: при запуске отпечаток не совпадает — сессии владельца отзываются
+  const o2 = await call('POST', '/api/auth/owner', { password: 'test-password' });
+  assert.equal(auth.checkOwnerPasswordRotation(), false, 'тот же пароль — ничего не меняется');
+  const was = config.adminPassword; config.adminPassword = 'another-test-password';
+  try { assert.equal(auth.checkOwnerPasswordRotation(), true); } finally { config.adminPassword = was; }
+  assert.equal(await meId(o2.cookie), null, 'сессия со старым паролем отозвана');
+  assert.equal(auth.checkOwnerPasswordRotation(), true, 'вернули прежний пароль — тоже смена');
+  owner.cookie = (await call('POST', '/api/auth/owner', { password: 'test-password' })).cookie; // для следующих проверок
+  assert.equal(await meId(owner.cookie), owner.user.id);
+});
+
+test('Владелец входит аккаунтом сайта только после явной привязки; аккаунт с правами по email не привязывается', async () => {
+  assert.equal((await call('POST', '/api/auth/site', { session: 'owner-site-session-1' })).json.user.isOwner, false, 'до привязки — обычный аккаунт');
+  assert.equal((await call('POST', '/api/auth/site/link', { session: 'owner-site-session-1' })).status, 401, 'без входа — нельзя');
+  const bad0 = await call('POST', '/api/auth/site/link', { session: 'bad-session-token-xx' }, { cookie: owner.cookie });
+  assert.equal(bad0.status, 401);
+  const link = await call('POST', '/api/auth/site/link', { session: 'owner-site-session-1' }, { cookie: owner.cookie });
+  assert.equal(link.status, 200);
+  assert.equal(link.json.detached, true, 'прежний обычный аккаунт с этим входом отвязан');
+  assert.equal(link.json.user.siteLinked, true);
+  const s = await call('POST', '/api/auth/site', { session: 'owner-site-session-1' });
+  assert.equal(s.json.user.id, owner.user.id, 'вход аккаунтом сайта открывает аккаунт владельца');
+  assert.ok(s.json.user.isOwner && s.json.user.roles.includes('admin'));
+  assert.ok((await call('POST', '/api/auth/owner', { password: 'test-password' })).status === 200, 'пароль — запасной способ');
+  // куратор с тем же email, что у аккаунта сайта: автоматической привязки нет
+  const c = await call('POST', '/api/auth/site', { session: 'curator-site-session' });
+  assert.equal(c.status, 401); assert.equal(c.json.error, 'site_link_required');
+  const cl = await call('POST', '/api/auth/site/link', { session: 'curator-site-session' }, { cookie: curatorU.cookie });
+  assert.equal(cl.status, 200);
+  assert.equal((await call('POST', '/api/auth/site', { session: 'curator-site-session' })).json.user.id, curatorU.user.id, 'после явной привязки — свой аккаунт');
+  // аккаунт сайта, привязанный к аккаунту с правами, другой человек к себе не перетянет
+  const stranger = await emailLogin('stranger-link@example.org', 'Чужой');
+  assert.equal((await call('POST', '/api/auth/site/link', { session: 'curator-site-session' }, { cookie: stranger.cookie })).json.error, 'site_account_in_use');
+});
+
+test('Подделка запросов: изменяющий запрос с чужого сайта отклоняется, свой и гостевой — проходят', async () => {
+  const u = await emailLogin('csrf@example.org', 'Проверка');
+  const patch = (opts) => call('PATCH', '/api/me', { name: 'Изменено' }, { cookie: u.cookie, ...opts });
+  assert.equal((await patch({ origin: 'https://evil.example' })).status, 403, 'чужой Origin');
+  assert.equal((await patch({ origin: 'null' })).status, 403, 'Origin: null');
+  assert.equal((await patch({ origin: false })).status, 403, 'с cookie сессии, но без Origin и Sec-Fetch-Site');
+  assert.equal((await patch({ origin: false, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await patch({ origin: false, headers: { 'Sec-Fetch-Site': 'same-site' } })).status, 403, 'соседний поддомен — тоже чужой');
+  assert.equal((await patch({ origin: false, headers: { 'Sec-Fetch-Site': 'same-origin' } })).status, 200);
+  assert.equal((await patch({})).status, 200, 'свой Origin');
+  assert.equal((await call('POST', '/api/auth/owner', { password: 'test-password' }, { origin: 'https://evil.example' })).status, 403, 'вход с чужой страницы — тоже нет');
+  assert.equal((await call('GET', '/api/me', null, { cookie: u.cookie, origin: 'https://evil.example' })).status, 200, 'чтение не затронуто');
+  // гость без cookie (не браузер или старый браузер): по заголовку X-DC-Visitor, как раньше
+  assert.equal((await call('POST', '/api/bell/read', { all: true }, { visitor: visitorA, origin: false })).status, 200);
+});
+
+test('Квоты без входа: обмены и комнаты — по браузеру и по адресу; выбор карты с одного адреса считается до 20 раз', async () => {
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  const ip = (n) => ({ 'X-Forwarded-For': `203.0.113.${n}` });
+  const mk = (v, n, i) => call('POST', '/api/exchanges', { code: codes[0], text: 'Квота ' + i }, { visitor: v, headers: ip(n) });
+  const V1 = 'quota-visitor-1111-2222'; const V2 = 'quota-visitor-3333-4444';
+  for (let i = 0; i < 20; i++) assert.equal((await mk(V1, 10, i)).status, 201);
+  const over = await mk(V1, 10, 20);
+  assert.equal(over.status, 429); assert.equal(over.json.error, 'too_many_requests');
+  for (let i = 0; i < 10; i++) assert.equal((await mk(V2, 10, i)).status, 201, 'другой браузер с того же адреса');
+  assert.equal((await mk(V2, 10, 99)).status, 429, 'адрес: не больше 30 в час');
+  assert.equal((await mk(V2, 11, 100)).status, 201, 'другой адрес — свои окна');
+  // комнаты игр
+  const room = (d, n) => call('POST', '/api/group', { format: 'one', deviceId: d, name: 'Квота' }, { headers: ip(n) });
+  for (let i = 0; i < 10; i++) assert.equal((await room('quota-device-aaaa-0001', 20)).status, 201);
+  assert.equal((await room('quota-device-aaaa-0001', 20)).status, 429);
+  // выбор карты: браузеры создаются свободно, но с одного адреса в общий счёт карты — не больше 20 в сутки
+  const card = codes[5];
+  const count = async () => (await call('GET', `/api/cards/${card}`)).json.selectedCount;
+  const t0 = await count();
+  for (let i = 0; i < 25; i++) {
+    const r = await call('POST', `/api/cards/${card}/choose`, { visitorId: `quota-choose-${String(i).padStart(4, '0')}-xxxx` }, { headers: ip(30) });
+    assert.equal(r.status, 200);
+  }
+  assert.equal(await count(), t0 + 20, 'сверх 20 — выбор сохраняется, но не в общий счёт');
+});
+
+test('Сроки хранения: гостевые обмены — год, комнаты игр — 30 дней; обмены с аккаунтом и счётчик карты остаются', async () => {
+  const db = authDb(); const retention = require('../server/retention');
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  const VG = 'retention-guest-0000-1111';
+  const gx = (await call('POST', '/api/exchanges', { code: codes[2], text: 'старый гостевой' }, { visitor: VG })).json;
+  await call('POST', `/api/x/${gx.invite}/answer`, { text: 'ответ', name: 'Б' }, { visitor: 'retention-guest-2222-3333' });
+  const u = await emailLogin('retention@example.org', 'Хранение');
+  const ux = (await call('POST', '/api/exchanges', { code: codes[2], text: 'с аккаунтом' }, { cookie: u.cookie })).json;
+  const room = (await call('POST', '/api/group', { format: 'one', deviceId: 'retention-device-0000-1', name: 'В' })).json.code;
+  const before = (await call('GET', `/api/cards/${codes[2]}`)).json.selectedCount;
+  const old = new Date(Date.now() - 400 * 24 * 3600e3).toISOString();
+  db.prepare('UPDATE exchanges SET updated_at = ? WHERE id IN (?, ?)').run(old, gx.id, ux.id);
+  db.prepare('UPDATE group_rooms SET updated_at = ? WHERE code = ?').run(new Date(Date.now() - 31 * 24 * 3600e3).toISOString(), room);
+  const r = retention.run();
+  assert.ok(r.exchanges >= 1 && r.rooms >= 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE id = ?').get(gx.id).n, 0, 'гостевой обмен удалён');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE id = ?').get(ux.id).n, 1, 'обмен с аккаунтом остался');
+  assert.equal((await call('GET', `/api/group/${room}/state?device=retention-device-0000-1`)).status, 404);
+  assert.equal((await call('GET', `/api/cards/${codes[2]}`)).json.selectedCount, before, 'счётчик карты не меняется');
+});
+
+test('Игры компанией: не участник видит только код, формат, статус и число игроков; подбор кода ограничен', async () => {
+  const D = (i) => `state-device-${String(i).padStart(4, '0')}-zz`;
+  const code = (await call('POST', '/api/group', { format: 'own', deviceId: D(1), name: 'Ведущая Оля' })).json.code;
+  await call('POST', `/api/group/${code}/join`, { deviceId: D(2), name: 'Петя' });
+  await call('POST', `/api/group/${code}/act`, { deviceId: D(1), action: 'start' });
+  const stranger = (await call('GET', `/api/group/${code}/state?device=${D(9)}`)).json;
+  assert.deepEqual(Object.keys(stranger).sort(), ['code', 'count', 'format', 'me', 'serverNow', 'status']);
+  assert.equal(stranger.count, 2); assert.equal(stranger.me, null);
+  assert.ok(!JSON.stringify(stranger).includes('Оля'), 'имён нет');
+  const member = (await call('GET', `/api/group/${code}/state?device=${D(2)}`)).json;
+  assert.ok(member.me && member.members.length === 2 && member.gallery, 'участник видит игру');
+  // подбор кода: 30 промахов за 10 минут с одного адреса, затем отказ — и для настоящего кода тоже
+  const h = { headers: { 'X-Forwarded-For': '198.51.100.7' } };
+  for (let i = 0; i < 30; i++) assert.equal((await call('GET', `/api/group/ZZ${String(i).padStart(3, '0')}/state?device=${D(9)}`, null, h)).status, 404);
+  assert.equal((await call('GET', `/api/group/${code}/state?device=${D(9)}`, null, h)).status, 429);
+  assert.equal((await call('GET', `/api/group/${code}/state?device=${D(2)}`)).status, 200, 'с другого адреса — работает');
+});
+
+test('Запись на встречу: ответ не выдаёт, записан ли адрес; с почтой — место после подтверждения по ссылке', async () => {
+  const mail = require('../server/mail'); const db = authDb();
+  const day = new Date(Date.now() + 11 * 86400000).toISOString().slice(0, 10);
+  const c = await call('POST', '/api/fac/meetings', { title: 'С подтверждением', city: 'Казань', language: 'ru', priceType: 'free', capacity: 20, firstDate: `${day}T18:00` }, { cookie: facil.cookie });
+  const dateId = (await call('GET', `/api/fac/meetings/${c.json.id}`, null, { cookie: facil.cookie })).json.dates[0].id;
+  const reg = (email, visitor, n = 1) => call('POST', `/api/meetings/dates/${dateId}/register`, { name: 'Гость\u0007 Имя', email }, { visitor, headers: { 'X-Forwarded-For': `192.0.2.${n}` } });
+  // без почты: запись сразу; тот же адрес с другого устройства — такой же ответ, как для нового адреса
+  const a = await reg('same@example.org', 'confirm-visitor-a-0000');
+  const b = await reg('same@example.org', 'confirm-visitor-b-0000', 2);
+  assert.equal(a.status, 201); assert.equal(b.status, 201);
+  assert.deepEqual(Object.keys(a.json).sort(), Object.keys(b.json).sort());
+  assert.notEqual(a.json.token, b.json.token);
+  assert.equal(db.prepare('SELECT name FROM registrations WHERE token = ?').get(a.json.token).name, 'Гость Имя', 'управляющие символы из имени убраны');
+  await call('POST', `/api/registrations/${b.json.token}/cancel`);
+  // ограничение с одного адреса на одну дату
+  for (let i = 0; i < 8; i++) assert.equal((await reg(`ip${i}@example.org`, 'confirm-visitor-c-0000', 3)).status, 201);
+  assert.equal((await reg('ip9@example.org', 'confirm-visitor-c-0000', 3)).status, 429);
+  for (const x of db.prepare("SELECT token FROM registrations WHERE email LIKE 'ip%@example.org'").all()) await call('POST', `/api/registrations/${x.token}/cancel`);
+  // с почтой: «проверьте почту» и для нового, и для уже записанного адреса; место — после перехода по ссылке
+  const letters = [];
+  mail.setTransport({ sendMail: async (m) => { letters.push(m); } });
+  try {
+    assert.equal((await call('GET', '/api/config')).json.meetingConfirm, true);
+    const left0 = (await call('GET', `/api/meetings/dates/${dateId}`)).json.left;
+    const fresh = await reg('new-person@example.org', 'confirm-visitor-d-0000', 4);
+    const known = await reg('same@example.org', 'confirm-visitor-e-0000', 5);
+    assert.equal(fresh.status, 201); assert.equal(known.status, 201);
+    assert.deepEqual(fresh.json, known.json, 'ответы одинаковые');
+    assert.equal(fresh.json.pending, true); assert.equal(fresh.json.token, undefined, 'ссылки на запись в ответе нет');
+    assert.equal((await call('GET', `/api/meetings/dates/${dateId}`)).json.left, left0, 'место не занято до подтверждения');
+    const toFresh = letters.find((l) => l.to === 'new-person@example.org'); const toKnown = letters.find((l) => l.to === 'same@example.org');
+    assert.match(toKnown.text, new RegExp(`/r/${a.json.token}`), 'уже записанному — ссылка на его запись');
+    const ct = toFresh.text.match(/\/rc\/([A-Za-z0-9_-]+)/)[1];
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM registration_requests WHERE token_hash = ?').get(ct).n, 0, 'в базе — только хеш ссылки');
+    assert.equal((await call('POST', '/api/registrations/confirm', { token: 'x'.repeat(32) })).status, 404);
+    const ok = await call('POST', '/api/registrations/confirm', { token: ct });
+    assert.equal(ok.status, 200); assert.ok(ok.json.token);
+    assert.equal((await call('GET', `/api/meetings/dates/${dateId}`)).json.left, left0 - 1, 'после подтверждения место занято');
+    assert.equal((await call('POST', '/api/registrations/confirm', { token: ct })).json.token, ok.json.token, 'повтор ссылки — та же запись');
+    assert.ok(letters.some((l) => l.to === 'new-person@example.org' && /Вы записаны/.test(l.subject)), 'письмо с отменой и календарём');
+  } finally { mail.setTransport(null); }
+});
+
+test('Поиск места: общая очередь не чаще 1 запроса в секунду, повторы — из памяти, лимит на человека', async () => {
+  let upstream = 0;
+  const geo = http.createServer((req, res) => { upstream += 1; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify([{ display_name: 'Казань, Россия', lat: '55.79', lon: '49.12' }])); }).listen(0);
+  await new Promise((r) => geo.once('listening', r));
+  process.env.GEOCODER_URL = `http://127.0.0.1:${geo.address().port}/search`;
+  try {
+    const q = (text) => call('GET', `/api/places/geocode?q=${encodeURIComponent(text)}`, null, { cookie: facil.cookie });
+    const same = await Promise.all([1, 2, 3].map(() => q('Казань Баумана')));
+    assert.ok(same.every((r) => r.status === 200 && r.json.results[0].lat === 55.79));
+    assert.equal(upstream, 1, 'одинаковые запросы в пути — один запрос к Nominatim');
+    assert.equal((await q('казань   баумана')).status, 200); assert.equal(upstream, 1, 'повтор — из памяти');
+    const t0 = Date.now();
+    const burst = await Promise.all(Array.from({ length: 25 }, (_, i) => q('Адрес номер ' + i)));
+    const st = burst.map((r) => r.status);
+    assert.equal(st.filter((x) => x === 429).length, 6, 'на человека — 20 в минуту (одна уже потрачена)');
+    assert.ok(st.filter((x) => x === 503).length >= 5, 'очередь дольше 10 секунд — «попробуйте позже»');
+    const served = st.filter((x) => x === 200).length;
+    assert.equal(upstream, 1 + served);
+    assert.ok(Date.now() - t0 >= (served - 1) * 1000, 'не чаще 1 запроса в секунду');
+  } finally { delete process.env.GEOCODER_URL; geo.close(); }
+});
+
+test('web-push 4: ключи VAPID и шифрование уведомления (без отправки)', () => {
+  const webpush = require('web-push'); const crypto = require('crypto');
+  const k = webpush.generateVAPIDKeys();
+  const ec = crypto.createECDH('prime256v1'); ec.generateKeys();
+  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: ec.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } };
+  const d = webpush.generateRequestDetails(sub, JSON.stringify({ title: 'x' }), { TTL: 60, vapidDetails: { subject: 'https://example.org/dialogue-cards/', ...k } });
+  assert.equal(d.method, 'POST'); assert.equal(d.headers['Content-Encoding'], 'aes128gcm'); assert.match(d.headers.Authorization, /^vapid t=/);
 });

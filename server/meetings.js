@@ -86,20 +86,66 @@ function fmtLocal(d, m, lang) {
   return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'ru-RU', { timeZone: m.timezone, dateStyle: 'full', timeStyle: 'short' }).format(dt) + ` (${m.timezone})`;
 }
 
-/** Запись на дату: занимает место; при заполнении запись закрывается. Подтверждение — письмом (или показ текста в демо). */
+// Подтверждение записи по ссылке из письма (когда подключена почта; MEETING_CONFIRM=0 — выключить): место занимается
+// только после перехода по ссылке. Неподтверждённые заявки хранятся сутки, в базе — только хеш ссылки.
+db.exec(`CREATE TABLE IF NOT EXISTS registration_requests (
+  id INTEGER PRIMARY KEY, date_id INTEGER NOT NULL REFERENCES meeting_dates(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, email TEXT NOT NULL, contact TEXT NOT NULL DEFAULT '', token_hash TEXT NOT NULL UNIQUE,
+  user_id INTEGER, visitor_id TEXT, lang TEXT NOT NULL DEFAULT 'ru',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), expires_at TEXT NOT NULL, used_at TEXT
+)`);
+const confirmOn = () => mail.connected() && config.meetingConfirm !== '0';
+const sha = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+// Писем о записи на один адрес — не больше 5 в сутки (подтверждения и напоминания), чтобы форму не использовали для рассылки.
+const limits = require('./limits');
+const lettersPerEmail = limits.win(limits.DAY, 5);
+
+const placeOf = (m) => [m.venue, m.city, m.country].filter(Boolean).join(', ');
+/** Письмо «Вы записаны»: когда, где, стоимость, календарь, ссылка на отмену. */
+function registeredLetter(n, d, m, token, baseUrl, lang) {
+  const link = `${baseUrl}${config.basePath}/r/${token}`;
+  const when = fmtLocal(d, m, lang);
+  const subject = lang === 'en' ? `You are registered: ${m.title}` : `Вы записаны: ${m.title}`;
+  const ics = `${baseUrl}${config.basePath}/api/registrations/${token}/ics`;
+  const body = lang === 'en'
+    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${placeOf(m)}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
+    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${placeOf(m)}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} за участника. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
+  return { link, subject, body };
+}
+async function sendLimited(email, subject, body) {
+  if (!lettersPerEmail.hit(email)) return { sent: true, limited: true }; // ответ тот же: письма на этот адрес уже уходили
+  return mail.send(email, subject, body);
+}
+
+/**
+ * Запись на дату. Ответ не выдаёт, записан ли уже этот адрес:
+ * - с подтверждением (подключена почта): всегда «проверьте почту»; новому — ссылка подтверждения, уже записанному —
+ *   письмо со ссылкой на его запись; место занимается после подтверждения (confirmRegistration);
+ * - без подтверждения: запись сразу; повтор с того же браузера или аккаунта возвращает прежнюю запись, повтор того же
+ *   адреса с другого устройства — новая запись (как и любой другой адрес; число записей ограничено по IP в index.js).
+ */
 async function register(dateId, { name, email, contact, userId = null, visitorId = null }, baseUrl, lang = 'ru') {
   const n = line(name, 100);
   const e = String(email || '').trim().toLowerCase().slice(0, 200);
   if (!n) return { error: 'name_required' };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { error: 'email_required' };
+  const mine = (r) => (userId && r.user_id === userId) || (visitorId && r.visitor_id === visitorId);
   const result = db.transaction(() => {
     const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(dateId);
     if (!d) return { error: 'not_found' };
     const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
     if (m.status !== 'published' || d.status !== 'active') return { error: 'closed' };
     if (d.starts_at < nowIso()) return { error: 'past' };
+    const existing = db.prepare(`SELECT * FROM registrations WHERE date_id = ? AND email = ? AND status = 'active' ORDER BY id LIMIT 1`).get(d.id, e);
+    if (existing && mine(existing)) return { token: existing.token, d, m, repeated: true };
     if (seatsTaken.get(d.id).n >= d.capacity) return { error: 'full' };
-    if (db.prepare(`SELECT 1 FROM registrations WHERE date_id = ? AND email = ? AND status = 'active'`).get(d.id, e)) return { error: 'already_registered' };
+    if (confirmOn() && !m.is_demo) {
+      if (existing) return { remind: existing, d, m };
+      const ct = crypto.randomBytes(24).toString('base64url');
+      db.prepare(`INSERT INTO registration_requests (date_id, name, email, contact, token_hash, user_id, visitor_id, lang, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(d.id, n, e, m.ask_contact ? line(contact, 200) : '', sha(ct), userId, visitorId, lang, new Date(Date.now() + 24 * 3600e3).toISOString());
+      return { confirmToken: ct, d, m };
+    }
     const token = crypto.randomBytes(18).toString('base64url');
     // привязка записи к аккаунту или к этому браузеру — для событий в колокольчике (одного совпавшего email недостаточно)
     db.prepare('INSERT INTO registrations (date_id, name, email, contact, token, is_demo, user_id, visitor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
@@ -107,17 +153,64 @@ async function register(dateId, { name, email, contact, userId = null, visitorId
     return { token, d, m };
   })();
   if (result.error) return result;
-  const { token, d, m } = result;
-  const link = `${baseUrl}${config.basePath}/r/${token}`;
-  const when = fmtLocal(d, m, lang);
-  const subject = lang === 'en' ? `You are registered: ${m.title}` : `Вы записаны: ${m.title}`;
-  const ics = `${baseUrl}${config.basePath}/api/registrations/${token}/ics`;
-  const body = lang === 'en'
-    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
-    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} за участника. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
+  const { d, m } = result;
+  if (result.confirmToken || result.remind) {
+    const when = fmtLocal(d, m, lang);
+    let subject; let body;
+    if (result.confirmToken) {
+      const link = `${baseUrl}${config.basePath}/rc/${result.confirmToken}`;
+      subject = lang === 'en' ? `Confirm your registration: ${m.title}` : `Подтвердите запись: ${m.title}`;
+      body = lang === 'en'
+        ? `Hello, ${n}!\n\nTo take a seat at the Dialogue Flow meeting “${m.title}” (${when}, ${placeOf(m)}), open this link within 24 hours:\n${link}\n\nIf you did not sign up, just ignore this email — no seat will be taken.`
+        : `Здравствуйте, ${n}!\n\nЧтобы занять место на встрече Dialogue Flow «${m.title}» (${when}, ${placeOf(m)}), откройте ссылку в течение суток:\n${link}\n\nЕсли вы не записывались, просто не отвечайте на это письмо — место не будет занято.`;
+    } else {
+      const link = `${baseUrl}${config.basePath}/r/${result.remind.token}`;
+      subject = lang === 'en' ? `You are already registered: ${m.title}` : `Вы уже записаны: ${m.title}`;
+      body = lang === 'en'
+        ? `Hello!\n\nThis address is already registered for the Dialogue Flow meeting “${m.title}” (${when}, ${placeOf(m)}).\nYour registration and cancel link: ${link}\n\nIf you did not try to sign up again, just ignore this email.`
+        : `Здравствуйте!\n\nЭтот адрес уже записан на встречу Dialogue Flow «${m.title}» (${when}, ${placeOf(m)}).\nВаша запись и отмена: ${link}\n\nЕсли вы не записывались повторно, просто не отвечайте на это письмо.`;
+    }
+    const sent = await sendLimited(e, subject, body);
+    return { ok: true, pending: true, letter: { sent: !!sent.sent, failed: !!sent.failed }, isDemo: false, startsAt: d.starts_at, timezone: m.timezone, place: placeOf(m) };
+  }
+  const { token } = result;
+  const { link, subject, body } = registeredLetter(n, d, m, token, baseUrl, lang);
   // Демо-встреча: письмо не отправляется (честно сообщаем об этом на странице), настоящая почта не задействуется.
-  const letter = m.is_demo ? { sent: false, demo: true, demoMeeting: true, subject, body } : await mail.send(e, subject, body);
-  return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: [m.venue, m.city, m.country].filter(Boolean).join(', ') };
+  const letter = m.is_demo ? { sent: false, demo: true, demoMeeting: true, subject, body } : await sendLimited(e, subject, body);
+  return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: placeOf(m) };
+}
+
+/** Переход по ссылке из письма: место занимается сейчас (если ещё есть). Повтор ссылки ведёт к той же записи. */
+async function confirmRegistration(ct, baseUrl) {
+  if (typeof ct !== 'string' || !/^[A-Za-z0-9_-]{20,64}$/.test(ct)) return { error: 'not_found' };
+  const result = db.transaction(() => {
+    const q = db.prepare('SELECT * FROM registration_requests WHERE token_hash = ?').get(sha(ct));
+    if (!q || q.expires_at < nowIso()) return { error: 'not_found' };
+    const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(q.date_id);
+    const m = d && db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
+    if (!d || !m) return { error: 'not_found' };
+    if (q.used_at) {
+      const r = db.prepare(`SELECT token FROM registrations WHERE date_id = ? AND email = ? AND status = 'active' ORDER BY id LIMIT 1`).get(d.id, q.email);
+      return r ? { token: r.token, d, m } : { error: 'not_found' };
+    }
+    if (m.status !== 'published' || d.status !== 'active') return { error: 'closed' };
+    if (d.starts_at < nowIso()) return { error: 'past' };
+    const existing = db.prepare(`SELECT * FROM registrations WHERE date_id = ? AND email = ? AND status = 'active' ORDER BY id LIMIT 1`).get(d.id, q.email);
+    db.prepare(`UPDATE registration_requests SET used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(q.id);
+    if (existing) return { token: existing.token, d, m };
+    if (seatsTaken.get(d.id).n >= d.capacity) return { error: 'full' };
+    const token = crypto.randomBytes(18).toString('base64url');
+    db.prepare('INSERT INTO registrations (date_id, name, email, contact, token, is_demo, user_id, visitor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(d.id, q.name, q.email, q.contact, token, 0, q.user_id, q.visitor_id);
+    return { token, d, m, q, created: true };
+  })();
+  if (result.error) return result;
+  if (result.created) {
+    const { q, d, m, token } = result;
+    const l = registeredLetter(q.name, d, m, token, baseUrl, q.lang);
+    await mail.send(q.email, l.subject, l.body); // письмо с отменой и календарём — на память
+  }
+  return { ok: true, token: result.token, created: !!result.created };
 }
 
 function registrationByToken(token) {
@@ -291,6 +384,6 @@ function restoreByAdmin(meetingId) {
 }
 
 module.exports = {
-  LANGS, validTz, zonedToUtc, places, upcoming, datePublic, register, registrationByToken, cancelByToken, icsByToken,
+  LANGS, validTz, zonedToUtc, places, upcoming, datePublic, register, confirmRegistration, confirmOn, registrationByToken, cancelByToken, icsByToken,
   create, update, addDates, setDate, setPublished, mine, oneForEditor, meetingOfDate, facilitatorOf, allForAdmin, removeByAdmin, restoreByAdmin,
 };
