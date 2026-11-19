@@ -1322,3 +1322,19 @@ test('Адрес клиента — последний, дописанный п�
   assert.equal((await tryOwner('10.0.0.99, 203.0.113.7')).error, 'too_many_attempts', 'первый адрес списка не считается адресом клиента');
   assert.equal((await tryOwner('203.0.113.8')).error, 'wrong_password', 'другой клиент не заблокирован');
 });
+
+test('Куратор не рассматривает свою работу: решение, обсуждение и голос — только другим кураторам', async () => {
+  const cu = await emailLogin('curator-artist@example.org', 'Куратор-художник');
+  for (const role of ['curator', 'artist']) assert.equal((await call('POST', `/api/admin/users/${cu.user.id}/roles`, { role, grant: true }, { cookie: owner.cookie })).status, 200);
+  const sub = await call('POST', '/api/artist/works', null, { cookie: cu.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['images', await png('#3a5f7d'), 'own.png']]) });
+  assert.equal(sub.status, 201, JSON.stringify(sub.json));
+  const id = sub.json.ids[0];
+  const w = (a, body) => call('POST', `/api/curation/works/${id}/${a}`, body, { cookie: cu.cookie });
+  assert.equal((await w('decide', { action: 'recommend' })).json.error, 'own_work');
+  assert.equal((await w('decide', { action: 'reject', criteria: [1] })).json.error, 'own_work');
+  assert.equal((await w('discuss', { question: 'Как вам?' })).json.error, 'own_work');
+  assert.equal((await call('POST', `/api/curation/works/${id}/discuss`, { question: 'Как вам?' }, { cookie: curatorU.cookie })).status, 200, 'другой куратор выносит на обсуждение');
+  assert.equal((await w('vote', { vote: 'approve' })).json.error, 'own_work');
+  assert.equal((await call('POST', `/api/curation/works/${id}/vote`, { vote: 'approve' }, { cookie: curatorU.cookie })).status, 200);
+  assert.equal((await call('POST', `/api/curation/works/${id}/decide`, { action: 'recommend' }, { cookie: curatorU.cookie })).status, 200);
+});

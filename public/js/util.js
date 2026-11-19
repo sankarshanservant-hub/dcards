@@ -117,6 +117,7 @@ const ERRORS = {
   live_not_listener: ['Сейчас карты выбирают собеседники.', 'Partners are choosing now.'],
   live_already_paired: ['Вы уже выбрали карту.', 'You have already chosen a card.'],
   live_taken: ['Эту карту уже выбрал другой собеседник.', 'Another partner has already taken this card.'],
+  own_work: ['Свою работу рассматривают другие кураторы.', 'Your own work is reviewed by other curators.'],
   feedback_empty: ['Напишите пару слов или приложите запись.', 'Write a few words or attach a recording.'],
   bad_media_type: ['Подходят только аудио- и видеофайлы.', 'Only audio and video files are accepted.'],
   media_too_large: ['Запись больше 80 МБ. Сделайте её короче и отправьте ещё раз.', 'The recording is larger than 80 MB. Make it shorter and send again.'],
