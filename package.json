@@ -28,11 +28,11 @@
     "nodemailer": "^10.5.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.35.5",
-    "web-push": "^3.6.7"
+    "web-push": "^4.0.0"
   },
   "private": true,
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.12"
   },
   "devDependencies": {
     "qrcode-generator": "^1.4.4"

@@ -1623,3 +1623,12 @@ test('Поиск места: общая очередь не чаще 1 запр�
     assert.ok(Date.now() - t0 >= (served - 1) * 1000, 'не чаще 1 запроса в секунду');
   } finally { delete process.env.GEOCODER_URL; geo.close(); }
 });
+
+test('web-push 4: ключи VAPID и шифрование уведомления (без отправки)', () => {
+  const webpush = require('web-push'); const crypto = require('crypto');
+  const k = webpush.generateVAPIDKeys();
+  const ec = crypto.createECDH('prime256v1'); ec.generateKeys();
+  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: ec.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } };
+  const d = webpush.generateRequestDetails(sub, JSON.stringify({ title: 'x' }), { TTL: 60, vapidDetails: { subject: 'https://example.org/dialogue-cards/', ...k } });
+  assert.equal(d.method, 'POST'); assert.equal(d.headers['Content-Encoding'], 'aes128gcm'); assert.match(d.headers.Authorization, /^vapid t=/);
+});
