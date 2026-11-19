@@ -67,7 +67,10 @@ function loadUser(req, res, next) {
       const expected = sign(payload);
       if (parts[2].length === expected.length && crypto.timingSafeEqual(Buffer.from(parts[2]), Buffer.from(expected)) && Number(parts[1]) > Date.now()) {
         const u = stmt.user.get(Number(parts[0]));
-        if (u) { req.user = u; req.roles = rolesOf(u.id); }
+        // демо-сессия, выданная, пока демо было включено, без демо-режима не действует (22.11.2026): иначе новый
+        // посетитель этого браузера видит общий тестовый аккаунт («Мира (демо-художник)») и его имя в формах
+        if (u && u.is_demo && !config.demoMode) clear(res);
+        else if (u) { req.user = u; req.roles = rolesOf(u.id); }
       }
     }
   }

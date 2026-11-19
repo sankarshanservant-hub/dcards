@@ -1350,3 +1350,16 @@ test('Пароль владельца на боевом сервере — не 
     assert.equal(owner('test-password', { NODE_ENV: 'development' }), '["test-password",false]', 'при разработке длина не проверяется');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('22.11: демо-сессия, выданная до выключения демо, не действует — посетитель не видит общий тестовый аккаунт', async () => {
+  const config = require('../server/config');
+  const d = await call('POST', '/api/demo/login', { as: 'artist' });
+  assert.equal(d.status, 200);
+  const me1 = await call('GET', '/api/me', null, { cookie: d.cookie });
+  assert.ok(me1.json && me1.json.user && me1.json.user.isDemo, 'в демо-режиме демо-вход работает');
+  const was = config.demoMode; config.demoMode = false;
+  try {
+    const me2 = await call('GET', '/api/me', null, { cookie: d.cookie });
+    assert.ok(!me2.json || !me2.json.user, 'без демо-режима старая демо-сессия не принимается');
+  } finally { config.demoMode = was; }
+});
