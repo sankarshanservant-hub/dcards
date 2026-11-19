@@ -1167,3 +1167,42 @@ test('Установка на «Домой»: у Dialogue Cards своя обл�
   assert.match(html, /<link rel="apple-touch-icon" href="[^"]*\/img\/icon-180\.png/, 'свой значок для iPhone');
   assert.ok(!/<title>[^<]*Сарасват/.test(html));
 });
+
+test('Демо-роли не видят настоящих людей: заявки, email, работы на рассмотрении, встречи, подборки', async () => {
+  // Демо-роль может взять любой посетитель — в служебных разделах ему показываются только демо-записи.
+  const adm = await call('POST', '/api/demo/login', { as: 'admin' });
+  const cur = await call('POST', '/api/demo/login', { as: 'curator' });
+  await call('POST', '/api/admin/demo/seed', null, { cookie: adm.cookie });
+  const real = await call('GET', '/api/admin/applications', null, { cookie: owner.cookie });
+  assert.ok(real.json.applications.some((a) => !a.isDemo), 'у владельца есть настоящие заявки — проверка не пустая');
+  for (const url of ['/api/admin/applications', '/api/admin/curator-applications', '/api/admin/meetings', '/api/admin/comments', '/api/admin/cards', '/api/admin/print-requests', '/api/admin/users']) {
+    const r = await call('GET', url, null, { cookie: adm.cookie });
+    assert.equal(r.status, 200, url);
+    const list = Object.values(r.json).find(Array.isArray) || [];
+    assert.ok(list.every((x) => x.isDemo), `${url}: демо-администратор видит только демо-записи`);
+  }
+  const pr = (await call('GET', '/api/admin/print-requests', null, { cookie: adm.cookie })).json.requests;
+  assert.ok(pr.every((p) => !p.email || !/@/.test(p.email) || p.isDemo), 'настоящие email не показываются');
+  const w = (await call('GET', '/api/admin/works', null, { cookie: adm.cookie })).json;
+  assert.ok([...w.recommended, ...w.decisions].every((x) => x.isDemo), 'решения и очередь — только демо');
+  const col = (await call('GET', '/api/collections', null, { cookie: adm.cookie })).json.collections;
+  assert.ok(col.every((c) => c.isDemo), 'подборки — только демо');
+  const qd = (await call('GET', '/api/curation/queue', null, { cookie: cur.cookie })).json;
+  assert.ok([...qd.queue, ...qd.recent].every((x) => x.isDemo), 'демо-куратор видит только демо-работы');
+  const mine = (await call('GET', '/api/artist/works', null, { cookie: artist.cookie })).json.works;
+  assert.ok(mine.length, 'у настоящего художника есть работы');
+  assert.equal((await call('GET', `/api/works/${mine[0].id}`, null, { cookie: cur.cookie })).status, 404, 'чужую настоящую работу демо-куратор не открывает');
+  assert.equal((await call('GET', `/api/works/${mine[0].id}`, null, { cookie: owner.cookie })).status, 200, 'владелец открывает');
+  // Номер в другой записи (0x…, 1e1) не обходит проверку «только демо-объекты».
+  const hex = '0x' + artist.user.id.toString(16);
+  for (const [m, u, b] of [['POST', `/api/admin/users/${hex}/roles`, { role: 'admin', grant: true }], ['PATCH', `/api/admin/users/${hex}`, { email: 'evil@example.org' }],
+    ['POST', `/api/admin/users/${artist.user.id}e0/roles`, { role: 'admin', grant: true }]]) {
+    assert.equal((await call(m, u, b, { cookie: adm.cookie })).json.error, 'demo_readonly', `${m} ${u}`);
+  }
+  // Демо на боевом сервере выключено даже при DEMO_MODE=1.
+  const { execFileSync } = require('child_process');
+  const prodDemo = (extra) => execFileSync(process.execPath, ['-e', "process.stdout.write(String(require('./server/config').demoMode))"],
+    { cwd: path.join(__dirname, '..'), env: { ...process.env, NODE_ENV: 'production', DEMO_MODE: '1', ...extra } }).toString();
+  assert.equal(prodDemo({}), 'false');
+  assert.equal(prodDemo({ DEMO_MODE_IN_PRODUCTION: '1' }), 'true');
+});

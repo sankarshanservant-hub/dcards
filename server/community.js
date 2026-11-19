@@ -1,4 +1,5 @@
 // Обсуждения карт, командные чаты, заявки на роль фасилитатора.
+const { demoWhere } = require('./demo-scope');
 const db = require('./db');
 
 const userName = (id) => { const u = db.prepare('SELECT name, public_name FROM users WHERE id = ?').get(id); return u ? (u.public_name || u.name) : ''; };
@@ -23,7 +24,7 @@ function deleteComment(id, user, isAdmin) {
 }
 function recentComments(showDemo) {
   return db.prepare(`SELECT c.*, k.code FROM comments c JOIN cards k ON k.id = c.card_id
-    WHERE c.deleted_at IS NULL AND ${showDemo ? '1=1' : 'c.is_demo = 0'} ORDER BY c.id DESC LIMIT 100`).all()
+    WHERE c.deleted_at IS NULL AND ${demoWhere(showDemo, 'c.is_demo')} ORDER BY c.id DESC LIMIT 100`).all()
     .map((c) => ({ id: c.id, code: c.code, author: userName(c.user_id), text: c.text, createdAt: c.created_at, isDemo: !!c.is_demo }));
 }
 
@@ -307,7 +308,7 @@ function submitApplication(user) {
   return { ok: true };
 }
 function applications(showDemo) {
-  return db.prepare(`SELECT * FROM fac_applications WHERE ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC`).all()
+  return db.prepare(`SELECT * FROM fac_applications WHERE ${demoWhere(showDemo, 'is_demo')} ORDER BY updated_at DESC`).all()
     .map((a) => ({ userId: a.user_id, name: userName(a.user_id), status: a.status, city: a.city, about: a.about,
       courseDone: JSON.parse(a.course_done).length, quizPassed: quizPassed(JSON.parse(a.answers)), updatedAt: a.updated_at, isDemo: !!a.is_demo,
       manualReview: !!a.manual_review, quizAttempts: a.quiz_attempts || 0,
@@ -339,7 +340,7 @@ function submitCuratorApplication(user, { name, contact, motivation }) {
   return { ok: true };
 }
 function curatorApplications(showDemo) {
-  return db.prepare(`SELECT * FROM curator_applications WHERE ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY CASE status WHEN 'submitted' THEN 0 ELSE 1 END, updated_at DESC`).all()
+  return db.prepare(`SELECT * FROM curator_applications WHERE ${demoWhere(showDemo, 'is_demo')} ORDER BY CASE status WHEN 'submitted' THEN 0 ELSE 1 END, updated_at DESC`).all()
     .map((a) => ({ userId: a.user_id, accountName: userName(a.user_id), ...curApp(a), updatedAt: a.updated_at, isDemo: !!a.is_demo }));
 }
 function decideCuratorApplication(adminId, userId, approve, note = '') {

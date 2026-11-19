@@ -14,7 +14,8 @@ const COOKIE = 'dc_session';
 const DEMO_COOKIE = 'dc_demo';
 const TTL_MS = 30 * 24 * 3600 * 1000;
 const ROLES = ['artist', 'curator', 'facilitator', 'admin'];
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Без вложенного перебора и с пределом длины: прежний шаблон на строке «a@....@» в 150 КБ занимал сервер на 12 с.
+const EMAIL_RE = /^(?=.{3,254}$)[^\s@]{1,64}@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const CPATH = config.basePath || '/';
 
 function loadSecret() {

@@ -1,5 +1,6 @@
 // Встречи Dialogue Flow: публикация фасилитатором, поиск страна → город → дата, запись без аккаунта.
 // У каждой даты свои места и записи. Время хранится в UTC, вводится и показывается в поясе встречи.
+const { demoWhere } = require('./demo-scope');
 const crypto = require('crypto');
 const db = require('./db');
 const config = require('./config');
@@ -273,7 +274,7 @@ function oneForEditor(meetingId) {
 
 // ---------- администратор ----------
 function allForAdmin(showDemo) {
-  return db.prepare(`SELECT * FROM meetings WHERE ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC`).all().map((m) => meetingOut(m, { withDates: true }));
+  return db.prepare(`SELECT * FROM meetings WHERE ${demoWhere(showDemo, 'is_demo')} ORDER BY id DESC`).all().map((m) => meetingOut(m, { withDates: true }));
 }
 function removeByAdmin(adminId, meetingId, reason) {
   const r = db.prepare(`UPDATE meetings SET status = 'removed', removed_reason = ?, removed_by = ? WHERE id = ?`).run(String(reason || '').trim().slice(0, 500), adminId, meetingId);

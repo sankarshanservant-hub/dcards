@@ -1,3 +1,4 @@
+const { demoWhere, demoScope } = require('./demo-scope');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const path = require('path');
@@ -65,7 +66,8 @@ const demoOnly = (req, res, isDemoTarget) => {
   if (!req.user || !req.user.is_demo || isDemoTarget) return true;
   bad(res, 'demo_readonly', 403); return false;
 };
-const isDemoRow = (table, where, val) => { const r = db.prepare(`SELECT is_demo FROM ${table} WHERE ${where} = ?`).get(val); return !r || !!r.is_demo; };
+// Нет такой записи — «не демо»: демо-роль не должна проходить проверку на несуществующем номере.
+const isDemoRow = (table, where, val) => { const r = db.prepare(`SELECT is_demo FROM ${table} WHERE ${where} = ?`).get(val); return !!r && !!r.is_demo; };
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -313,7 +315,7 @@ r.get('/api/works/:id', auth.requireUser, (req, res) => {
 
 // ---------- кураторы ----------
 const curator = auth.requireRole('curator');
-r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queue(req.showDemo), recent: works.recentDecided(req.showDemo), criteria: works.criteriaList(), me: req.user.id }));
+r.get('/api/curation/queue', curator, (req, res) => res.json({ queue: works.queue(demoScope(req)), recent: works.recentDecided(demoScope(req)), criteria: works.criteriaList(), me: req.user.id }));
 r.use('/api/curation/works/:id', (req, res, next) => (demoOnly(req, res, isDemoRow('works', 'id', Number(req.params.id))) ? next() : undefined));
 r.post('/api/curation/works/:id/decide', curator, (req, res) => {
   const result = works.decide(req.user, Number(req.params.id), req.body || {});
@@ -400,7 +402,7 @@ r.get('/api/chats/:room/media/:kind(full|thumb)/:file', auth.requireUser, roomGu
 const fac = auth.requireRole('facilitator');
 const ownsCollection = (req, id) => collections.ownerOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('collections', 'id', id)));
 r.get('/api/collections', fac, (req, res) => res.json({
-  collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => !c.isDemo || req.showDemo), baseUrl: baseUrl(req) + B,
+  collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => (req.user.is_demo ? c.isDemo : !c.isDemo || req.showDemo)), baseUrl: baseUrl(req) + B,
 }));
 r.post('/api/collections', fac, (req, res) => res.json({ id: collections.create(req.body && req.body.title, !!(req.body && req.body.isTest), req.user.id, !!req.user.is_demo) }));
 r.get('/api/collections/:id', fac, (req, res) => {
@@ -662,12 +664,12 @@ admin.use((req, res, next) => {
   if (m === 'GET') return p === '/outbox' ? bad(res, 'demo_readonly', 403) : next();
   let ok = false; let mm;
   if (p === '/demo/seed' || p === '/demo/clear') ok = true;
-  else if ((mm = p.match(/^\/users\/(\d+)/))) ok = isDemoRow('users', 'id', Number(mm[1]));
-  else if ((mm = p.match(/^\/applications\/(\d+)/))) ok = isDemoRow('fac_applications', 'user_id', Number(mm[1]));
-  else if ((mm = p.match(/^\/print-requests\/(\d+)/))) ok = isDemoRow('print_requests', 'id', Number(mm[1]));
-  else if ((mm = p.match(/^\/curator-applications\/(\d+)/))) ok = isDemoRow('curator_applications', 'user_id', Number(mm[1]));
-  else if ((mm = p.match(/^\/meetings\/(\d+)/))) ok = isDemoRow('meetings', 'id', Number(mm[1]));
-  else if ((mm = p.match(/^\/cards\/(DC-\d+)/)) && p !== '/cards/bulk-author') ok = isDemoRow('cards', 'code', mm[1]);
+  else if ((mm = p.match(/^\/users\/(\d+)(?:\/|$)/))) ok = isDemoRow('users', 'id', Number(mm[1]));
+  else if ((mm = p.match(/^\/applications\/(\d+)(?:\/|$)/))) ok = isDemoRow('fac_applications', 'user_id', Number(mm[1]));
+  else if ((mm = p.match(/^\/print-requests\/(\d+)(?:\/|$)/))) ok = isDemoRow('print_requests', 'id', Number(mm[1]));
+  else if ((mm = p.match(/^\/curator-applications\/(\d+)(?:\/|$)/))) ok = isDemoRow('curator_applications', 'user_id', Number(mm[1]));
+  else if ((mm = p.match(/^\/meetings\/(\d+)(?:\/|$)/))) ok = isDemoRow('meetings', 'id', Number(mm[1]));
+  else if ((mm = p.match(/^\/cards\/(DC-\d+)(?:\/|$)/)) && p !== '/cards/bulk-author') ok = isDemoRow('cards', 'code', mm[1]);
   return ok ? next() : bad(res, 'demo_readonly', 403);
 });
 admin.get('/overview', (req, res) => {
@@ -732,6 +734,7 @@ const assetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 const assetName = (g, kind, n) => (['facilitator', 'artist', 'project'].includes(g) ? (kind === 'pdf' ? `${g}.pdf` : /^\d{1,2}$/.test(String(n)) ? `${g}-ch${Number(n)}.audio` : null) : null);
 function guideAssets(g) {
   const out = { pdf: false, audio: {} };
+  if (!['facilitator', 'artist', 'project'].includes(g)) return out; // g идёт в RegExp — только известные значения
   try { for (const f of fs.readdirSync(assetDir)) { if (f === `${g}.pdf`) out.pdf = true; const m = f.match(new RegExp(`^${g}-ch(\\d+)\\.audio$`)); if (m) out.audio[m[1]] = true; } } catch { /* ещё нет */ }
   return out;
 }
@@ -751,21 +754,21 @@ admin.post('/guides/:g/:kind', (req, res, next) => (req.user.is_demo ? bad(res, 
   if (!name.endsWith('.pdf')) fs.writeFileSync(path.join(assetDir, name + '.type'), req.file.mimetype);
   res.status(201).json({ ok: true });
 });
-admin.get('/print-requests', (req, res) => res.json({ requests: db.prepare(`SELECT p.*, COALESCE(NULLIF(u.public_name,''), u.name) AS name, u.email FROM print_requests p JOIN users u ON u.id = p.user_id WHERE ${req.showDemo ? '1=1' : 'p.is_demo = 0'} ORDER BY (p.status = 'new') DESC, p.id DESC LIMIT 100`).all()
+admin.get('/print-requests', (req, res) => res.json({ requests: db.prepare(`SELECT p.*, COALESCE(NULLIF(u.public_name,''), u.name) AS name, u.email FROM print_requests p JOIN users u ON u.id = p.user_id WHERE ${demoWhere(demoScope(req), 'p.is_demo')} ORDER BY (p.status = 'new') DESC, p.id DESC LIMIT 100`).all()
   .map((p) => ({ id: p.id, name: p.name, email: p.email, note: p.note, status: p.status, createdAt: p.created_at, isDemo: !!p.is_demo })) }));
 admin.post('/print-requests/:id/done', (req, res) => { db.prepare(`UPDATE print_requests SET status = 'done' WHERE id = ?`).run(Number(req.params.id)); res.json({ ok: true }); });
-admin.get('/curator-applications', (req, res) => res.json({ applications: community.curatorApplications(req.showDemo) }));
+admin.get('/curator-applications', (req, res) => res.json({ applications: community.curatorApplications(demoScope(req)) }));
 admin.post('/curator-applications/:userId/decide', (req, res) => { const r0 = community.decideCuratorApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note); if (r0.ok) safe(() => events.applicationDecided('curator', Number(req.params.userId), !!req.body.approve)); out(res, r0); });
-admin.get('/applications', (req, res) => res.json({ applications: community.applications(req.showDemo) }));
+admin.get('/applications', (req, res) => res.json({ applications: community.applications(demoScope(req)) }));
 admin.post('/applications/:userId/decide', (req, res) => { const r0 = community.decideApplication(req.user.id, Number(req.params.userId), !!req.body.approve, req.body.note); if (r0.ok) safe(() => events.applicationDecided('facilitator', Number(req.params.userId), !!req.body.approve)); out(res, r0); });
-admin.get('/meetings', (req, res) => res.json({ meetings: meetings.allForAdmin(req.showDemo) }));
+admin.get('/meetings', (req, res) => res.json({ meetings: meetings.allForAdmin(demoScope(req)) }));
 admin.post('/meetings/:id/remove', (req, res) => { const r0 = meetings.removeByAdmin(req.user.id, Number(req.params.id), req.body.reason); if (r0.ok) safe(() => events.meetingRemoved(Number(req.params.id))); out(res, r0); });
 admin.post('/meetings/:id/restore', (req, res) => out(res, meetings.restoreByAdmin(Number(req.params.id))));
-admin.get('/comments', (req, res) => res.json({ comments: community.recentComments(req.showDemo) }));
+admin.get('/comments', (req, res) => res.json({ comments: community.recentComments(demoScope(req)) }));
 admin.put('/criteria', (req, res) => out(res, works.setCriteria(req.body && req.body.criteria)));
 // Работы: очередь «Одобрено кураторами» (только рекомендации) и обзор всех решений; окончательное решение — администратор.
-admin.get('/exchange-stats', (req, res) => res.json(exchanges.stats(Math.min(365, Math.max(1, Number(req.query.days) || 30)), req.showDemo)));
-admin.get('/works', (req, res) => res.json({ recommended: works.recommendedQueue(req.showDemo), decisions: works.decisionsLog(req.showDemo), criteria: works.criteriaList() }));
+admin.get('/exchange-stats', (req, res) => res.json(exchanges.stats(Math.min(365, Math.max(1, Number(req.query.days) || 30)), demoScope(req))));
+admin.get('/works', (req, res) => res.json({ recommended: works.recommendedQueue(demoScope(req)), decisions: works.decisionsLog(demoScope(req)), criteria: works.criteriaList() }));
 admin.post('/works/:id/decide', (req, res) => {
   const result = works.adminDecide(req.user, Number(req.params.id), req.body || {});
   if (result.decisionId) { push.onWorkDecision(result.decisionId).catch(() => {}); safe(() => events.workDecided(result.decisionId)); } // автору — о публикации, возврате или отклонении
@@ -784,7 +787,7 @@ admin.get('/cards', (req, res) => {
       (SELECT COUNT(*) FROM card_offers o WHERE o.card_id = k.id AND o.is_test = 0) AS offers,
       (SELECT COUNT(*) FROM collection_cards cc WHERE cc.card_id = k.id) AS in_collections,
       (SELECT COUNT(*) FROM comments c WHERE c.card_id = k.id AND c.deleted_at IS NULL) AS comments
-    FROM cards k WHERE ${req.showDemo ? '1=1' : 'k.is_demo = 0'} ORDER BY k.number ASC`).all();
+    FROM cards k WHERE ${demoWhere(demoScope(req), 'k.is_demo')} ORDER BY k.number ASC`).all();
   res.json({ cards: rows.map((x) => ({
     ...cards.publicCard(x, { withDetails: true }), status: x.status, source: x.source, removedAt: x.removed_at, removedBy: x.removed_by,
     selections: x.selections, colSelections: x.col_selections, testSelections: x.test_selections, offers: x.offers, inCollections: x.in_collections, comments: x.comments,
