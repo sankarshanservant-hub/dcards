@@ -696,6 +696,16 @@ r.post('/api/live/feedback/:id', (req, res, next) => {
 
 // ---------- игры компанией (без фасилитатора): комната по QR/коду ----------
 const group = require('./group');
+// Код комнаты — 5 символов: неудачные попытки найти комнату с одного адреса ограничены (30 за 10 минут), остальные
+// запросы к комнатам — щедро (телефоны компании в одной сети перечитывают состояние после каждого хода).
+Object.assign(Q, { roomMiss: limits.win(10 * MIN, 30), roomAny: limits.win(10 * MIN, 3000), roomJoin: limits.win(10 * MIN, 60) });
+r.use('/api/group/:code', (req, res, next) => {
+  const wait = limits.take([[Q.roomAny, req.ip], ...(req.method === 'POST' && /\/join$/.test(req.path) ? [[Q.roomJoin, req.ip]] : [])]);
+  if (wait) return limits.tooMany(res, wait);
+  if (!Q.roomMiss.ok(req.ip)) return limits.tooMany(res, Q.roomMiss.retryAfter(req.ip));
+  if (!group.room(req.params.code)) { Q.roomMiss.hit(req.ip); return bad(res, 'group_not_found', 404); }
+  next();
+});
 const groupDone = (res, x, status = 200) => { if (x && x.ok && x.id) group.touch(x.id); out(res, x, status); };
 r.post('/api/group', roomQuota, (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
 r.get('/api/group/:code/state', (req, res) => {

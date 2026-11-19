@@ -1538,3 +1538,21 @@ test('Сроки хранения: гостевые обмены — год, к�
   assert.equal((await call('GET', `/api/group/${room}/state?device=retention-device-0000-1`)).status, 404);
   assert.equal((await call('GET', `/api/cards/${codes[2]}`)).json.selectedCount, before, 'счётчик карты не меняется');
 });
+
+test('Игры компанией: не участник видит только код, формат, статус и число игроков; подбор кода ограничен', async () => {
+  const D = (i) => `state-device-${String(i).padStart(4, '0')}-zz`;
+  const code = (await call('POST', '/api/group', { format: 'own', deviceId: D(1), name: 'Ведущая Оля' })).json.code;
+  await call('POST', `/api/group/${code}/join`, { deviceId: D(2), name: 'Петя' });
+  await call('POST', `/api/group/${code}/act`, { deviceId: D(1), action: 'start' });
+  const stranger = (await call('GET', `/api/group/${code}/state?device=${D(9)}`)).json;
+  assert.deepEqual(Object.keys(stranger).sort(), ['code', 'count', 'format', 'me', 'serverNow', 'status']);
+  assert.equal(stranger.count, 2); assert.equal(stranger.me, null);
+  assert.ok(!JSON.stringify(stranger).includes('Оля'), 'имён нет');
+  const member = (await call('GET', `/api/group/${code}/state?device=${D(2)}`)).json;
+  assert.ok(member.me && member.members.length === 2 && member.gallery, 'участник видит игру');
+  // подбор кода: 30 промахов за 10 минут с одного адреса, затем отказ — и для настоящего кода тоже
+  const h = { headers: { 'X-Forwarded-For': '198.51.100.7' } };
+  for (let i = 0; i < 30; i++) assert.equal((await call('GET', `/api/group/ZZ${String(i).padStart(3, '0')}/state?device=${D(9)}`, null, h)).status, 404);
+  assert.equal((await call('GET', `/api/group/${code}/state?device=${D(9)}`, null, h)).status, 429);
+  assert.equal((await call('GET', `/api/group/${code}/state?device=${D(2)}`)).status, 200, 'с другого адреса — работает');
+});

@@ -84,7 +84,8 @@ export async function room(ctx, code) {
   const invite = (open = false) => `<details class="card-ui flat" ${open ? 'open' : ''}><summary><b>${esc(tt('Пригласить друзей', 'Invite friends'))}</b> · ${esc(tt('код', 'code'))} <span class="g-code">${esc(s.code)}</span></summary>
       <div class="stack" style="justify-items:center;margin-top:10px"><img class="g-qr" src="${u('/api/group/' + s.code + '/qr.png?size=500')}" alt="${esc(tt('QR-код для входа', 'QR code to join'))}" width="240" height="240">
       <input type="text" readonly value="${esc(url)}" id="gurl" aria-label="${esc(tt('Ссылка для друзей', 'Link for friends'))}" style="width:100%"></div></details>`;
-  const people = () => `<p class="small muted" style="margin:0">${esc(tt('В игре', 'Playing'))}: ${s.members.map((m) => esc(m.name)).join(', ')}</p>`;
+  // до входа в комнату сервер не сообщает имён — только число игроков
+  const people = () => `<p class="small muted" style="margin:0">${esc(tt('В игре', 'Playing'))}: ${s.members ? s.members.map((m) => esc(m.name)).join(', ') : esc(String(s.count || 0))}</p>`;
 
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
