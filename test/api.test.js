@@ -1291,3 +1291,22 @@ test('Превью ссылки: вопрос обмена только как �
   const view = (await call('GET', `/api/x/${xq.invite}`, null, { visitor: 'visitor-qqq2-0000-1111-2222' })).json;
   assert.equal(view.question, q.replace(/[\u0000-\u001f]/g, '').trim(), 'управляющие символы убраны при сохранении');
 });
+
+test('Календарь .ics: переводы строк и управляющие символы из полей встречи не разрывают файл', async () => {
+  const day = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+  const r = await call('POST', '/api/fac/meetings', { title: 'Встреча\r\nATTENDEE:x@example.org\u0007', description: 'строка 1\r\nстрока 2\rстрока 3\u0000', country: 'Россия', city: 'Казань',
+    venue: 'Кафе\nORGANIZER:y', language: 'ru', timezone: 'Europe/Moscow', priceType: 'free', capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  const m = (await call('GET', `/api/fac/meetings/${r.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(m.title, 'Встреча ATTENDEE:x@example.org', 'однострочное поле — без переводов строк и управляющих символов');
+  assert.equal(m.description, 'строка 1\nстрока 2\nстрока 3');
+  const reg = await call('POST', `/api/meetings/dates/${m.dates[0].id}/register`, { name: 'Гость\r\nX-EVIL:1', email: 'ics-guest@example.org' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.json));
+  assert.ok(reg.json.letter.body.startsWith('Здравствуйте, Гость X-EVIL:1!'), 'имя записи — одной строкой');
+  const ics = await (await fetch(`${base}/api/registrations/${reg.json.token}/ics`)).text();
+  const lines = ics.split('\r\n');
+  assert.ok(!lines.some((l) => /^(ATTENDEE|ORGANIZER|X-EVIL)/.test(l)), 'новых строк в файле не появилось');
+  assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(ics) && !/[^\r]\n/.test(ics), 'в файле только переводы строк CRLF');
+  assert.match(ics.replace(/\r\n /g, ''), /SUMMARY:Встреча ATTENDEE:x@example.org\r\n/);
+  assert.match(ics.replace(/\r\n /g, ''), /LOCATION:Кафе ORGANIZER:y\\, Казань\\, Россия/);
+});
