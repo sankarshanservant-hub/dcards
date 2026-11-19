@@ -46,8 +46,8 @@ export async function postcard(ctx, code) {
 
   const chip = (attr, val, cur, label) => `<button type="button" class="chip ${String(val) === String(cur) ? 'on' : ''}" ${attr}="${esc(String(val))}" aria-pressed="${String(val) === String(cur)}">${label}</button>`;
   const sample = () => (st.text.trim().split('\n')[0] || tt('Привет!', 'Hello!')).slice(0, 22);
-  const swatches = (list, cur, attr, custom, label) => `<div class="pc-swatches">${list.map(([c, ru, en]) => `<button type="button" class="pc-color ${c === cur ? 'on' : ''}" ${attr}="${c}" style="--c:${c}" aria-label="${esc(ru ? tt(ru, en) : c)}" aria-pressed="${c === cur}"></button>`).join('')}
-    <label class="pc-color pc-custom" title="${esc(tt('Свой цвет', 'Custom colour'))}"><input type="color" ${custom} value="${cur}" aria-label="${esc(label)}"><span aria-hidden="true">+</span></label></div>`;
+  const swatches = (list, cur, attr, custom, label) => `<div class="pc-swatches">${list.map(([c, ru, en]) => `<button type="button" class="pc-color ${c === cur ? 'on' : ''}" ${attr}="${esc(c)}" style="--c:${esc(c)}" aria-label="${esc(ru ? tt(ru, en) : c)}" aria-pressed="${c === cur}"></button>`).join('')}
+    <label class="pc-color pc-custom" title="${esc(tt('Свой цвет', 'Custom colour'))}"><input type="color" ${custom} value="${esc(cur)}" aria-label="${esc(label)}"><span aria-hidden="true">+</span></label></div>`;
   function panel() {
     if (ui.tab === 'layout') {
       return `<div class="pc-group"><b>${esc(tt('Расположение иллюстрации', 'Illustration layout'))}</b>

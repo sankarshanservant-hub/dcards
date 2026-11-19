@@ -373,7 +373,8 @@ export async function bellPage(ctx) {
     try { await api('/api/bell/read', { method: 'POST', body: { all: true } }); }
     catch (x) { ar.disabled = false; toast(errorText(x)); return; }
     ctx.main.querySelectorAll('.bell-item.unread[data-n]').forEach(markRow);
-    ar.remove(); window.dcRefreshBell && window.dcRefreshBell(true);
+    ar.textContent = tt('Все прочитаны', 'All read'); // кнопка остаётся на месте — строки ниже не сдвигаются
+    window.dcRefreshBell && window.dcRefreshBell(true);
   };
   const rl = ctx.main.querySelector('#reload'); if (rl) rl.onclick = () => location.reload();
   ctx.main.querySelectorAll('[data-n]').forEach((a) => a.addEventListener('click', () => { markRow(a); api('/api/bell/read', { method: 'POST', body: { ids: [Number(a.dataset.n)] } }).then(() => window.dcRefreshBell && window.dcRefreshBell(true)).catch(() => {}); }));

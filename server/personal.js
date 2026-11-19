@@ -28,9 +28,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS user_postcards (
 CREATE UNIQUE INDEX IF NOT EXISTS up_cid ON user_postcards(user_id, cid);`);
 const MAX_POSTCARDS = 100;
 const DESIGN_KEYS = ['layout', 'paper', 'text', 'font', 'weight', 'color', 'k', 'align', 'cx', 'cy', 'bg', 'tone'];
+// Оформление открытки — только известные значения: цвета #rrggbb, перечисления, числа в пределах; текст без управляющих символов.
+const ENUMS = { layout: ['full', 'frame', 'poster'], font: ['onest', 'serif', 'hand'], weight: ['light', 'mid', 'bold'], align: ['left', 'center', 'right'], bg: ['none', 'grad', 'plate'], tone: ['dark', 'light'] };
+const NUMS = { k: [0.02, 0.16], cx: [0, 1], cy: [0, 1] };
 function cleanDesign(d) {
   const o = {}; const src = d && typeof d === 'object' ? d : {};
-  for (const k of DESIGN_KEYS) if (src[k] !== undefined) o[k] = typeof src[k] === 'number' ? (Number.isFinite(src[k]) ? src[k] : 0) : String(src[k]).slice(0, k === 'text' ? 240 : 20);
+  for (const [k, list] of Object.entries(ENUMS)) if (list.includes(src[k])) o[k] = src[k];
+  for (const [k, [lo, hi]] of Object.entries(NUMS)) { const n = Number(src[k]); if (Number.isFinite(n)) o[k] = Math.min(hi, Math.max(lo, n)); }
+  for (const k of ['paper', 'color']) if (/^#[0-9a-fA-F]{6}$/.test(String(src[k] || ''))) o[k] = String(src[k]).toLowerCase();
+  if (src.text !== undefined) o.text = String(src.text).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '').slice(0, 240);
   return o;
 }
 const cleanCid = (c) => String(c || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);

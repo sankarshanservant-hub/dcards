@@ -27,7 +27,8 @@ const MAX_MEMBERS = 50;
 const DEFAULT_QUESTION = 'Что тебе откликается в этой карте?';
 const tok = () => crypto.randomBytes(18).toString('base64url');
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
-const clean = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
+// пробелы и переводы строк — в один пробел, прочие управляющие символы убираются (как в exchanges.js)
+const clean = (t, n) => String(t || '').replace(/\s+/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, n);
 const nameOf = (userId, typed) => { if (userId) { const u = db.prepare('SELECT name, public_name FROM users WHERE id = ?').get(userId); if (u) return u.public_name || u.name; } return typed; };
 const isOwner = (g, user, visitor) => (user && g.a_user_id === user.id) || (visitor && g.a_visitor === visitor);
 const memberOf = (g, user, visitor) => db.prepare('SELECT * FROM x_group_members WHERE group_id = ? AND ((user_id IS NOT NULL AND user_id = ?) OR (visitor IS NOT NULL AND visitor = ?)) LIMIT 1').get(g.id, user ? user.id : -1, visitor || '');

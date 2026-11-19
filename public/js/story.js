@@ -26,7 +26,7 @@ export async function storyCanvas({ card, author, aName, aText, bName, bText }) 
     return answers.map(([n, t]) => { const ls = lines(x, t, textW); return { name: n, ls, h: 58 + ls.length * sz * 1.3 + 28 }; });
   };
   const total = (bs) => bs.reduce((s, b) => s + b.h, 0) + Math.max(0, bs.length - 1) * GAP;
-  const maxCard = 1180; const minCard = 760;
+  const maxCard = answers.length ? 1180 : 1480; const minCard = 760; // без ответов — карта крупнее
   for (size = 40; size >= 30; size -= 2) { blocks = measure(size); if (H - TOP - AUTHOR - BOTTOM - total(blocks) - (blocks.length ? 36 : 0) >= minCard) break; }
   const ch = Math.max(minCard - 120, Math.min(maxCard, H - TOP - AUTHOR - BOTTOM - total(blocks) - (blocks.length ? 36 : 0)));
   const cw = Math.round(ch * img.width / img.height); const cx = (W - cw) / 2;

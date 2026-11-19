@@ -10,7 +10,17 @@ export const FONTS = [
 export const weightOf = (f, w) => f.weights[{ light: 0, mid: 1, bold: 2 }[w] ?? 1];
 export const DEFAULT_DESIGN = { layout: 'full', paper: '#ffffff', text: '', font: 'onest', weight: 'mid', color: '#ffffff', k: 0.064, align: 'center', cx: 0.5, cy: 0.15, bg: 'grad', tone: 'dark' };
 export const DESIGN_KEYS = Object.keys(DEFAULT_DESIGN);
-export const cleanDesign = (d) => { const o = {}; for (const k of DESIGN_KEYS) o[k] = d && d[k] !== undefined ? d[k] : DEFAULT_DESIGN[k]; o.text = String(o.text || '').slice(0, 240); return o; };
+// Оформление из хранилища (браузер, сервер) — только известные значения, иначе по умолчанию: цвета попадают в разметку.
+const ENUMS = { layout: ['full', 'frame', 'poster'], font: ['onest', 'serif', 'hand'], weight: ['light', 'mid', 'bold'], align: ['left', 'center', 'right'], bg: ['none', 'grad', 'plate'], tone: ['dark', 'light'] };
+const NUMS = { k: [0.02, 0.16], cx: [0, 1], cy: [0, 1] };
+export const cleanDesign = (d) => {
+  const s = d && typeof d === 'object' ? d : {}; const o = { ...DEFAULT_DESIGN };
+  for (const [k, list] of Object.entries(ENUMS)) if (list.includes(s[k])) o[k] = s[k];
+  for (const [k, [lo, hi]] of Object.entries(NUMS)) { const n = Number(s[k]); if (Number.isFinite(n)) o[k] = Math.min(hi, Math.max(lo, n)); }
+  for (const k of ['paper', 'color']) if (/^#[0-9a-fA-F]{6}$/.test(String(s[k] || ''))) o[k] = String(s[k]).toLowerCase();
+  o.text = String(s.text || '').replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '').slice(0, 240);
+  return o;
+};
 
 const CYR = 'U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116';
 const LAT = 'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD';
