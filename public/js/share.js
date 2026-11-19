@@ -1,13 +1,18 @@
-// Отправка ссылок: Telegram, WhatsApp, системное меню, копирование. Человек сам подтверждает отправку в приложении —
-// открытие меню не означает, что сообщение доставлено. Возвращает true, если человек воспользовался действием
-// (для аналитики «приглашение отправлено/скопировано»); отменённое системное меню — false.
-import { tt, toast } from './util.js';
+// Отправка ссылок и картинок (19.11.2026): одна крупная кнопка «Отправить» с самолётиком — дальше выбор приложения
+// даёт само устройство (системное меню). Где системного меню нет (компьютер) — небольшой выбор: Telegram, WhatsApp,
+// скопировать. Человек сам подтверждает отправку — открытие меню не означает доставку. Возвращает true, если человек
+// воспользовался действием (для аналитики); отменённое системное меню — false.
+import { tt, toast, esc } from './util.js';
 
 export const SLOGAN = () => tt('Dialogue Cards — повод начать интересный диалог.', 'Dialogue Cards — a reason to start an interesting dialogue.');
 export const friendText = () => tt('Мне интересно, что ты увидишь в этой карте. Напиши пару слов о том, что тебе откликнулось, и увидишь мой ответ.',
   'I wonder what you will see in this card. Write a few words about what speaks to you, and you will see my answer.');
 export const storyText = () => tt('Хочешь поделиться нашими ответами в сторис? Открой эту ссылку и посмотри, как это будет выглядеть.',
   'Would you like to share our answers in stories? Open this link and see how it will look.');
+
+const PLANE = '<svg viewBox="0 0 24 24" aria-hidden="true" class="ic-plane"><path d="M21.5 3.5 2.8 10.6c-.9.4-.9 1.6 0 1.9l4.7 1.6 1.8 5.6c.3.8 1.3 1 1.9.4l2.7-2.6 4.8 3.5c.7.5 1.7.1 1.9-.7l2.9-15.4c.2-.9-.7-1.7-1.6-1.3z"/><path d="M7.6 14.1 18.8 6.4l-8.5 9.4"/></svg>';
+/** Крупная кнопка отправки. attr — data-атрибут для обработчика. */
+export const sendButton = (attr, label) => `<button class="btn yellow big send-btn" type="button" ${attr}>${PLANE}<span>${esc(label || tt('Отправить', 'Send'))}</span></button>`;
 
 export async function shareInvite(kind, url, text, copiedMsg) {
   const full = text ? `${text}\n${url}` : url;
@@ -16,4 +21,62 @@ export async function shareInvite(kind, url, text, copiedMsg) {
   if (kind === 'sys' && navigator.share) { try { await navigator.share({ title: 'Dialogue Cards', text: text || undefined, url }); return true; } catch { return false; } }
   try { await navigator.clipboard.writeText(full); toast(copiedMsg || tt('Ссылка скопирована', 'Link copied')); return true; }
   catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), full); return true; }
+}
+
+/**
+ * Одна кнопка «Отправить»: на телефоне — системное меню выбора приложения (там Telegram, WhatsApp и остальные);
+ * без него — короткий выбор. Возвращает способ ('sys' | 'tg' | 'wa' | 'copy') или null, если человек передумал.
+ */
+export async function send(url, text) {
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (navigator.share && touch) { try { await navigator.share({ title: 'Dialogue Cards', text: text || undefined, url }); return 'sys'; } catch { return null; } }
+  const kind = await chooser();
+  if (!kind) return null;
+  await shareInvite(kind, url, text);
+  return kind;
+}
+function chooser() {
+  return new Promise((resolve) => {
+    const opener = document.activeElement;
+    const el = document.createElement('div'); el.className = 'send-pop'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', tt('Куда отправить', 'Where to send'));
+    el.innerHTML = `<div class="send-pop-in"><b>${esc(tt('Куда отправить?', 'Where to send?'))}</b>
+      <button class="btn" type="button" data-k="tg">Telegram</button><button class="btn" type="button" data-k="wa">WhatsApp</button>
+      ${navigator.share ? `<button class="btn" type="button" data-k="sys">${esc(tt('Другие приложения', 'Other apps'))}</button>` : ''}
+      <button class="btn light" type="button" data-k="copy">${esc(tt('Скопировать ссылку', 'Copy link'))}</button>
+      <button class="link-btn" type="button" data-k="">${esc(tt('Отмена', 'Cancel'))}</button></div>`;
+    const done = (k) => { el.remove(); document.removeEventListener('keydown', onKey); if (opener && opener.focus) opener.focus({ preventScroll: true }); resolve(k || null); };
+    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    el.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) done(b.dataset.k); else if (e.target === el) done(null); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(el); el.querySelector('[data-k]').focus();
+  });
+}
+
+// ---------- сторис: сохранить картинку, затем открыть сторис нужного приложения ----------
+// Сайт не может сам опубликовать сторис: картинку сохраняют в «Фото», а приложение открывают на экране сторис,
+// где выбирают последнее фото. Ссылку для стикера копируем заранее.
+export const STORY_APPS = [
+  { key: 'instagram', name: 'Instagram', app: 'instagram://story-camera', web: 'https://www.instagram.com/',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1.1" class="dot"/></svg>' },
+  { key: 'telegram', name: 'Telegram', app: 'tg://', web: 'https://web.telegram.org/',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M6.5 11.6 17 7.4l-1.8 9.1-3.8-2.8-2 1.9.3-3.1 5.3-4.4-6.6 3.9z"/></svg>' },
+  { key: 'vk', name: tt('ВКонтакте', 'VK'), app: 'vk://', web: 'https://vk.com/',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M7 9c.3 3.6 2.2 6 5.4 6h.3v-2.2c1.2.1 2.1 1 2.5 2.2h1.6c-.4-1.5-1.5-2.5-2.3-2.9.8-.4 1.8-1.4 2.1-2.9h-1.5c-.3 1.1-1.3 2.1-2.4 2.2V9h-1.5v3.9C10.3 12.6 9.3 11 9.2 9z" class="dot"/></svg>' },
+];
+/** Сохранить картинку: на телефоне — системное меню (там «Сохранить изображение» в Фото), иначе — скачивание. */
+export async function saveImage(blob, name) {
+  const file = new File([blob], name, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] }) && matchMedia('(pointer: coarse)').matches) {
+    try { await navigator.share({ files: [file] }); return true; } catch (e) { if (e && e.name === 'AbortError') return false; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(tt('Картинка сохранена', 'Image saved'));
+  return true;
+}
+export function openStoryApp(key) {
+  const a = STORY_APPS.find((x) => x.key === key); if (!a) return;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (!touch) { window.open(a.web, '_blank', 'noopener'); return; }
+  location.href = a.app; // откроет приложение, если оно установлено
 }

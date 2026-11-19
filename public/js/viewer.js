@@ -377,7 +377,7 @@ export function openViewer(opts) {
           ${shareField()}
           ${xLine}
           <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></a>
-            <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</a></div>
+            <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${icons.mail}<span>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</span></a></div>
           <div class="vb-panel">
             <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('Попробуй другие форматы', 'Try other formats'))}</span>${chev(ui.guide)}</button>
             ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>
@@ -746,6 +746,7 @@ export function refreshViewer() { if (current) current.refreshBottom(); }
 
 export const icons = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>',
+  mail: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5 12 13l8.5-6.5"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>',
   heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>',
   heartFull: '<svg viewBox="0 0 24 24" aria-hidden="true" class="filled"><path d="M12 20.3s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>',
