@@ -908,10 +908,20 @@ test('Push: подписка по согласию, адресаты по отв
   push.setSender(async (sub, payload) => { sent.push({ endpoint: sub.endpoint, ...JSON.parse(payload) }); });
   const ann = await emailLogin('ann-push@example.org', 'Анна');
   const bob = await emailLogin('bob-push@example.org', 'Борис');
-  const sub = (n) => ({ endpoint: `https://push.example.org/${n}`, keys: { p256dh: 'BPk' + n, auth: 'au' + n } });
+  const sub = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${n}`, keys: { p256dh: 'BPk' + n, auth: 'au' + n } });
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint: 'http://bad' } }, { cookie: ann.cookie })).status, 400, 'неверная подписка');
+  // только службы push браузеров
+  for (const endpoint of ['https://push.example.org/x', 'https://127.0.0.1/x', 'https://fcm.googleapis.com.example.org/x', 'https://fcm.googleapis.com:8443/x', 'https://user@fcm.googleapis.com/x', 'https://push.apple.com.evil.org/x']) {
+    assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint, keys: { p256dh: 'BPk', auth: 'au' } } }, { cookie: ann.cookie })).json.error, 'bad_subscription', endpoint);
+  }
+  assert.ok(push.pushEndpointOk('https://web.push.apple.com/abc') && push.pushEndpointOk('https://updates.push.services.mozilla.com/wpush/v2/x') && push.pushEndpointOk('https://wns2-par02p.notify.windows.com/w/?token=x'));
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('ann') }, { cookie: ann.cookie })).status, 200);
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('bob') }, { cookie: bob.cookie })).status, 200);
+  // чужой адрес подписки без её ключа не переходит к другому человеку; с тем же ключом (тот же браузер) — переходит
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint: sub('ann').endpoint, keys: { p256dh: 'BPkX', auth: 'other' } } }, { cookie: bob.cookie })).json.error, 'bad_subscription');
+  const pdb = require('../server/db');
+  assert.equal(pdb.prepare('SELECT user_id FROM push_subscriptions WHERE endpoint = ?').get(sub('ann').endpoint).user_id, ann.user.id);
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('ann') }, { cookie: ann.cookie })).status, 200, 'повторная подписка того же человека');
   const st = (await call('GET', '/api/push', null, { cookie: ann.cookie })).json;
   assert.ok(st.publicKey && st.devices === 1 && st.prefs.replies && st.prefs.mentions, 'ключ VAPID, одно устройство, по умолчанию ответы и упоминания');
   const wait = () => new Promise((r) => setTimeout(r, 120));
@@ -944,9 +954,13 @@ test('Push: подписка по согласию, адресаты по отв
   await call('PUT', '/api/push/prefs', { enabled: false }, { cookie: ann.cookie });
   await call('POST', '/api/chats/general', { text: '@Анна', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
   assert.equal(sent.length, 2, 'общий переключатель выключен — уведомлений нет');
+  // ответ службы не сохраняется — только код
+  push.setSender(async () => { const e = new Error('<b>remote text</b>'); e.statusCode = 500; e.body = '<html>remote body</html>'; throw e; });
+  await call('PUT', '/api/push/prefs', { enabled: true }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: '@Анна сбой', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
+  assert.equal((await call('GET', '/api/push', null, { cookie: ann.cookie })).json.subscriptions[0].lastError, 'HTTP 500');
   // недействительная подписка удаляется
   push.setSender(async () => { const e = new Error('gone'); e.statusCode = 410; throw e; });
-  await call('PUT', '/api/push/prefs', { enabled: true }, { cookie: ann.cookie });
   await call('POST', '/api/chats/general', { text: '@Анна снова', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
   assert.equal((await call('GET', '/api/push', null, { cookie: ann.cookie })).json.devices, 0, 'подписка с ответом 410 удалена');
   // демо-аккаунт подписаться не может
