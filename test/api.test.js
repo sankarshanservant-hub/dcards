@@ -560,6 +560,48 @@ test('Колокольчик по ролям: художник, куратор, 
   assert.ok(an && an.url === '/curator', 'одобрение — ведёт в открывшийся кабинет');
 });
 
+
+test('19.11: раунды разговора, отдельный обмен, превью без ответов, аналитика по этапам', async () => {
+  const VA = 'visitor-r1aa-0000-1111-2222'; const VB = 'visitor-r1bb-0000-1111-2222'; const VC = 'visitor-r1cc-0000-1111-2222';
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  const x = (await call('POST', '/api/exchanges', { code: codes[3], text: 'Первый раунд', name: 'Аня', clientKey: 'r1' }, { visitor: VA })).json;
+  assert.equal((await call('POST', `/api/x/${x.invite}/sent`, { via: 'tg' }, { visitor: VB })).json.error, 'forbidden', 'отметку отправки ставит только отправитель');
+  await call('POST', `/api/x/${x.secret}/sent`, { via: 'tg' });
+  // превью мессенджера: картинка карты и вопрос, ни ответов, ни имени; не считается открытием
+  const html = await fetch(base + `/x/${x.invite}`, { headers: { 'User-Agent': 'TelegramBot (like TwitterBot)' } }).then((r) => r.text());
+  assert.ok(html.includes('og:image') && html.includes(`/og/${codes[3]}.jpg`) && html.includes('Что ты здесь видишь?'));
+  assert.ok(!html.includes('Первый раунд') && !html.includes('Аня'), 'в превью нет ответа и имени');
+  const img = await fetch(base + `/og/${codes[3]}.jpg`); assert.equal(img.status, 200); assert.match(img.headers.get('content-type'), /jpeg/);
+  await fetch(base + `/api/x/${x.invite}`, { headers: { 'User-Agent': 'WhatsApp/2.23', 'X-DC-Visitor': VC } });
+  await call('GET', `/api/x/${x.invite}`, null, { visitor: VA }); // сам отправитель
+  let st = (await call('GET', '/api/admin/exchange-stats', null, { cookie: owner.cookie })).json;
+  const opened0 = st.personal.all.opened;
+  await call('GET', `/api/x/${x.invite}`, null, { visitor: VB }); await call('GET', `/api/x/${x.invite}`, null, { visitor: VB });
+  st = (await call('GET', '/api/admin/exchange-stats', null, { cookie: owner.cookie })).json;
+  assert.equal(st.personal.all.opened, opened0 + 1, 'открытие человеком — один раз; превью и сам отправитель не считаются');
+  await call('POST', `/api/x/${x.invite}/answer`, { text: 'Ответ Б', name: 'Борис', answerKey: 'ra' }, { visitor: VB });
+  const vb = (await call('GET', `/api/x/${x.invite}`, null, { visitor: VB })).json;
+  // Твоя очередь: Б отвечает своей картой — следующий раунд того же разговора, Аня получает в колокольчик
+  const r2 = await call('POST', `/api/x/${vb.secret}/reply`, { code: codes[4], text: 'Раунд два', clientKey: 'rb' }, { visitor: VB });
+  assert.equal(r2.status, 201);
+  const bellA = (await call('GET', '/api/bell', null, { visitor: VA })).json.items.find((n) => n.kind === 'exchange_round');
+  assert.ok(bellA, 'Ане — «Тебе прислали ответную карту»');
+  const inv2 = (await call('GET', bellA.url.replace('/x/', '/api/x/'), null, { visitor: VA })).json;
+  assert.equal(inv2.role, 'invitee'); assert.equal(inv2.round, 2); assert.ok(!JSON.stringify(inv2).includes('Раунд два'), 'новый раунд — свой скрытый текст');
+  const ans2 = (await call('POST', `/api/x/${r2.json.invite}/answer`, { text: 'Ответ Ани во втором', answerKey: 'rc' }, { visitor: VA })).json.exchange;
+  assert.equal(ans2.rounds.length, 2, 'у участника видны оба раунда разговора');
+  assert.ok((await call('GET', '/api/exchanges', null, { visitor: VA })).json.exchanges.every((e) => e.conv === x.id), 'оба — один разговор');
+  // Б отправляет исходную карту третьему — отдельный обмен без доступа к прежним ответам
+  const f = (await call('POST', '/api/exchanges', { code: codes[3], text: 'Новому человеку', origin: 'forward', clientKey: 'rf' }, { visitor: VB })).json;
+  await call('POST', `/api/x/${f.secret}/sent`, { via: 'copy' });
+  const vc = (await call('GET', `/api/x/${f.invite}`, null, { visitor: VC })).json;
+  assert.ok(!JSON.stringify(vc).includes('Первый раунд') && !JSON.stringify(vc).includes('Ответ Б'), 'третий не видит прежние ответы');
+  st = (await call('GET', '/api/admin/exchange-stats', null, { cookie: owner.cookie })).json;
+  assert.ok(st.personal.reply.created >= 1 && st.personal.forward.created >= 1, 'ответная карта и независимое приглашение — раздельно');
+  assert.ok(st.onwardNew >= 1, 'ответивший отправил своё приглашение (ответ следующего не нужен)');
+  assert.ok(st.personal.all.sent >= 2 && st.days === 30);
+});
+
 // ---------- демо-данные отделены от реальных ----------
 test('Демо-данные видны только в демо-режиме и не попадают в реальную статистику', async () => {
   const before = (await call('GET', '/api/cards')).json.cards.length;

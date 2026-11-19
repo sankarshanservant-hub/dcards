@@ -40,6 +40,17 @@ export async function overview(ctx) {
         <p class="small muted" style="margin:0">${esc(tt('Демо-работы, встречи, подборка, сообщения и заявка. Помечены «демо», видны только в демо-режиме и не смешиваются с реальной статистикой.', 'Demo works, meetings, a selection, messages and an application. Labelled “demo”, visible only in demo mode and kept apart from real statistics.'))}</p>
         <div class="row"><button class="btn dark sm" type="button" id="seed">${esc(tt('Заполнить демо-данными', 'Fill with demo data'))}</button><button class="btn sm danger" type="button" id="clear">${esc(tt('Удалить демо-данные', 'Delete demo data'))}</button></div></div>` : ''}
     </div>`);
+  // обмены: этапы со знаменателями (без имён и текстов); ориентиры — гипотезы для проверки
+  api('/api/admin/exchange-stats?days=30').then((x) => {
+    const p = x.personal; const pct = (a, b) => (b ? ` · ${Math.round((a / b) * 100)}%` : '');
+    const row = (t0, v, d) => `<tr><td>${esc(t0)}</td><td><b>${v}</b>${d != null ? pct(v, d) : ''}</td></tr>`;
+    sec.insertAdjacentHTML('beforeend', `<div class="card-ui flat stack" style="margin-top:16px"><h3 style="margin:0">${esc(tt('Обмены за 30 дней', 'Exchanges, last 30 days'))}</h3>
+      <table class="small"><tbody>${row(tt('Создано приглашений', 'Invitations created'), p.all.created)}${row(tt('Отправлено или скопировано', 'Sent or copied'), p.all.sent, p.all.created)}
+      ${row(tt('Открыто человеком', 'Opened by a person'), p.all.opened, p.all.sent)}${row(tt('Получили ответ', 'Answered'), p.all.answered, p.all.opened)}
+      ${row(tt('Ответивших (уникальных)', 'Responders (unique)'), x.responders)}${row(tt('…из них отправили свою карту', '…of them sent their own card'), x.onwardAny, x.responders)}
+      ${row(tt('— ответной картой в том же разговоре', '— a reply card in the same conversation'), x.onwardReply, x.responders)}${row(tt('— новым людям (отдельный обмен)', '— to new people (separate exchange)'), x.onwardNew, x.responders)}</tbody></table>
+      <p class="small muted" style="margin:0">${esc(tt('Ориентиры «ответили больше половины», «каждый третий отправил свою» — гипотезы. Гость на разных устройствах считается разными людьми; новый обмен не доказывает нового человека. Групповые ссылки будут считаться отдельно.', 'Targets “over half answered”, “one in three sent their own” are hypotheses. A guest on different devices counts as different people; a new exchange does not prove a new person. Group links will be counted separately.'))}</p></div>`);
+  }).catch(() => {});
   const sd = sec.querySelector('#seed');
   if (sd) {
     sd.addEventListener('click', async () => { sd.disabled = true; try { const r = await api('/api/admin/demo/seed', { method: 'POST' }); toast(r.already ? tt('Демо-данные уже есть', 'Demo data already exists') : tt('Демо-данные добавлены', 'Demo data added')); ctx.rerender(); } catch (x) { toast(errorText(x)); sd.disabled = false; } });

@@ -87,8 +87,9 @@ export async function afterLogin() {
   if (!hasLocal()) return;
   const v = local();
   const n = Object.keys(v.notes).length; const f = v.favorites.length; const c = v.collections.length;
-  const ok = confirm(tt(`В этом браузере сохранено: заметок — ${n}, в избранном — ${f}, подборок — ${c}. Перенести в аккаунт, чтобы видеть их на других устройствах? Ничего не перезапишется.`,
-    `This browser has ${n} notes, ${f} favourites and ${c} collections. Move them to your account to see them on other devices? Nothing will be overwritten.`));
+  if (!f && !c && n) { await api('/api/me/merge', { method: 'POST', body: { notes: v.notes } }).catch(() => {}); storage.set(KEY, ''); return; } // заметки скрыты в интерфейсе — переносим молча, чтобы не потерялись
+  const ok = confirm(tt(`В этом браузере сохранено: в избранном — ${f}, подборок — ${c}. Перенести в аккаунт, чтобы видеть их на других устройствах? Ничего не перезапишется.`,
+    `This browser has ${f} favourites and ${c} collections. Move them to your account to see them on other devices? Nothing will be overwritten.`));
   if (!ok) return;
   try {
     await api('/api/me/merge', { method: 'POST', body: { notes: v.notes, favorites: v.favorites, collections: v.collections.map((x) => ({ title: x.title, codes: x.codes })) } });

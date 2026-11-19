@@ -5,7 +5,7 @@
 @font-face { font-family: 'Rubik'; font-weight: 700; font-display: swap; src: url('../fonts/rubik-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212; }
 @font-face { font-family: 'Rubik'; font-weight: 800; font-display: swap; src: url('../fonts/rubik-cyrillic-800-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 @font-face { font-family: 'Rubik'; font-weight: 800; font-display: swap; src: url('../fonts/rubik-latin-800-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212; }
-@font-face { font-family: 'Rubik'; font-weight: 600; font-display: swap; src: url('../fonts/rubik-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: 'Rubik'; font-weight: 500; font-display: swap; src: url('../fonts/rubik-latin-500-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
 @font-face { font-family: 'Onest'; font-weight: 400; font-display: swap; src: url('../fonts/onest-cyrillic-400-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 @font-face { font-family: 'Onest'; font-weight: 400; font-display: swap; src: url('../fonts/onest-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212; }
 @font-face { font-family: 'Onest'; font-weight: 600; font-display: swap; src: url('../fonts/onest-cyrillic-600-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
@@ -123,7 +123,7 @@ html { scroll-padding-top: calc(var(--head-h) + 8px); }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; margin-right: auto; min-width: 0; }
 .brand img { width: 74px; height: auto; flex: none; }
 [data-theme="light"] .em-dark, [data-theme="dark"] .em-light, :root:not([data-theme]) .em-light { display: none !important; }
-.brand .brand-name { font: 600 1.12rem var(--font-head); white-space: nowrap; letter-spacing: 0; color: var(--text); line-height: 1; }
+.brand .brand-name { font: 500 1.12rem var(--font-head); white-space: nowrap; letter-spacing: 0; color: var(--text); line-height: 1; }
 .nav { display: flex; gap: 4px; }
 .nav a { padding: 8px 12px; border-radius: 999px; text-decoration: none; color: var(--text); font-weight: 600; font-size: .95rem; white-space: nowrap; }
 @media (hover: hover) { .nav a:hover { background: var(--surface-3); } }
@@ -588,10 +588,10 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 .trio { display: flex; justify-content: center; align-items: flex-end; padding: 30px 0 8px; min-height: calc(clamp(96px, 27vw, 180px) * 12 / 7 + 38px); }
 /* место под три карты резервируется до загрузки — страница не прыгает */
 .trio .slot { display: block; width: clamp(96px, 27vw, 180px); aspect-ratio: 7 / 12; border-radius: 14px; background: var(--surface-3); border: 3px solid var(--surface); }
-.trio .slot + .slot { margin-left: 10px; }
+.trio .slot + .slot { margin-left: -16px; }
 .trio img { width: clamp(96px, 27vw, 180px); height: auto; border-radius: 14px; box-shadow: var(--shadow); border: 3px solid var(--surface); position: relative; }
 .trio a { display: block; position: relative; transition: transform .15s ease; }
-.trio a + a { margin-left: 10px; }
+.trio a + a { margin-left: -16px; }
 
 .trio a:focus-visible { transform: translateY(-6px); z-index: 3; }
 @media (hover: hover) { .trio a:hover { transform: translateY(-6px); z-index: 3; } }
@@ -815,8 +815,7 @@ body.live-mode .foot, body.live-mode #demo-pill { display: none; }
 .live-on { display: block; text-decoration: none; color: var(--text); border-color: var(--accent); }
 .live-on svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.9; vertical-align: -3px; }
 
-.back-bar { padding-top: 10px; display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; }
-.back-bar .to-home { margin-left: auto; }
+.back-bar { padding-top: 6px; display: flex; align-items: center; gap: 2px; }
 .back-home svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .back-bar + .page { padding-top: 10px; }
 /* игры компанией */
@@ -978,3 +977,44 @@ html:not([data-feel="old"]) .sheet-menu.menu-feel .panel { will-change: transfor
 .ch-audio { display: grid; gap: 6px; margin: 0 0 12px; }
 .ch-audio audio { width: 100%; }
 .toc ol { margin: 6px 0 0; padding-left: 1.3em; display: grid; gap: 3px; }
+
+/* 19.11: домик и «Назад» слева — значки без подписей, большая зона касания */
+.nav-ic { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--text-2); text-decoration: none; }
+.nav-ic svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.nav-ic:hover, .nav-ic:active { color: var(--text); background: var(--surface-3); }
+.nav-ic:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* главная 19.11: «Сыграть с другом» до трёх карт; карты с небольшим нахлёстом, без поворота и зазоров */
+.trio a:nth-child(2) { z-index: 2; }
+.trio a:hover, .trio a:focus-visible { z-index: 3; }
+.friend-play .friend-btn { text-decoration: none; }
+.play-rows { display: grid; gap: 8px; justify-items: start; }
+.play-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: min(420px, 100%); }
+.play-two .btn { justify-content: center; white-space: nowrap; padding-inline: 10px; }
+/* просмотр 19.11: «Карта / Вопросы» по центру всей панели (равные боковые зоны), значки без кружков и подложек */
+.viewer-top { display: grid; grid-template-columns: 1fr auto 1fr; }
+.viewer-top .vt-start { display: flex; align-items: center; gap: 2px; justify-self: start; }
+.viewer-top .vt-end { justify-self: end; margin-left: 0; }
+.viewer-top .vt-seg, .viewer-top .viewer-counter { justify-self: center; }
+.icon-btn.plain { background: transparent; border: 0; border-radius: 12px; }
+.icon-btn.plain:hover { background: transparent; color: var(--accent-text); }
+.icon-btn.plain:active { background: var(--surface-3); }
+.icon-btn.plain svg { width: 24px; height: 24px; stroke-width: 2; }
+.viewer.is-full .icon-btn.plain { width: 44px; height: 44px; }
+.card-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.card-acts .btn { flex: 1 1 200px; gap: 8px; text-decoration: none; justify-content: center; }
+.card-acts .btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* экран приглашения и игры: карта целиком, вопрос и начало поля ответа — на одном экране телефона */
+.live-card-btn.sm .live-card { width: auto; height: min(38vh, 340px); max-width: 74vw; }
+.live-card-btn.xs .live-card { width: auto; height: 160px; }
+.x-next { display: grid; gap: 8px; }
+.x-next .btn { text-decoration: none; justify-content: center; text-align: center; }
+.x-more { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .9rem; }
+.x-notify { display: grid; gap: 6px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 14px; justify-items: start; }
+.x-notify .btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.x-story > summary { cursor: pointer; list-style: none; min-height: 32px; }
+.x-story > summary::-webkit-details-marker { display: none; }
+.rounds { display: flex; flex-wrap: wrap; gap: 4px; color: var(--text-2); }
+
+.x-story { gap: 10px; }
+.x-story:not([open]) { padding-block: 12px; }

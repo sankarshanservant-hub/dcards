@@ -28,6 +28,7 @@ export const ic = {
   settings: P('<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.4 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.4h5l.4-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/>'),
   menu: P('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   home: P('<path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h12V9.5"/>'),
+  arrowLeft: P('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
   close: P('<path d="M6 6l12 12M18 6L6 18"/>'),
   plus: P('<path d="M12 5v14M5 12h14"/>'),
   dice: '<svg viewBox="0 0 32 32" aria-hidden="true" class="die3d"><path class="f-top" d="M16 3.2 L27.6 9.6 L16 16 L4.4 9.6 Z"/><path class="f-left" d="M4.4 9.6 L16 16 L16 28.8 L4.4 22.4 Z"/><path class="f-right" d="M27.6 9.6 L16 16 L16 28.8 L27.6 22.4 Z"/><ellipse class="pip" cx="16" cy="9.6" rx="2.2" ry="1.25"/><ellipse class="pip" cx="7.6" cy="14.3" rx="1.25" ry="1.7" transform="rotate(-28 7.6 14.3)"/><ellipse class="pip" cx="12.8" cy="23.4" rx="1.25" ry="1.7" transform="rotate(-28 12.8 23.4)"/><ellipse class="pip" cx="24.6" cy="13.6" rx="1.25" ry="1.7" transform="rotate(28 24.6 13.6)"/><ellipse class="pip" cx="21.8" cy="18.6" rx="1.25" ry="1.7" transform="rotate(28 21.8 18.6)"/><ellipse class="pip" cx="19" cy="23.6" rx="1.25" ry="1.7" transform="rotate(28 19 23.6)"/></svg>',

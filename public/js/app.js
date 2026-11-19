@@ -28,7 +28,8 @@ const routes = [
   [/^\/$/, pub.home],
   [/^\/library\/?$/, pub.library],
   [/^\/x\/([A-Za-z0-9_-]{16,40})\/?$/, xch.page],
-  [/^\/play\/(DC-\d{4,6})\/?$/, (ctx, code) => ctx.navigate(`/library?card=${code}&play=friend`, { replace: true })],
+  [/^\/play\/?$/, (ctx) => xch.playPage(ctx, null)],
+  [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
   [/^\/me\/exchanges\/?$/, xch.myExchanges],
   [/^\/me\/collections\/?$/, xch.myCollections],
@@ -75,8 +76,9 @@ const routes = [
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
 
-// Вверху внутренних страниц — две разные ссылки: локальная «← Назад» (или «← К играм», «← К чатам»… — к родительскому
-// экрану) и «На главную» (всегда на главную, своим маршрутом). Главная и экран встречи по телефонам — без этой полосы.
+// Вверху внутренних страниц (19.11.2026) — слева домик (всегда на главную) и рядом стрелка «Назад», когда в приложении
+// есть предыдущий экран: она возвращает туда, откуда пришли, с прежней прокруткой. Без текста — с доступными названиями.
+// Если пришли извне, «Назад» ведёт к родительскому экрану (К играм, К чатам…), если он есть. Главная и встреча — без полосы.
 const depth = () => (history.state && history.state.depth) || 0;
 const PARENTS = [
   [/^\/g\//, '/group', 'К играм', 'To games'],
@@ -91,13 +93,13 @@ const PARENTS = [
 ];
 function addBackLink(path, ctx) {
   if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back], [data-home]')) return;
-  // у страницы уже есть своя ссылка «← …» наверху (например, «← К работам») — её не дублируем, добавляем только «На главную»
+  // у страницы своя ссылка «← …» наверху — её не дублируем стрелкой, остаётся домик
   const own = [...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'));
   const par = PARENTS.find(([re]) => re.test(path));
-  let local = '';
-  if (!own && par) local = `<a class="back-home" data-local href="${u(par[1])}">← ${esc(tt(par[2], par[3]))}</a>`;
-  else if (!own && depth() > 0) local = `<a class="back-home" data-back href="${u('/')}">← ${esc(tt('Назад', 'Back'))}</a>`;
-  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar">${local}<a class="back-home to-home" data-home href="${u('/')}">${ic.home}${esc(tt('На главную', 'Home'))}</a></div>`);
+  let back = '';
+  if (!own && depth() > 0) back = `<a class="nav-ic" data-back href="${u(par ? par[1] : '/')}" aria-label="${esc(tt('Назад', 'Back'))}" title="${esc(tt('Назад', 'Back'))}">${ic.arrowLeft}</a>`;
+  else if (!own && par) back = `<a class="nav-ic" data-local href="${u(par[1])}" aria-label="${esc(tt(par[2], par[3]))}" title="${esc(tt(par[2], par[3]))}">${ic.arrowLeft}</a>`;
+  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar"><a class="nav-ic" data-home href="${u('/')}" aria-label="${esc(tt('На главную', 'Home'))}" title="${esc(tt('На главную', 'Home'))}">${ic.home}</a>${back}</div>`);
 }
 main.addEventListener('click', (e) => {
   const a = e.target.closest('[data-back]');
@@ -126,6 +128,7 @@ async function render() {
 
 export function navigate(path, { replace = false } = {}) {
   const url = path.startsWith('http') ? path : u(path);
+  if (!replace) try { history.replaceState({ ...(history.state || {}), scroll: window.scrollY }, ''); } catch { /* */ } // «Назад» вернёт на это место
   if (replace) history.replaceState({ depth: depth() }, '', url); else history.pushState({ depth: depth() + 1 }, '', url);
   render();
   window.scrollTo(0, 0);
@@ -146,7 +149,10 @@ document.addEventListener('click', (e) => {
 });
 window.addEventListener('popstate', () => {
   handleViewerPopState();
-  if (location.pathname !== renderedPath) render();
+  if (location.pathname !== renderedPath) {
+    const sy = history.state && history.state.scroll;
+    render().then(() => { if (typeof sy === 'number') requestAnimationFrame(() => window.scrollTo(0, sy)); });
+  }
 });
 
 // ---------- шапка, меню, подвал ----------

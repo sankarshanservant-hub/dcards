@@ -63,15 +63,15 @@ export function openViewer(opts) {
   el.innerHTML = `
     <div class="viewer-stage" data-stage><img class="viewer-img" alt="" draggable="false" data-img></div>
     <div class="viewer-top">
-      <button class="icon-btn" type="button" data-close aria-label="${esc(t('viewer.close'))}">${icons.close}</button>
-      <button class="icon-btn" type="button" data-unfull hidden aria-label="${esc(tt('Выйти из полноэкранного режима', 'Exit full screen'))}">${icons.collapse}</button>
+      <span class="vt-start"><button class="icon-btn plain" type="button" data-close aria-label="${esc(t('viewer.close'))}" title="${esc(t('viewer.close'))}">${icons.close}</button></span>
       ${withQ ? `<div class="vt-seg" role="tablist" aria-label="${esc(tt('Что показать', 'What to show'))}">
         <button type="button" role="tab" data-view="card" aria-selected="true">${esc(tt('Карта', 'Card'))}</button>
         <button type="button" role="tab" data-view="questions" aria-selected="false">${esc(tt('Вопросы', 'Questions'))}</button></div>` : '<span class="viewer-counter" data-counter></span>'}
       <span class="vt-end">
         ${withQ ? '' : `<button class="icon-btn vt-nav" type="button" data-prev aria-label="${esc(t('viewer.prev'))}">${icons.prev}</button>
         <button class="icon-btn vt-nav" type="button" data-next aria-label="${esc(t('viewer.next'))}">${icons.next}</button>`}
-        <button class="icon-btn full-btn" type="button" data-full aria-label="${esc(tt('На весь экран', 'Full screen'))}" title="${esc(tt('На весь экран', 'Full screen'))}">${icons.expand}</button>
+        <button class="icon-btn plain full-btn" type="button" data-full aria-label="${esc(tt('На весь экран', 'Full screen'))}" title="${esc(tt('На весь экран', 'Full screen'))}">${icons.expand}</button>
+        <button class="icon-btn plain full-btn" type="button" data-unfull hidden aria-label="${esc(tt('Выйти из полноэкранного режима', 'Exit full screen'))}" title="${esc(tt('Выйти из полноэкранного режима', 'Exit full screen'))}">${icons.collapse}</button>
         ${withQ ? '' : `<button class="icon-btn" type="button" data-info aria-label="${esc(t('viewer.info'))}" aria-expanded="false">${icons.info}</button>`}
       </span>
     </div>
@@ -365,25 +365,18 @@ export function openViewer(opts) {
         const xLine = xs.length ? `<div class="x-status">${xs.slice(0, 3).map((x) => `<a class="x-item" href="${u('/x/' + x.secret)}" data-xopen><span class="x-dot ${x.answered ? 'on' : ''}" aria-hidden="true"></span><span>${esc(x.answered ? tt('Друг ответил', 'Your friend answered') + (x.otherName ? ` · ${x.otherName}` : '') : tt('Ждём ответа', 'Waiting for an answer'))}${xs.length > 1 ? ` · ${esc(new Date(x.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }))}` : ''}</span><b>${esc(tt('Открыть обмен', 'Open exchange'))}</b></a>`).join('')}${xs.length > 3 ? `<a class="small" href="${u('/me/exchanges')}" data-xopen>${esc(tt(`Все обмены (${xs.length})`, `All exchanges (${xs.length})`))}</a>` : ''}</div>` : '';
         bottom.innerHTML = `
           <div class="vb-nav">
-            <button class="icon-btn sm" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button>
+            <button class="icon-btn sm plain" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button>
             <span class="vb-icons">
               <button class="icon-btn sm ${fav ? 'is-on' : ''}" type="button" data-fav aria-pressed="${!!fav}" aria-label="${esc(fav ? tt('В избранном — подборки', 'In favourites — collections') : tt('В избранное', 'Add to favourites'))}" title="${esc(fav ? tt('В избранном', 'In favourites') : tt('В избранное', 'Add to favourites'))}">${fav ? icons.heartFull : icons.heart}</button>
               <button class="icon-btn sm" type="button" data-copy aria-label="${esc(tt('Поделиться картой', 'Share the card'))}" title="${esc(tt('Поделиться картой', 'Share the card'))}">${icons.shareBox}</button>
               <button class="icon-btn sm" type="button" data-info aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}" aria-expanded="${!sheet.hidden}">${icons.info}</button>
             </span>
-            <button class="icon-btn sm" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button>
+            <button class="icon-btn sm plain" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button>
           </div>
           ${ui.fav ? favPanel(c.code) : ''}
           ${shareField()}
           ${xLine}
-          ${ui.friend ? friendForm(c, noteVal) : `
-          <div class="note-box ${ui.noteOpen || noteVal !== saved ? 'open' : ''}">
-            <label for="vn-${c.code}" class="note-q">${esc(tt('Что тебе откликнулось в этой карте?', 'What speaks to you in this card?'))}</label>
-            <textarea id="vn-${c.code}" data-note rows="${ui.noteOpen ? 3 : 1}" maxlength="2000" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}" aria-describedby="vn-h-${c.code}">${esc(noteVal)}</textarea>
-            <p class="vb-note" id="vn-h-${c.code}"><span class="note-hint">${esc(tt('Это может быть чувство, мысль или история, которую ты увидел в этой карте.', 'It can be a feeling, a thought or a story you saw in this card.'))} </span>${esc(tt('Заметка видна только тебе.', 'Only you can see this note.'))}</p>
-            <div class="row note-act"><button class="btn sm light" type="button" data-note-save ${noteVal === saved ? 'disabled' : ''}>${esc(noteVal === saved && saved ? tt('Заметка сохранена', 'Note saved') : tt('Сохранить заметку', 'Save note'))}</button></div>
-          </div>
-          <button class="btn friend-btn wide" type="button" data-friend>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></button>`}
+          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></a></div>
           <div class="vb-panel">
             <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('Попробуй другие форматы', 'Try other formats'))}</span>${chev(ui.guide)}</button>
             ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>
@@ -428,7 +421,7 @@ export function openViewer(opts) {
         <button class="link-btn" type="button" data-friend-close>${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
   }
   const shareButtons = () => `<button class="btn sm" type="button" data-sh="tg">Telegram</button><button class="btn sm" type="button" data-sh="wa">WhatsApp</button>${navigator.share ? `<button class="btn sm" type="button" data-sh="sys">${esc(tt('Другие приложения', 'Other apps'))}</button>` : ''}<button class="btn sm light" type="button" data-sh="copy">${esc(tt('Скопировать ссылку', 'Copy link'))}</button>`;
-  const navRow = () => (opts.cards.length > 1 ? `<div class="vb-nav"><button class="icon-btn sm" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button><span class="small muted">${index + 1} / ${opts.cards.length}</span><button class="icon-btn sm" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button></div>` : '');
+  const navRow = () => (opts.cards.length > 1 ? `<div class="vb-nav"><button class="icon-btn sm plain" type="button" data-prev aria-label="${esc(t('viewer.prev'))}" title="${esc(t('viewer.prev'))}">${icons.prev}</button><span class="small muted">${index + 1} / ${opts.cards.length}</span><button class="icon-btn sm plain" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button></div>` : '');
   // Необязательный выбор для обсуждения в галерее (внутри «Для двоих» и «Для группы»).
   function libChoiceHtml(info) {
     if (!info) return '';
@@ -515,9 +508,9 @@ export function openViewer(opts) {
   async function copyLink() {
     // делимся самой картой с авторством — без личного текста; ссылка ведёт на эту карту в галерее
     const c0 = opts.cards[index]; const inf = detailsCache.get(c0.code);
-    const url = `${location.origin}${u('/library?card=' + encodeURIComponent(c0.code))}`;
+    const url = `${location.origin}${u('/play/' + encodeURIComponent(c0.code))}`; // публичная ссылка карты: получатель начнёт свой обмен
     if (navigator.share) {
-      try { await navigator.share({ title: 'Dialogue Cards', text: `${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      try { await navigator.share({ title: 'Dialogue Cards', text: `${tt('Dialogue Cards — повод начать интересный диалог.', 'Dialogue Cards — a reason to start an interesting dialogue.')} ${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
     }
     try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
     catch { ui.share = url; renderBottom(); const inp = bottom.querySelector('[data-share-url]'); if (inp) { inp.focus(); inp.select(); } }
@@ -752,10 +745,10 @@ export const icons = {
   prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
-  expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>',
+  expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 19H5v-5"/></svg>',
   x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>',
   questions: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.4a2.8 2.8 0 1 1 3.9 2.6c-.8.3-1.2.9-1.2 1.7v.6"/><path d="M12 17.1v.01"/></svg>',
-  collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h6V4M20 14h-6v6M10 10L4 4M14 14l6 6"/></svg>',
+  collapse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10h-5V5M5 14h5v5"/></svg>',
   user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
   pair: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 20c0-3 2.6-5 5.5-5s5.5 2 5.5 5M13.5 15.3c.9-.4 1.9-.6 3-.6 2.6 0 5 1.8 5 4.6"/></svg>',
   group: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.3"/><circle cx="19" cy="10" r="2.3"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5M1.5 19c0-2.2 1.6-3.8 3.6-3.8M22.5 19c0-2.2-1.6-3.8-3.6-3.8"/></svg>',

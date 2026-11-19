@@ -764,6 +764,7 @@ admin.post('/meetings/:id/restore', (req, res) => out(res, meetings.restoreByAdm
 admin.get('/comments', (req, res) => res.json({ comments: community.recentComments(req.showDemo) }));
 admin.put('/criteria', (req, res) => out(res, works.setCriteria(req.body && req.body.criteria)));
 // Работы: очередь «Одобрено кураторами» (только рекомендации) и обзор всех решений; окончательное решение — администратор.
+admin.get('/exchange-stats', (req, res) => res.json(exchanges.stats(Math.min(365, Math.max(1, Number(req.query.days) || 30)), req.showDemo)));
 admin.get('/works', (req, res) => res.json({ recommended: works.recommendedQueue(req.showDemo), decisions: works.decisionsLog(req.showDemo), criteria: works.criteriaList() }));
 admin.post('/works/:id/decide', (req, res) => {
   const result = works.adminDecide(req.user, Number(req.params.id), req.body || {});
@@ -832,14 +833,21 @@ const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND sta
 r.post('/api/exchanges', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
-  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, clientKey: b.clientKey }), 201);
+  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, clientKey: b.clientKey, origin: ['fresh', 'forward', 'public'].includes(b.origin) ? b.origin : 'fresh' }), 201);
 });
 r.get('/api/exchanges', (req, res) => res.json({ exchanges: exchanges.mine(req.user, req.visitor, req.query.card ? String(req.query.card) : null) }));
 r.get('/api/x/:token', (req, res) => {
   const { x, role } = exchanges.resolve(String(req.params.token), req.user, req.visitor);
   if (!x) return bad(res, 'not_found', 404);
+  exchanges.opened(x, role, req.get('user-agent')); // первое открытие человеком (не превью и не сам отправитель)
   res.set('Cache-Control', 'no-store').json(exchanges.view(x, role));
 });
+r.post('/api/x/:token/reply', (req, res) => {
+  const b = req.body || {}; const c = pubCard(b.code);
+  if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
+  out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, clientKey: b.clientKey }), 201);
+});
+r.post('/api/x/:token/sent', (req, res) => out(res, exchanges.sent(String(req.params.token), req.user, req.visitor, String((req.body || {}).via || ''))));
 r.post('/api/x/:token/answer', (req, res) => {
   const b = req.body || {};
   const r0 = exchanges.answer(String(req.params.token), req.user, req.visitor, { text: b.text, name: b.name, answerKey: b.answerKey });
@@ -881,8 +889,41 @@ r.use(express.static(publicDir, {
 }));
 const indexHtml = () => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').replaceAll('{{BASE}}', B);
 let cachedIndex = null;
+// Превью ссылок для мессенджеров (19.11.2026): у приглашения и публичной ссылки карты — сама иллюстрация и вопрос.
+// Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.
+const OG_DESC = 'Dialogue Cards — повод начать интересный диалог.';
+function ogFor(req) {
+  const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
+  let code = m && m[3];
+  if (m && m[2]) { const x = db.prepare('SELECT card_id FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(m[2], m[2], m[2], m[2]); code = x && (db.prepare('SELECT code FROM cards WHERE id = ?').get(x.card_id) || {}).code; }
+  if (!code && req.path.startsWith('/library') && /^DC-\d{4,6}$/.test(String(req.query.card || ''))) code = String(req.query.card);
+  const c = code && pubCard(code); if (!c || c.is_demo) return null;
+  return { code: c.code, title: 'Что ты здесь видишь?', image: `${baseUrl(req)}${B}/og/${c.code}.jpg`, url: `${baseUrl(req)}${B}${req.path}` };
+}
+const escAttr = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const ogDir = path.join(config.dataDir, 'og');
+r.get('/og/:code.jpg', wrap(async (req, res) => {
+  const c = pubCard(req.params.code); if (!c || c.is_demo) return bad(res, 'not_found', 404);
+  const file = path.join(ogDir, `${c.code}-${String(c.image_full).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24)}.jpg`);
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(ogDir, { recursive: true });
+    const src = path.join(config.mediaDir, 'full', c.image_full);
+    const card = await sharp(src).resize({ height: 600, fit: 'inside' }).jpeg({ quality: 86 }).toBuffer();
+    const meta = await sharp(card).metadata();
+    // 1200×630: карта целиком по центру на тёмном фоне проекта
+    await sharp({ create: { width: 1200, height: 630, channels: 3, background: '#060c1e' } })
+      .composite([{ input: card, left: Math.round((1200 - meta.width) / 2), top: Math.round((630 - meta.height) / 2) }]).jpeg({ quality: 85 }).toFile(file);
+  }
+  res.set('Cache-Control', 'public, max-age=86400').type('jpeg').sendFile(file);
+}));
 r.get('*', (req, res) => {
   if (!cachedIndex || !config.isProduction) cachedIndex = indexHtml();
+  const og = ogFor(req);
+  if (og) {
+    const tags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Dialogue Cards"><meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
+    // приглашение и личные ссылки — не для поисковиков
+    return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(cachedIndex.replace('</head>', `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, `<title>${escAttr(og.title)} · Dialogue Cards</title>`));
+  }
   res.set('Cache-Control', 'no-cache').type('html').send(cachedIndex);
 });
 

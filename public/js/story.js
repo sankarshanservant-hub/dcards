@@ -36,7 +36,8 @@ export async function storyCanvas({ card, author, aName, aText, bName, bText }) 
   col(aName, aText, true); col(bName, bText, false);
   x.textAlign = 'center'; x.fillStyle = 'rgba(241,230,200,.72)'; x.font = `400 32px ${fam}`;
   x.fillText(`${card.code}${author ? ` · ${tt('художник', 'artist')}: ${author}` : ''}`, W / 2, 1700);
-  x.fillStyle = '#f6c23c'; x.font = '800 44px Rubik, sans-serif'; x.fillText('D-CARDS', W / 2, 1796);
-  x.fillStyle = 'rgba(241,230,200,.72)'; x.font = `400 30px ${fam}`; x.fillText('harekrishna.info/dialogue-cards', W / 2, 1848);
+  // короткий публичный адрес этой карты и приглашение ответить (адрес в картинке не нажимается — ссылку для стикера копируют отдельно)
+  x.fillStyle = '#f6c23c'; x.font = '800 46px Rubik, sans-serif'; x.fillText(tt('Ответь, что видишь ты', 'Answer what you see'), W / 2, 1790);
+  x.fillStyle = 'rgba(241,230,200,.78)'; x.font = `400 30px ${fam}`; x.fillText(`harekrishna.info/dialogue-cards/play/${card.code}`, W / 2, 1846);
   return c;
 }
