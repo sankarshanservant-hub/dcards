@@ -283,7 +283,7 @@ export async function bellPage(ctx) {
     <div class="row between"><h1 style="margin:0">${esc(tt('Уведомления', 'Notifications'))}</h1>${d.unread ? `<button class="btn sm light" type="button" id="allread">${esc(tt('Отметить все как прочитанные', 'Mark all as read'))}</button>` : ''}</div>
     ${session.user ? '' : `<p class="vb-note">${esc(tt('Это история этого браузера. Войдите, чтобы видеть её на всех своих устройствах.', 'This is this browser’s history. Sign in to see it on all your devices.'))}</p>`}
     ${upd ? `<div class="bell-item unread"><span class="x-dot on" aria-hidden="true"></span><span class="grow"><b>${esc(tt('Доступно обновление приложения', 'An app update is available'))}</b></span><button class="btn sm yellow" type="button" id="reload">${esc(tt('Обновить', 'Update'))}</button></div>` : ''}
-    ${d.items.length ? `<ul class="bell-list">${d.items.map((n) => `<li><a class="bell-item ${n.read ? '' : 'unread'}" href="${u(n.url || '/')}" data-n="${n.id}">
+    ${d.items.length ? `<ul class="bell-list">${d.items.map((n) => `<li><a class="bell-item ${n.read ? '' : 'unread'}" href="${esc(u(/^\/(?![/\\])/.test(n.url || '') ? n.url : '/'))}" data-n="${esc(n.id)}">
         <span class="x-dot ${n.read ? '' : 'on'}" aria-hidden="true"></span>
         <span class="grow"><b>${esc(n.title)}</b>${n.body ? `<span class="small">${esc(n.body)}</span>` : ''}${n.resolved ? `<span class="small muted">${esc(tt('решено', 'resolved'))}</span>` : ''}</span>
         <time class="small muted" datetime="${esc(n.updatedAt)}">${esc(when(n.updatedAt))}</time><span class="sr-only">${esc(n.read ? tt('прочитано', 'read') : tt('не прочитано', 'unread'))}</span></a></li>`).join('')}</ul>`

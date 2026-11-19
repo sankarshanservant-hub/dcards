@@ -1310,3 +1310,8 @@ test('Календарь .ics: переводы строк и управляющ
   assert.match(ics.replace(/\r\n /g, ''), /SUMMARY:Встреча ATTENDEE:x@example.org\r\n/);
   assert.match(ics.replace(/\r\n /g, ''), /LOCATION:Кафе ORGANIZER:y\\, Казань\\, Россия/);
 });
+
+test('Заголовки: CSP запрещает отправку форм на чужие адреса и встраиваемые объекты', async () => {
+  const csp = (await fetch(base + '/')).headers.get('content-security-policy');
+  assert.match(csp, /form-action 'self'/); assert.match(csp, /object-src 'none'/); assert.match(csp, /frame-ancestors 'self'/);
+});
