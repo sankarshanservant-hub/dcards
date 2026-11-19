@@ -81,6 +81,7 @@ const ERRORS = {
   file_required: ['Выберите файл.', 'Choose a file.'],
   bad_image_type: ['Подходят только файлы JPEG или PNG.', 'Only JPEG or PNG files are accepted.'],
   bad_point: ['Точка на карте указана неверно.', 'The map point is invalid.'],
+  geocoder_busy: ['Поиск адреса сейчас занят — попробуйте через несколько секунд.', 'Address search is busy — try again in a few seconds.'],
   geocoder_unavailable: ['Поиск адреса сейчас недоступен. Описание места сохранится; точку можно указать на карте вручную.', 'Address search is unavailable now. The place description is kept; you can set the point on the map manually.'],
   meeting_unavailable: ['Встреча недоступна.', 'The meeting is unavailable.'],
   name_required: ['Укажите имя.', 'Please enter your name.'],

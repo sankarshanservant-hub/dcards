@@ -493,21 +493,43 @@ r.delete('/api/collections/:id', fac, (req, res) => {
 const ownsMeeting = (req, id) => meetings.facilitatorOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('meetings', 'id', id)));
 r.get('/api/fac/meetings', fac, (req, res) => res.json({ meetings: meetings.mine(req.user.id) }));
 // Поиск места/адреса для точки на карте (через сервер; OpenStreetMap Nominatim). Результат подтверждает фасилитатор.
-const geoCache = new Map(); let geoLast = 0;
+// Правила Nominatim: не чаще 1 запроса в секунду со всего сервера, повторы — из памяти. Поэтому: общая очередь с шагом
+// 1,1 с (дольше 10 с ждать — «попробуйте позже»), одинаковые запросы в пути — один запрос, ответы — в памяти на 30 дней
+// (до 2000 строк), и лимит на человека — 20 в минуту и 300 в сутки (из памяти — не в счёт).
+const GEO_STEP = 1100; const GEO_MAX_WAIT = 10000; const GEO_TTL = 30 * DAY;
+const geoCache = new Map(); const geoPending = new Map(); let geoNext = 0;
+Object.assign(Q, { geoUserM: limits.win(MIN, 20), geoUserD: limits.win(DAY, 300) });
+function geoSlot() { // синхронно: два одновременных запроса не получат одно и то же место в очереди
+  const now = Date.now(); const at = Math.max(now, geoNext);
+  if (at - now > GEO_MAX_WAIT) return -1;
+  geoNext = at + GEO_STEP; return at - now;
+}
+async function geocodeOnce(q, cc, lang) {
+  const wait = geoSlot(); if (wait < 0) throw Object.assign(new Error('busy'), { busy: true });
+  if (wait) await new Promise((r2) => setTimeout(r2, wait));
+  const url = `${process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search'}?${new URLSearchParams({ format: 'jsonv2', limit: '5', q, 'accept-language': lang, ...(cc ? { countrycodes: cc } : {}) })}`;
+  const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://harekrishna.info/dialogue-cards/)' }, signal: AbortSignal.timeout(8000) });
+  if (!rr.ok) throw new Error('geocoder ' + rr.status);
+  return (await rr.json()).slice(0, 5).map((x) => ({ label: String(x.display_name || '').slice(0, 300), lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+}
 r.get('/api/places/geocode', fac, wrap(async (req, res) => {
-  const q = String(req.query.q || '').trim().slice(0, 200); const cc = /^[a-z]{2}$/i.test(req.query.cc || '') ? req.query.cc.toLowerCase() : '';
+  const q = String(req.query.q || '').trim().replace(/\s+/g, ' ').slice(0, 200); const cc = /^[a-z]{2}$/i.test(req.query.cc || '') ? req.query.cc.toLowerCase() : '';
+  const lang = req.query.lang === 'en' ? 'en' : 'ru';
   if (q.length < 3) return res.json({ results: [] });
-  const key = cc + '|' + q.toLowerCase();
-  if (geoCache.has(key)) return res.json({ results: geoCache.get(key) });
-  const wait = Math.max(0, geoLast + 1100 - Date.now()); if (wait) await new Promise((r2) => setTimeout(r2, wait)); geoLast = Date.now(); // не чаще 1 запроса в секунду
+  const key = `${cc}|${lang}|${q.toLowerCase()}`;
+  const hit = geoCache.get(key);
+  if (hit && hit.at + GEO_TTL > Date.now()) return res.json({ results: hit.results });
+  if (!geoPending.has(key)) { // уже идущий такой же запрос — ждём его, не в счёт
+    const wait = limits.take([[Q.geoUserM, 'u' + req.user.id], [Q.geoUserD, 'u' + req.user.id]]);
+    if (wait) return limits.tooMany(res, wait);
+  }
   try {
-    const url = `${process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search'}?${new URLSearchParams({ format: 'jsonv2', limit: '5', q, 'accept-language': req.query.lang === 'en' ? 'en' : 'ru', ...(cc ? { countrycodes: cc } : {}) })}`;
-    const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://harekrishna.info/dialogue-cards/)' }, signal: AbortSignal.timeout(8000) });
-    if (!rr.ok) throw new Error('geocoder ' + rr.status);
-    const results = (await rr.json()).map((x) => ({ label: x.display_name, lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
-    geoCache.set(key, results); if (geoCache.size > 500) geoCache.delete(geoCache.keys().next().value);
+    if (!geoPending.has(key)) geoPending.set(key, geocodeOnce(q, cc, lang).finally(() => geoPending.delete(key)));
+    const results = await geoPending.get(key);
+    geoCache.delete(key); geoCache.set(key, { results, at: Date.now() }); // в конец: давно не нужные уходят первыми
+    if (geoCache.size > 2000) geoCache.delete(geoCache.keys().next().value);
     res.json({ results });
-  } catch { bad(res, 'geocoder_unavailable', 503); }
+  } catch (e) { bad(res, e.busy ? 'geocoder_busy' : 'geocoder_unavailable', 503); }
 }));
 // Город встречи → часовой пояс (пояс вручную не выбирается). ?city=&country=&placeId=
 r.get('/api/places/resolve', fac, (req, res) => res.json(places.resolve({ city: req.query.city, country: req.query.country, placeId: req.query.placeId })));

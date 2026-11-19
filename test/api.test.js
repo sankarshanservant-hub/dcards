@@ -1601,3 +1601,25 @@ test('Запись на встречу: ответ не выдаёт, запис
     assert.ok(letters.some((l) => l.to === 'new-person@example.org' && /Вы записаны/.test(l.subject)), 'письмо с отменой и календарём');
   } finally { mail.setTransport(null); }
 });
+
+test('Поиск места: общая очередь не чаще 1 запроса в секунду, повторы — из памяти, лимит на человека', async () => {
+  let upstream = 0;
+  const geo = http.createServer((req, res) => { upstream += 1; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify([{ display_name: 'Казань, Россия', lat: '55.79', lon: '49.12' }])); }).listen(0);
+  await new Promise((r) => geo.once('listening', r));
+  process.env.GEOCODER_URL = `http://127.0.0.1:${geo.address().port}/search`;
+  try {
+    const q = (text) => call('GET', `/api/places/geocode?q=${encodeURIComponent(text)}`, null, { cookie: facil.cookie });
+    const same = await Promise.all([1, 2, 3].map(() => q('Казань Баумана')));
+    assert.ok(same.every((r) => r.status === 200 && r.json.results[0].lat === 55.79));
+    assert.equal(upstream, 1, 'одинаковые запросы в пути — один запрос к Nominatim');
+    assert.equal((await q('казань   баумана')).status, 200); assert.equal(upstream, 1, 'повтор — из памяти');
+    const t0 = Date.now();
+    const burst = await Promise.all(Array.from({ length: 25 }, (_, i) => q('Адрес номер ' + i)));
+    const st = burst.map((r) => r.status);
+    assert.equal(st.filter((x) => x === 429).length, 6, 'на человека — 20 в минуту (одна уже потрачена)');
+    assert.ok(st.filter((x) => x === 503).length >= 5, 'очередь дольше 10 секунд — «попробуйте позже»');
+    const served = st.filter((x) => x === 200).length;
+    assert.equal(upstream, 1 + served);
+    assert.ok(Date.now() - t0 >= (served - 1) * 1000, 'не чаще 1 запроса в секунду');
+  } finally { delete process.env.GEOCODER_URL; geo.close(); }
+});
