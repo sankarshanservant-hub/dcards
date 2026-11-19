@@ -55,15 +55,26 @@ function setRoomMode(userId, room, mode) {
   return { ok: true, mode };
 }
 
+// Подписки принимаются только от служб push браузеров (Google, Mozilla, Apple, Microsoft): сервер отправляет уведомления
+// лишь на их адреса (тот же список, что у сайта: avadhut-archive mirror/push.mjs, PUSH_HOSTS).
+const PUSH_HOST_RE = /^(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9-]+(\.[a-z0-9-]+)*\.push\.apple\.com|[a-z0-9-]+(\.[a-z0-9-]+)*\.notify\.windows\.com|[a-z0-9-]+(\.[a-z0-9-]+)*\.wns\.windows\.com)$/;
+function pushEndpointOk(endpoint) {
+  if (typeof endpoint !== 'string' || endpoint.length > 1000) return false;
+  let u; try { u = new URL(endpoint); } catch { return false; }
+  return u.protocol === 'https:' && !u.username && !u.password && !u.port && PUSH_HOST_RE.test(u.hostname);
+}
 function subscribe(user, sub, ua = '') {
   if (user.is_demo) return { error: 'push_demo' }; // демо-аккаунты общие — уведомления пришли бы чужим людям
   const s = sub || {};
   const endpoint = String(s.endpoint || '');
   const k = s.keys || {};
-  if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000 || !k.p256dh || !k.auth) return { error: 'bad_subscription' };
-  db.prepare(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, ua) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, last_error = NULL`)
+  if (!pushEndpointOk(endpoint) || !k.p256dh || !k.auth) return { error: 'bad_subscription' };
+  // Уже известный адрес переходит к другому человеку только вместе с ключом этой подписки (тот же браузер).
+  const r = db.prepare(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, ua) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, last_error = NULL
+    WHERE push_subscriptions.user_id = excluded.user_id OR push_subscriptions.auth = excluded.auth`)
     .run(user.id, endpoint, String(k.p256dh).slice(0, 200), String(k.auth).slice(0, 100), String(ua).slice(0, 200));
+  if (!r.changes) return { error: 'bad_subscription' };
   return { ok: true };
 }
 function unsubscribe(user, endpoint) {
@@ -72,7 +83,7 @@ function unsubscribe(user, endpoint) {
 }
 function status(user) {
   const subs = db.prepare('SELECT endpoint, created_at, last_ok_at, last_error FROM push_subscriptions WHERE user_id = ?').all(user.id);
-  return { publicKey: vapid().publicKey, devices: subs.length, subscriptions: subs.map((s) => ({ endpoint: s.endpoint, lastOkAt: s.last_ok_at, lastError: s.last_error })), prefs: prefsOf(user.id) };
+  return { publicKey: vapid().publicKey, devices: subs.length, subscriptions: subs.map((s) => ({ endpoint: s.endpoint, lastOkAt: s.last_ok_at, lastError: s.last_error ? (/^(HTTP \d{3}|send_failed)$/.test(s.last_error) ? s.last_error : 'send_failed') : null })), prefs: prefsOf(user.id) };
 }
 
 async function deliver(userId, payload) {
@@ -87,7 +98,7 @@ async function deliver(userId, payload) {
     } catch (e) {
       const code = e && e.statusCode;
       if (code === 404 || code === 410) db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(s.id); // подписка больше не действует
-      else db.prepare('UPDATE push_subscriptions SET last_error = ? WHERE id = ?').run(String((e && (e.body || e.message)) || e).slice(0, 300), s.id);
+      else db.prepare('UPDATE push_subscriptions SET last_error = ? WHERE id = ?').run(Number.isInteger(code) ? `HTTP ${code}` : 'send_failed', s.id); // только код ответа, без текста службы
     }
   }
   return sent;
@@ -166,4 +177,4 @@ require('./bell').onPush((uid, payload, kind) => {
   deliver(uid, { ...payload, url }).catch(() => {});
 });
 
-module.exports = { vapid, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };
+module.exports = { vapid, pushEndpointOk, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };

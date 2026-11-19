@@ -120,8 +120,8 @@ export function submit(ctx) {
         ${result.failed && result.failed.length ? `<div class="notice small">${esc(tt('Не удалось принять:', 'Could not be accepted:'))} ${esc(result.failed.join(', '))}</div>` : ''}
         ${timeline([
           { title: tt('Согласие с условиями записано', 'Consent to the terms recorded'), state: 'done' },
-          { title: tt('Проверка кураторами', 'Curators’ review'), note: esc(tt('Каждая работа рассматривается отдельно по критериям', 'Each work is reviewed separately by criteria')), state: 'now' },
-          { title: tt('Решение', 'Decision'), note: esc(tt('Возможны три исхода: работа опубликована; отклонена с указанием причины; возвращена на доработку с указанием причины.', 'Three outcomes are possible: the work is published; declined with a reason; returned for changes with a reason.')), state: 'todo' },
+          { title: tt('Проверка кураторами', 'Curators’ review'), note: tt('Каждая работа рассматривается отдельно по критериям', 'Each work is reviewed separately by criteria'), state: 'now' },
+          { title: tt('Решение', 'Decision'), note: tt('Возможны три исхода: работа опубликована; отклонена с указанием причины; возвращена на доработку с указанием причины.', 'Three outcomes are possible: the work is published; declined with a reason; returned for changes with a reason.'), state: 'todo' },
         ])}
         <p class="small" style="margin:0;color:var(--on-navy)">${esc(tt('Статус каждой работы виден в «Моих работах». Если включены уведомления, о решении придёт сообщение на телефон.', 'The status of each work is shown in “My works”. If notifications are on, you will get a message on your phone about the decision.'))}</p>
         <div class="row"><a class="btn yellow" href="${u('/artist')}">${esc(tt('В кабинет', 'To my space'))}</a><a class="btn light" href="${u('/artist#works')}">${esc(tt('Мои работы', 'My works'))}</a></div>`;
@@ -215,11 +215,11 @@ export async function work(ctx, id) {
   if (!ctx.alive()) return;
   const r = w.lastResult;
   const steps = [
-    { title: tt('Отправлено', 'Sent'), note: esc(fmtDate(w.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })), state: 'done' },
+    { title: tt('Отправлено', 'Sent'), note: fmtDate(w.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), state: 'done' },
     { title: w.status === 'discussion' ? tt('На обсуждении кураторов', 'Curators are discussing') : w.status === 'recommended' ? tt('Кураторы рекомендовали — ждёт решения администратора', 'Recommended by curators — awaiting the administrator') : tt('Проверка куратором', 'Curator review'),
       note: '', state: ['submitted', 'discussion', 'recommended'].includes(w.status) ? 'now' : 'done' },
     { title: w.status === 'published' ? tt('Опубликовано', 'Published') : w.status === 'needs_changes' ? tt('Возвращено на доработку', 'Returned for changes') : w.status === 'rejected' ? tt('Отклонено', 'Declined') : tt('Решение', 'Decision'),
-      note: w.status === 'published' && w.card ? `${esc(tt('Карта', 'Card'))} <a href="${u('/cards/' + w.card.code)}">${esc(w.card.code)}</a>` : '',
+      note: w.status === 'published' && w.card ? `${tt('Карта', 'Card')} ${w.card.code}` : '', href: w.status === 'published' && w.card ? u('/cards/' + w.card.code) : '',
       state: w.status === 'published' ? 'done' : ['needs_changes', 'rejected'].includes(w.status) ? 'bad' : 'todo' },
   ];
   ctx.main.innerHTML = `<div class="wrap page stack">

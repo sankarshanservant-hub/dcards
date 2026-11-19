@@ -6,6 +6,7 @@
 //   a_door — ссылка «вернуться к А» для предложения сторис от Б: узнаёт только А.
 // Публичная ссылка на карту (/play/<код>) начинает новый обмен и к этому не относится.
 // Право видеть ответы и подтверждать сторис проверяет сервер; до ответа Б сервер не отдаёт ему текст А.
+const { demoWhere } = require('./demo-scope');
 const crypto = require('crypto');
 const db = require('./db');
 const { publicCard } = require('./cards');
@@ -44,7 +45,8 @@ const DEFAULT_QUESTION = 'Что тебе откликается в этой к�
 const questionOf = (x) => (x && x.question) || DEFAULT_QUESTION;
 const tok = () => crypto.randomBytes(18).toString('base64url');
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
-const clean = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
+// Пробелы и переводы строк — в один пробел, прочие управляющие символы убираются.
+const clean = (t, n) => String(t || '').replace(/\s+/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, n);
 const nameOf = (userId, typed, fallback) => {
   if (userId) { const u = db.prepare('SELECT name, public_name FROM users WHERE id = ?').get(userId); if (u) return u.public_name || u.name; }
   return typed || fallback;
@@ -246,7 +248,7 @@ function sent(token, user, visitor, via) {
 /** Отчёт по этапам за период. Личные и (будущие) групповые ссылки — раздельно; знаменатели показаны явно. */
 function stats(days = 30, showDemo = false) {
   const since = new Date(Date.now() - days * 864e5).toISOString();
-  const demo = showDemo ? '' : ' AND x.is_demo = 0';
+  const demo = ` AND ${demoWhere(showDemo, 'x.is_demo')}`;
   const q = (sql, ...a) => db.prepare(sql).get(since, ...a).n;
   const created = (origin) => q(`SELECT COUNT(*) AS n FROM exchanges x WHERE x.created_at >= ?${demo}${origin ? ` AND x.origin = '${origin}'` : ''}`);
   const withEv = (kind, origin) => q(`SELECT COUNT(*) AS n FROM exchanges x JOIN x_events e ON e.exchange_id = x.id AND e.kind = '${kind}' WHERE x.created_at >= ?${demo}${origin ? ` AND x.origin = '${origin}'` : ''}`);

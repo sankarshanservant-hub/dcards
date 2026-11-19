@@ -450,9 +450,9 @@ function facPath(d) {
   const stage = !a ? 1 : a.status === 'submitted' ? 3 : a.status === 'approved' ? 4 : a.courseDone.length === N ? 2 : 1;
   return timeline([
     { title: tt('Вход по email', 'Sign in with email'), state: 'done' },
-    { title: tt('Руководство фасилитатора', 'Facilitator guide'), note: a ? esc(tt(`прочитано глав: ${a.courseDone.length} из ${N}`, `chapters read: ${a.courseDone.length} of ${N}`)) : '', state: stage > 1 ? 'done' : 'now' },
-    { title: tt('Проверка знаний и заявка', 'Quiz and application'), note: a && a.quiz && a.quiz.passed && stage === 2 ? esc(tt('проверка пройдена', 'quiz passed')) : '', state: stage > 2 ? 'done' : stage === 2 ? 'now' : 'todo' },
-    { title: tt('Решение администратора', 'Administrator’s decision'), note: a && a.status === 'rejected' ? esc(tt('Не одобрено: ', 'Not approved: ') + (a.decisionNote || '—')) : a && a.status === 'approved' ? esc(tt('Одобрено — роль выдана', 'Approved — role granted')) : '', state: stage === 4 ? 'done' : stage === 3 ? 'now' : a && a.status === 'rejected' ? 'bad' : 'todo' },
+    { title: tt('Руководство фасилитатора', 'Facilitator guide'), note: a ? tt(`прочитано глав: ${a.courseDone.length} из ${N}`, `chapters read: ${a.courseDone.length} of ${N}`) : '', state: stage > 1 ? 'done' : 'now' },
+    { title: tt('Проверка знаний и заявка', 'Quiz and application'), note: a && a.quiz && a.quiz.passed && stage === 2 ? tt('проверка пройдена', 'quiz passed') : '', state: stage > 2 ? 'done' : stage === 2 ? 'now' : 'todo' },
+    { title: tt('Решение администратора', 'Administrator’s decision'), note: a && a.status === 'rejected' ? tt('Не одобрено: ', 'Not approved: ') + (a.decisionNote || '—') : a && a.status === 'approved' ? tt('Одобрено — роль выдана', 'Approved — role granted') : '', state: stage === 4 ? 'done' : stage === 3 ? 'now' : a && a.status === 'rejected' ? 'bad' : 'todo' },
   ]);
 }
 const facHead = (d) => `<div class="page-head"><p class="eyebrow" style="margin:0">${esc(tt('Путь фасилитатора', 'Facilitator path'))}</p><h1>${esc(tt('Стать фасилитатором Dialogue Flow', 'Become a Dialogue Flow facilitator'))}</h1></div>

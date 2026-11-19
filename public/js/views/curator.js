@@ -43,7 +43,9 @@ export async function review(ctx, id) {
   let w; let q;
   try { [w, q] = await Promise.all([api(`/api/works/${id}`), api('/api/curation/queue')]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const inReview = ['submitted', 'discussion'].includes(w.status);
+  // свою работу куратор не рассматривает — решение, обсуждение и голос у других кураторов
+  const own = w.artistId === session.user.id;
+  const inReview = ['submitted', 'discussion'].includes(w.status) && !own;
   const versions = w.versions;
   const cur = versions[versions.length - 1];
   const prev = versions.length > 1 ? versions[versions.length - 2] : null;
@@ -87,7 +89,7 @@ export async function review(ctx, id) {
           <div class="chips">${['approve', 'return', 'reject'].map((v) => `<button class="chip" type="button" data-vote="${v}">${esc(VOTE[v])}</button>`).join('')}</div>
           <input type="text" id="vcomment" placeholder="${esc(tt('Комментарий к голосу', 'Comment on your vote'))}">`}
     </div>
-` : `<div class="notice">${esc(tt('Решение по работе уже принято — см. историю.', 'A decision has been made — see the history.'))}${w.card ? ` <a href="${u('/cards/' + w.card.code)}">${esc(w.card.code)}</a>` : ''}</div>`}
+` : own && ['submitted', 'discussion'].includes(w.status) ? `<div class="notice">${esc(tt('Это ваша работа: её рассматривают другие кураторы.', 'This is your own work: other curators review it.'))}</div>` : `<div class="notice">${esc(tt('Решение по работе уже принято — см. историю.', 'A decision has been made — see the history.'))}${w.card ? ` <a href="${u('/cards/' + w.card.code)}">${esc(w.card.code)}</a>` : ''}</div>`}
     </div></div>
     <h2>${esc(tt('История решений', 'Decision history'))}</h2>
     <div class="list">${w.history.map(historyRow).join('')}</div>

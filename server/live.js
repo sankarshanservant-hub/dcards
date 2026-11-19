@@ -287,7 +287,7 @@ function participantState(slug, deviceId) {
       const m = S.member.get(last.id, deviceId);
       // карта, которую участник фактически выбрал (или получил в паре) в последнем раунде, — для «Отправь её тому, с кем хочешь пообщаться»
       const myLast = m && db.prepare('SELECT card_code FROM live_slots WHERE session_id = ? AND (holder_id = ? OR listener_id = ? OR extra_listener_id = ?) AND card_code IS NOT NULL ORDER BY round DESC, id DESC LIMIT 1').get(last.id, m.id, m.id, m.id);
-      if (m) return { ...base, live: { id: last.id, status: 'ended', me: { name: m.name }, lastCard: myLast ? myLast.card_code : null, feedbackSent: !!db.prepare('SELECT id FROM live_feedback WHERE session_id = ? AND member_id = ?').get(last.id, m.id) } };
+      if (m && !m.removed_at) return { ...base, live: { id: last.id, status: 'ended', me: { name: m.name }, lastCard: myLast ? myLast.card_code : null, feedbackSent: !!db.prepare('SELECT id FROM live_feedback WHERE session_id = ? AND member_id = ?').get(last.id, m.id) } };
     }
     return { ...base, live: null };
   }
@@ -360,14 +360,31 @@ const listenerPick = db.transaction((slug, deviceId, slotId) => {
 });
 
 // ---------- отзывы ----------
-function feedback(sessionId, deviceId, { text, file, mime, mayPublish }) {
-  const s = S.session.get(sessionId);
-  if (!s) return { error: 'not_found' };
+const FEEDBACK_WINDOW_MS = 12 * 3600e3; // после завершения встречи отзыв можно оставить ещё 12 часов
+const FEEDBACK_PER_MEMBER = 3;
+/**
+ * Можно ли этому телефону оставить отзыв: встреча идёт или закончилась менее 12 часов назад,
+ * телефон — участник встречи (не удалён), и отзывов от него ещё меньше трёх.
+ * Проверяется до приёма файла и ещё раз при записи.
+ */
+function feedbackAllowed(sessionId, deviceId) {
+  const s = S.session.get(Number(sessionId));
+  if (!s) return { error: 'not_found', status: 404 };
+  if (s.status === 'ended' && !(s.ended_at && Date.now() - Date.parse(s.ended_at) < FEEDBACK_WINDOW_MS)) return { error: 'live_feedback_closed', status: 403 };
   const m = S.member.get(s.id, deviceId);
+  if (!m || m.removed_at) return { error: 'live_not_member', status: 403 };
+  const n = db.prepare('SELECT COUNT(*) AS n FROM live_feedback WHERE session_id = ? AND member_id = ?').get(s.id, m.id).n;
+  if (n >= FEEDBACK_PER_MEMBER) return { error: 'feedback_limit', status: 429 };
+  return { ok: true, session: s, member: m };
+}
+function feedback(sessionId, deviceId, { text, file, mime, mayPublish }) {
+  const g = feedbackAllowed(sessionId, deviceId);
+  if (g.error) return g;
+  const { session: s, member: m } = g;
   const t = String(text || '').trim().slice(0, 4000);
   if (!t && !file) return { error: 'feedback_empty' };
   db.prepare('INSERT INTO live_feedback (session_id, member_id, name, text, file, mime, may_publish) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(s.id, m ? m.id : null, m ? m.name : '', t, file || null, mime || null, mayPublish ? 1 : 0);
+    .run(s.id, m.id, m.name, t, file || null, mime || null, mayPublish ? 1 : 0);
   return { ok: true };
 }
 function feedbackList(sessionId) {
@@ -385,5 +402,5 @@ function mine(userId, isAdmin) {
 
 module.exports = {
   bus, touch, version, signOut, SIGNS, pickSign, start, forFacilitator, panel, startRound, advance, startTalk, addTime, endRound, recall, setMinutes, end,
-  removeMember, selfJoin, setFacDevice, bySlug, join, leave, participantState, holderPick, listenerPick, feedback, feedbackList, feedbackFile, mine,
+  removeMember, selfJoin, setFacDevice, bySlug, join, leave, participantState, holderPick, listenerPick, feedback, feedbackAllowed, feedbackList, feedbackFile, mine,
 };

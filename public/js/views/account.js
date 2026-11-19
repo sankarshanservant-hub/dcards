@@ -60,8 +60,8 @@ export function login(ctx) {
           ${info && info.failed ? `<div class="notice red">${esc(tt('Письмо не удалось отправить. Попробуйте позже.', 'The email could not be sent. Try again later.'))}</div>` : ''}
           <form class="form" id="f2">
             <label class="field">${esc(tt('Код из письма', 'Code from the email'))}<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
-            ${info && info.isNew ? `<label class="field">${esc(tt('Имя', 'Name'))} *<input type="text" name="name" required maxlength="100"></label>
-              <label class="field">${esc(tt('Публичное имя или псевдоним', 'Public name or pen name'))} <span class="hint">${esc(tt('по желанию: так вас увидят в обсуждениях и под картами', 'optional: shown in discussions and under cards'))}</span><input type="text" name="publicName" maxlength="100"></label>` : ''}
+            <label class="field">${esc(tt('Имя', 'Name'))} <span class="hint">${esc(tt('нужно, если вы здесь впервые; у существующего аккаунта имя не меняется', 'needed if you are new here; an existing account keeps its name'))}</span><input type="text" name="name" maxlength="100" autocomplete="name"></label>
+            <label class="field">${esc(tt('Публичное имя или псевдоним', 'Public name or pen name'))} <span class="hint">${esc(tt('по желанию, для нового аккаунта: так вас увидят в обсуждениях и под картами', 'optional, for a new account: shown in discussions and under cards'))}</span><input type="text" name="publicName" maxlength="100"></label>
             <p class="form-error" id="err" role="alert"></p>
             <button class="btn yellow wide" type="submit">${esc(tt('Войти', 'Sign in'))}</button>
             <button class="linkbtn" type="button" id="back" style="color:var(--on-navy)">${esc(tt('Другой email', 'Another email'))}</button></form>`}
@@ -95,7 +95,7 @@ export function login(ctx) {
         try {
           await api('/api/auth/verify', { method: 'POST', body: { email, code: f2.code.value, name: f2.name ? f2.name.value : '', publicName: f2.publicName ? f2.publicName.value : '' } });
           await refreshSession(); toast(tt('Вы вошли', 'Signed in')); goAfterLogin(ctx);
-        } catch (x) { err(errorText(x)); }
+        } catch (x) { err(errorText(x)); if (x.code === 'name_required') f2.name.focus(); }
       });
       ctx.main.querySelector('#back').addEventListener('click', () => { step = 1; draw(); });
     }

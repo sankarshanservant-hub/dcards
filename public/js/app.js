@@ -136,7 +136,7 @@ async function render() {
   for (const [re, view] of routes) {
     const m = path.match(re);
     if (m) {
-      try { await view(ctx, ...m.slice(1).map(decodeURIComponent)); addBackLink(path, ctx); if (location.hash && ctx.alive()) { const t = document.getElementById(decodeURIComponent(location.hash.slice(1))); if (t) t.scrollIntoView({ block: 'start' }); } } catch (e) { console.error(e); if (ctx.alive()) main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(errorText(e))}</p></div>`; }
+      try { await view(ctx, ...m.slice(1).map(decodeURIComponent)); addBackLink(path, ctx); if (location.hash && ctx.alive()) { let id = ''; try { id = decodeURIComponent(location.hash.slice(1)); } catch { /* неверная кодировка в адресе — без прокрутки */ } const t = id && document.getElementById(id); if (t) t.scrollIntoView({ block: 'start' }); } } catch (e) { console.error(e); if (ctx.alive()) main.innerHTML = `<div class="wrap page"><p class="error-box">${esc(errorText(e))}</p></div>`; }
       return;
     }
   }

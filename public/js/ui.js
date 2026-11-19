@@ -64,10 +64,11 @@ export const WORK_STATUS = {
 export const statusPill = (map, s) => { const [label, cls] = (map[s] || (() => [s, '']))(); return `<span class="pill ${cls} status-tag">${esc(label)}</span>`; };
 export const demoPill = (on) => (on ? `<span class="pill demo">${esc(tt('демо', 'demo'))}</span>` : '');
 
-/** Лента статусов: [{title, note, state: done|now|todo|bad}] */
+/** Лента статусов: [{title, note, href, state: done|now|todo|bad}]. note — обычный текст (экранируется здесь), href — ссылка на всю подпись. */
 export function timeline(items) {
-  return `<ol class="timeline">${items.map((i) => `<li class="${i.state || 'todo'}"><span class="dot">${i.state === 'done' ? ic.check : i.state === 'now' ? ic.sun : ''}</span>
-    <b>${esc(i.title)}</b>${i.note ? `<div class="small">${i.note}</div>` : ''}</li>`).join('')}</ol>`;
+  const note = (i) => (i.href ? `<a href="${esc(i.href)}">${esc(i.note)}</a>` : esc(i.note));
+  return `<ol class="timeline">${items.map((i) => `<li class="${esc(i.state || 'todo')}"><span class="dot">${i.state === 'done' ? ic.check : i.state === 'now' ? ic.sun : ''}</span>
+    <b>${esc(i.title)}</b>${i.note ? `<div class="small">${note(i)}</div>` : ''}</li>`).join('')}</ol>`;
 }
 export const stepsBar = (n, of) => `<div class="steps-bar" aria-label="${n} / ${of}">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>`;
 

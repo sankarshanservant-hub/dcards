@@ -88,6 +88,27 @@ test('03: вход по email без пароля, неверный код от�
   assert.deepEqual(me.json.user.roles, ['curator']);
 });
 
+test('03: вход по коду не раскрывает, есть ли аккаунт; имя спрашивается только после верного кода', async () => {
+  const known = await call('POST', '/api/auth/request', { email: 'artist@example.org' });
+  const fresh = await call('POST', '/api/auth/request', { email: 'brand-new@example.org' });
+  assert.deepEqual(Object.keys(known.json).sort(), Object.keys(fresh.json).sort());
+  assert.ok(!('isNew' in known.json) && !('isNew' in fresh.json), 'в ответе нет признака нового адреса');
+  // неверный код без имени: одинаковый ответ для нового и известного адреса
+  const wrong = (c) => (c === '000000' ? '111111' : '000000');
+  const w1 = await call('POST', '/api/auth/verify', { email: 'artist@example.org', code: wrong(known.json.demoCode) });
+  const w2 = await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: wrong(fresh.json.demoCode) });
+  assert.equal(w1.status, 401); assert.equal(w2.status, 401); assert.equal(w1.json.error, w2.json.error);
+  // верный код нового адреса без имени — просьба указать имя, код при этом не расходуется
+  const n1 = await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: fresh.json.demoCode });
+  assert.equal(n1.json.error, 'name_required');
+  const n2 = await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: fresh.json.demoCode, name: 'Новый' });
+  assert.equal(n2.status, 200); assert.equal(n2.json.user.name, 'Новый');
+  assert.equal((await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: fresh.json.demoCode, name: 'Новый' })).status, 401, 'код одноразовый');
+  // известный аккаунт: имя не обязательно, присланное имя не меняет прежнее
+  const k = await call('POST', '/api/auth/verify', { email: 'artist@example.org', code: known.json.demoCode, name: 'Чужое имя' });
+  assert.equal(k.status, 200); assert.equal(k.json.user.name, 'Художник Тест');
+});
+
 // ---------- 04 библиотека ----------
 test('04: первая колода — 40 карт с кодами и автором, библиотека растёт', async () => {
   const r = await call('GET', '/api/cards');
@@ -908,10 +929,20 @@ test('Push: подписка по согласию, адресаты по отв
   push.setSender(async (sub, payload) => { sent.push({ endpoint: sub.endpoint, ...JSON.parse(payload) }); });
   const ann = await emailLogin('ann-push@example.org', 'Анна');
   const bob = await emailLogin('bob-push@example.org', 'Борис');
-  const sub = (n) => ({ endpoint: `https://push.example.org/${n}`, keys: { p256dh: 'BPk' + n, auth: 'au' + n } });
+  const sub = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${n}`, keys: { p256dh: 'BPk' + n, auth: 'au' + n } });
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint: 'http://bad' } }, { cookie: ann.cookie })).status, 400, 'неверная подписка');
+  // только службы push браузеров
+  for (const endpoint of ['https://push.example.org/x', 'https://127.0.0.1/x', 'https://fcm.googleapis.com.example.org/x', 'https://fcm.googleapis.com:8443/x', 'https://user@fcm.googleapis.com/x', 'https://push.apple.com.evil.org/x']) {
+    assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint, keys: { p256dh: 'BPk', auth: 'au' } } }, { cookie: ann.cookie })).json.error, 'bad_subscription', endpoint);
+  }
+  assert.ok(push.pushEndpointOk('https://web.push.apple.com/abc') && push.pushEndpointOk('https://updates.push.services.mozilla.com/wpush/v2/x') && push.pushEndpointOk('https://wns2-par02p.notify.windows.com/w/?token=x'));
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('ann') }, { cookie: ann.cookie })).status, 200);
   assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('bob') }, { cookie: bob.cookie })).status, 200);
+  // чужой адрес подписки без её ключа не переходит к другому человеку; с тем же ключом (тот же браузер) — переходит
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: { endpoint: sub('ann').endpoint, keys: { p256dh: 'BPkX', auth: 'other' } } }, { cookie: bob.cookie })).json.error, 'bad_subscription');
+  const pdb = require('../server/db');
+  assert.equal(pdb.prepare('SELECT user_id FROM push_subscriptions WHERE endpoint = ?').get(sub('ann').endpoint).user_id, ann.user.id);
+  assert.equal((await call('POST', '/api/push/subscribe', { subscription: sub('ann') }, { cookie: ann.cookie })).status, 200, 'повторная подписка того же человека');
   const st = (await call('GET', '/api/push', null, { cookie: ann.cookie })).json;
   assert.ok(st.publicKey && st.devices === 1 && st.prefs.replies && st.prefs.mentions, 'ключ VAPID, одно устройство, по умолчанию ответы и упоминания');
   const wait = () => new Promise((r) => setTimeout(r, 120));
@@ -944,9 +975,13 @@ test('Push: подписка по согласию, адресаты по отв
   await call('PUT', '/api/push/prefs', { enabled: false }, { cookie: ann.cookie });
   await call('POST', '/api/chats/general', { text: '@Анна', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
   assert.equal(sent.length, 2, 'общий переключатель выключен — уведомлений нет');
+  // ответ службы не сохраняется — только код
+  push.setSender(async () => { const e = new Error('<b>remote text</b>'); e.statusCode = 500; e.body = '<html>remote body</html>'; throw e; });
+  await call('PUT', '/api/push/prefs', { enabled: true }, { cookie: ann.cookie });
+  await call('POST', '/api/chats/general', { text: '@Анна сбой', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
+  assert.equal((await call('GET', '/api/push', null, { cookie: ann.cookie })).json.subscriptions[0].lastError, 'HTTP 500');
   // недействительная подписка удаляется
   push.setSender(async () => { const e = new Error('gone'); e.statusCode = 410; throw e; });
-  await call('PUT', '/api/push/prefs', { enabled: true }, { cookie: ann.cookie });
   await call('POST', '/api/chats/general', { text: '@Анна снова', mentions: String(ann.user.id) }, { cookie: bob.cookie }); await wait();
   assert.equal((await call('GET', '/api/push', null, { cookie: ann.cookie })).json.devices, 0, 'подписка с ответом 410 удалена');
   // демо-аккаунт подписаться не может
@@ -1042,6 +1077,42 @@ test('Встреча по телефонам: вход по QR, деление �
   assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(1), text: 'Было тепло', mayPublish: true })).status, 201);
   assert.equal((await st(1)).feedbackSent, true);
   assert.equal((await call('GET', `/api/fac/live/${sid}`, null, { cookie: facil.cookie })).json.feedback[0].text, 'Было тепло');
+  // отзыв: только участники встречи; файл проверяется до записи на диск, расширение — по типу, не по имени
+  const fbDir = path.join(dataDir, 'media', 'feedback');
+  const fbFiles = () => fs.readdirSync(fbDir).sort();
+  const before0 = fbFiles();
+  const media = (buf, type, name) => { const f = new FormData(); f.append('text', 'запись'); f.append('media', new Blob([buf], { type }), name); return f; };
+  const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(200, 1)]);
+  const fbPost = (d, f) => call('POST', `/api/live/feedback/${fin.id}?device=${d}`, null, { form: f });
+  let rr = await fbPost('device-not-in-meeting-0001', media(mp3, 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.status, 403); assert.equal(rr.json.error, 'live_not_member');
+  rr = await fbPost(dev(6), media(mp3, 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.json.error, 'live_not_member', 'удалённый участник отзыв не оставляет');
+  assert.equal((await call('POST', '/api/live/feedback/999999', { deviceId: dev(1), text: 'x' })).status, 404);
+  assert.deepEqual(fbFiles(), before0, 'посторонний запрос не оставляет файлов');
+  rr = await fbPost(dev(2), media(await png(), 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.json.error, 'bad_media_type', 'содержимое не совпадает с типом');
+  rr = await fbPost(dev(2), media(mp3, 'image/png', 'a.png'));
+  assert.equal(rr.json.error, 'bad_media_type');
+  assert.deepEqual(fbFiles(), before0, 'отклонённый файл удалён');
+  rr = await fbPost(dev(2), (() => { const f = media(mp3, 'audio/mpeg', 'a.mp3'); f.append('deviceId', dev(3)); return f; })());
+  assert.equal(rr.json.error, 'bad_visitor', 'устройство в форме и в адресе должно совпадать');
+  assert.deepEqual(fbFiles(), before0);
+  rr = await fbPost(dev(2), media(mp3, 'audio/mpeg', 'evil.html'));
+  assert.equal(rr.status, 201);
+  const added = fbFiles().filter((x) => !before0.includes(x));
+  assert.equal(added.length, 1); assert.ok(/^[0-9a-f]{24}\.mp3$/.test(added[0]), 'расширение по типу файла');
+  // не больше трёх отзывов от участника
+  for (let i = 0; i < 2; i++) assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(2), text: 'ещё ' + i })).status, 201);
+  rr = await fbPost(dev(2), media(mp3, 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.status, 429); assert.equal(rr.json.error, 'feedback_limit');
+  assert.equal(fbFiles().length, before0.length + 1);
+  // через 12 часов после завершения отзывы не принимаются
+  const ldb = require('../server/db');
+  const endedAt = ldb.prepare('SELECT ended_at FROM live_sessions WHERE id = ?').get(fin.id).ended_at;
+  ldb.prepare('UPDATE live_sessions SET ended_at = ? WHERE id = ?').run(new Date(Date.now() - 13 * 3600e3).toISOString(), fin.id);
+  assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(3), text: 'поздно' })).json.error, 'live_feedback_closed');
+  ldb.prepare('UPDATE live_sessions SET ended_at = ? WHERE id = ?').run(endedAt, fin.id);
   const sid2 = (await call('POST', '/api/fac/live', { collectionId: cid }, { cookie: facil.cookie })).json.id;
   assert.ok(sid2 && sid2 !== sid, 'после завершения по тому же QR — новая встреча');
   assert.equal((await st(1)).me, null, 'в новой встрече прежние участники заходят заново');
@@ -1166,4 +1237,116 @@ test('Установка на «Домой»: у Dialogue Cards своя обл�
   assert.match(html, /<meta name="apple-mobile-web-app-title" content="D-Cards">/, 'имя под значком на iPhone');
   assert.match(html, /<link rel="apple-touch-icon" href="[^"]*\/img\/icon-180\.png/, 'свой значок для iPhone');
   assert.ok(!/<title>[^<]*Сарасват/.test(html));
+});
+
+test('Демо-роли не видят настоящих людей: заявки, email, работы на рассмотрении, встречи, подборки', async () => {
+  // Демо-роль может взять любой посетитель — в служебных разделах ему показываются только демо-записи.
+  const adm = await call('POST', '/api/demo/login', { as: 'admin' });
+  const cur = await call('POST', '/api/demo/login', { as: 'curator' });
+  await call('POST', '/api/admin/demo/seed', null, { cookie: adm.cookie });
+  const real = await call('GET', '/api/admin/applications', null, { cookie: owner.cookie });
+  assert.ok(real.json.applications.some((a) => !a.isDemo), 'у владельца есть настоящие заявки — проверка не пустая');
+  for (const url of ['/api/admin/applications', '/api/admin/curator-applications', '/api/admin/meetings', '/api/admin/comments', '/api/admin/cards', '/api/admin/print-requests', '/api/admin/users']) {
+    const r = await call('GET', url, null, { cookie: adm.cookie });
+    assert.equal(r.status, 200, url);
+    const list = Object.values(r.json).find(Array.isArray) || [];
+    assert.ok(list.every((x) => x.isDemo), `${url}: демо-администратор видит только демо-записи`);
+  }
+  const pr = (await call('GET', '/api/admin/print-requests', null, { cookie: adm.cookie })).json.requests;
+  assert.ok(pr.every((p) => !p.email || !/@/.test(p.email) || p.isDemo), 'настоящие email не показываются');
+  const w = (await call('GET', '/api/admin/works', null, { cookie: adm.cookie })).json;
+  assert.ok([...w.recommended, ...w.decisions].every((x) => x.isDemo), 'решения и очередь — только демо');
+  const col = (await call('GET', '/api/collections', null, { cookie: adm.cookie })).json.collections;
+  assert.ok(col.every((c) => c.isDemo), 'подборки — только демо');
+  const qd = (await call('GET', '/api/curation/queue', null, { cookie: cur.cookie })).json;
+  assert.ok([...qd.queue, ...qd.recent].every((x) => x.isDemo), 'демо-куратор видит только демо-работы');
+  const mine = (await call('GET', '/api/artist/works', null, { cookie: artist.cookie })).json.works;
+  assert.ok(mine.length, 'у настоящего художника есть работы');
+  assert.equal((await call('GET', `/api/works/${mine[0].id}`, null, { cookie: cur.cookie })).status, 404, 'чужую настоящую работу демо-куратор не открывает');
+  assert.equal((await call('GET', `/api/works/${mine[0].id}`, null, { cookie: owner.cookie })).status, 200, 'владелец открывает');
+  // Номер в другой записи (0x…, 1e1) не обходит проверку «только демо-объекты».
+  const hex = '0x' + artist.user.id.toString(16);
+  for (const [m, u, b] of [['POST', `/api/admin/users/${hex}/roles`, { role: 'admin', grant: true }], ['PATCH', `/api/admin/users/${hex}`, { email: 'evil@example.org' }],
+    ['POST', `/api/admin/users/${artist.user.id}e0/roles`, { role: 'admin', grant: true }]]) {
+    assert.equal((await call(m, u, b, { cookie: adm.cookie })).json.error, 'demo_readonly', `${m} ${u}`);
+  }
+  // Демо на боевом сервере выключено даже при DEMO_MODE=1.
+  const { execFileSync } = require('child_process');
+  const prodDemo = (extra) => execFileSync(process.execPath, ['-e', "process.stdout.write(String(require('./server/config').demoMode))"],
+    { cwd: path.join(__dirname, '..'), env: { ...process.env, NODE_ENV: 'production', DEMO_MODE: '1', ...extra } }).toString();
+  assert.equal(prodDemo({}), 'false');
+  assert.equal(prodDemo({ DEMO_MODE_IN_PRODUCTION: '1' }), 'true');
+});
+
+test('Превью ссылки: вопрос обмена только как текст', async () => {
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  // вопрос с разметкой, кавычками, «$» и управляющими символами — в превью только как текст
+  const q = `Q "a" 'b' <i>x</i> $' $& $\` & end\u0007\u0000`;
+  const xq = (await call('POST', '/api/exchanges', { code: codes[3], text: 'про вопрос', question: q, clientKey: 'r-q' }, { visitor: 'visitor-qqqq-0000-1111-2222' })).json;
+  const hq = await fetch(base + `/x/${xq.invite}`).then((r) => r.text());
+  const ogTitle = hq.match(/<meta property="og:title" content="([^"]*)">/)[1];
+  assert.equal(ogTitle, 'Q &quot;a&quot; &#39;b&#39; &lt;i&gt;x&lt;/i&gt; $&#39; $&amp; $` &amp; end');
+  assert.ok(hq.includes(`<title>${ogTitle} · Dialogue Cards</title>`));
+  assert.equal((hq.match(/<\/head>/g) || []).length, 1, 'страница цела');
+  const view = (await call('GET', `/api/x/${xq.invite}`, null, { visitor: 'visitor-qqq2-0000-1111-2222' })).json;
+  assert.equal(view.question, q.replace(/[\u0000-\u001f]/g, '').trim(), 'управляющие символы убраны при сохранении');
+});
+
+test('Календарь .ics: переводы строк и управляющие символы из полей встречи не разрывают файл', async () => {
+  const day = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+  const r = await call('POST', '/api/fac/meetings', { title: 'Встреча\r\nATTENDEE:x@example.org\u0007', description: 'строка 1\r\nстрока 2\rстрока 3\u0000', country: 'Россия', city: 'Казань',
+    venue: 'Кафе\nORGANIZER:y', language: 'ru', timezone: 'Europe/Moscow', priceType: 'free', capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  const m = (await call('GET', `/api/fac/meetings/${r.json.id}`, null, { cookie: facil.cookie })).json;
+  assert.equal(m.title, 'Встреча ATTENDEE:x@example.org', 'однострочное поле — без переводов строк и управляющих символов');
+  assert.equal(m.description, 'строка 1\nстрока 2\nстрока 3');
+  const reg = await call('POST', `/api/meetings/dates/${m.dates[0].id}/register`, { name: 'Гость\r\nX-EVIL:1', email: 'ics-guest@example.org' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.json));
+  assert.ok(reg.json.letter.body.startsWith('Здравствуйте, Гость X-EVIL:1!'), 'имя записи — одной строкой');
+  const ics = await (await fetch(`${base}/api/registrations/${reg.json.token}/ics`)).text();
+  const lines = ics.split('\r\n');
+  assert.ok(!lines.some((l) => /^(ATTENDEE|ORGANIZER|X-EVIL)/.test(l)), 'новых строк в файле не появилось');
+  assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(ics) && !/[^\r]\n/.test(ics), 'в файле только переводы строк CRLF');
+  assert.match(ics.replace(/\r\n /g, ''), /SUMMARY:Встреча ATTENDEE:x@example.org\r\n/);
+  assert.match(ics.replace(/\r\n /g, ''), /LOCATION:Кафе ORGANIZER:y\\, Казань\\, Россия/);
+});
+
+test('Заголовки: CSP запрещает отправку форм на чужие адреса и встраиваемые объекты', async () => {
+  const csp = (await fetch(base + '/')).headers.get('content-security-policy');
+  assert.match(csp, /form-action 'self'/); assert.match(csp, /object-src 'none'/); assert.match(csp, /frame-ancestors 'self'/);
+});
+
+test('Адрес клиента — последний, дописанный прокси: подстановка первого адреса не обходит ограничение попыток', async () => {
+  const tryOwner = (xff) => fetch(base + '/api/auth/owner', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': xff }, body: JSON.stringify({ password: 'wrong' }) }).then((r) => r.json());
+  for (let i = 0; i < 5; i++) assert.equal((await tryOwner(`10.0.0.${i}, 203.0.113.7`)).error, 'wrong_password');
+  assert.equal((await tryOwner('10.0.0.99, 203.0.113.7')).error, 'too_many_attempts', 'первый адрес списка не считается адресом клиента');
+  assert.equal((await tryOwner('203.0.113.8')).error, 'wrong_password', 'другой клиент не заблокирован');
+});
+
+test('Куратор не рассматривает свою работу: решение, обсуждение и голос — только другим кураторам', async () => {
+  const cu = await emailLogin('curator-artist@example.org', 'Куратор-художник');
+  for (const role of ['curator', 'artist']) assert.equal((await call('POST', `/api/admin/users/${cu.user.id}/roles`, { role, grant: true }, { cookie: owner.cookie })).status, 200);
+  const sub = await call('POST', '/api/artist/works', null, { cookie: cu.cookie, form: await form({ termsAccepted: 'true', termsVersion: 'draft-2026-11-11' }, [['images', await png('#3a5f7d'), 'own.png']]) });
+  assert.equal(sub.status, 201, JSON.stringify(sub.json));
+  const id = sub.json.ids[0];
+  const w = (a, body) => call('POST', `/api/curation/works/${id}/${a}`, body, { cookie: cu.cookie });
+  assert.equal((await w('decide', { action: 'recommend' })).json.error, 'own_work');
+  assert.equal((await w('decide', { action: 'reject', criteria: [1] })).json.error, 'own_work');
+  assert.equal((await w('discuss', { question: 'Как вам?' })).json.error, 'own_work');
+  assert.equal((await call('POST', `/api/curation/works/${id}/discuss`, { question: 'Как вам?' }, { cookie: curatorU.cookie })).status, 200, 'другой куратор выносит на обсуждение');
+  assert.equal((await w('vote', { vote: 'approve' })).json.error, 'own_work');
+  assert.equal((await call('POST', `/api/curation/works/${id}/vote`, { vote: 'approve' }, { cookie: curatorU.cookie })).status, 200);
+  assert.equal((await call('POST', `/api/curation/works/${id}/decide`, { action: 'recommend' }, { cookie: curatorU.cookie })).status, 200);
+});
+
+test('Пароль владельца на боевом сервере — не короче 14 символов', () => {
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dcards-pw-'));
+  const owner = (pw, extra = {}) => execFileSync(process.execPath, ['-e', "const a = require('./server/auth'); process.stdout.write(JSON.stringify([a.ownerPassword(), a.ownerPasswordTooShort()]))"],
+    { cwd: path.join(__dirname, '..'), env: { ...process.env, DATA_DIR: dir, ADMIN_PASSWORD: pw, ...extra } }).toString();
+  try {
+    assert.equal(owner('short-13-char', { NODE_ENV: 'production' }), '[null,true]', 'короткий пароль на боевом сервере не принимается');
+    assert.equal(owner('exactly-14-chr', { NODE_ENV: 'production' }), '["exactly-14-chr",false]', 'пароль из скрипта установки (14) проходит');
+    assert.equal(owner('test-password', { NODE_ENV: 'development' }), '["test-password",false]', 'при разработке длина не проверяется');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

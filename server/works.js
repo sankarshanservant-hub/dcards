@@ -5,6 +5,7 @@
 // С 17.11.2026 куратор не публикует сам: «Рекомендовать к публикации» ставит работу в очередь администратора
 // (recommended_at; статус для показа — recommended). В галерею работа попадает только по решению администратора.
 // Возврат и отклонение куратор делает сам, без подтверждения администратора.
+const { demoWhere } = require('./demo-scope');
 const db = require('./db');
 const config = require('./config');
 const cards = require('./cards');
@@ -182,31 +183,33 @@ function withdrawCard(artist, code) {
 
 // ---------- куратор ----------
 function queue(showDemo) {
-  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NULL AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at`)
+  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NULL AND ${demoWhere(showDemo, 'is_demo')} ORDER BY updated_at`)
     .all().map((w) => workOut(w));
 }
 /** Кураторы рекомендовали — ждут решения администратора. */
 function recommendedQueue(showDemo) {
-  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NOT NULL AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY recommended_at`)
+  return db.prepare(`SELECT * FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NOT NULL AND ${demoWhere(showDemo, 'is_demo')} ORDER BY recommended_at`)
     .all().map((w) => workOut(w));
 }
 /** Обзор решений для администратора: рекомендации, возвраты и отклонения — автор, дата, причины. */
 function decisionsLog(showDemo, limit = 100) {
   return db.prepare(`SELECT d.*, w.artist_id, w.is_demo FROM decisions d JOIN works w ON w.id = d.work_id
-    WHERE d.action IN ('recommend','approve','return','reject') AND ${showDemo ? '1=1' : 'w.is_demo = 0'} ORDER BY d.id DESC LIMIT ?`).all(limit)
+    WHERE d.action IN ('recommend','approve','return','reject') AND ${demoWhere(showDemo, 'w.is_demo')} ORDER BY d.id DESC LIMIT ?`).all(limit)
     .map((d) => ({ ...decisionOut(d), workId: d.work_id, artist: userName(d.artist_id), isDemo: !!d.is_demo,
       thumb: (() => { const v = db.prepare('SELECT image_thumb FROM work_versions WHERE work_id = ? AND n = ?').get(d.work_id, d.version_n); return v ? mediaUrl('thumb', v.image_thumb) : null; })() }));
 }
 function recentDecided(showDemo) {
   // Принятые решения за последние 30 дней (период показывается кураторам явно).
-  return db.prepare(`SELECT * FROM works WHERE (status NOT IN ('submitted','discussion') OR recommended_at IS NOT NULL) AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY updated_at DESC LIMIT 200`)
+  return db.prepare(`SELECT * FROM works WHERE (status NOT IN ('submitted','discussion') OR recommended_at IS NOT NULL) AND updated_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days') AND ${demoWhere(showDemo, 'is_demo')} ORDER BY updated_at DESC LIMIT 200`)
     .all().map((w) => workOut(w));
 }
 function detail(id) { const w = q.work.get(id); return w ? workOut(w, { full: true }) : null; }
 function canSee(user, roles, workId) {
   const w = q.work.get(workId);
   if (!w) return false;
-  return w.artist_id === user.id || roles.includes('curator') || roles.includes('admin');
+  if (w.artist_id === user.id) return true;
+  if (user.is_demo && !w.is_demo) return false; // демо-куратор не видит настоящие работы
+  return roles.includes('curator') || roles.includes('admin');
 }
 
 /**
@@ -217,6 +220,7 @@ function canSee(user, roles, workId) {
 function decide(curator, workId, { action, criteria = [], comment = '', replacementType }) {
   const w = q.work.get(workId);
   if (!w) return { error: 'not_found' };
+  if (w.artist_id === curator.id) return { error: 'own_work' }; // свою работу рассматривают другие кураторы
   if (!['submitted', 'discussion'].includes(w.status)) return { error: 'not_in_review', status: w.status };
   if (action === 'approve') action = 'recommend';
   if (!['recommend', 'return', 'reject'].includes(action)) return { error: 'bad_action' };
@@ -285,6 +289,7 @@ function adminDecide(admin, workId, { action, criteria = [], comment = '', repla
  */
 function discuss(curator, workId, question = '') {
   const w = q.work.get(workId);
+  if (w && w.artist_id === curator.id) return { error: 'own_work' };
   if (!w || w.status !== 'submitted') return { error: 'not_in_review' };
   const text = String(question || '').trim().slice(0, 2000);
   if (!text) return { error: 'question_required' };
@@ -297,6 +302,7 @@ function discuss(curator, workId, question = '') {
 }
 function vote(curator, workId, value, comment = '') {
   const w = q.work.get(workId);
+  if (w && w.artist_id === curator.id) return { error: 'own_work' };
   if (!w || w.status !== 'discussion') return { error: 'not_in_discussion' };
   if (!['approve', 'return', 'reject'].includes(value)) return { error: 'bad_vote' };
   db.prepare(`INSERT INTO votes (work_id, curator_id, vote, comment) VALUES (?, ?, ?, ?)
@@ -311,9 +317,11 @@ const curators = () => db.prepare(`SELECT DISTINCT u.id, COALESCE(NULLIF(u.publi
 /** Доступ к изображениям работ на рассмотрении: художнику-автору, кураторам и администраторам. */
 function workMediaAllowed(file, user, roles) {
   if (!user) return false;
-  if (roles.includes('curator') || roles.includes('admin')) return true;
-  const row = db.prepare('SELECT w.artist_id FROM work_versions v JOIN works w ON w.id = v.work_id WHERE v.image_full = ? OR v.image_thumb = ?').get(file, file);
-  return !!row && row.artist_id === user.id;
+  const row = db.prepare('SELECT w.artist_id, w.is_demo FROM work_versions v JOIN works w ON w.id = v.work_id WHERE v.image_full = ? OR v.image_thumb = ?').get(file, file);
+  if (!row) return false;
+  if (row.artist_id === user.id) return true;
+  if (user.is_demo && !row.is_demo) return false; // демо-куратор не видит файлы настоящих работ
+  return roles.includes('curator') || roles.includes('admin');
 }
 
 module.exports = {

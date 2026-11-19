@@ -14,13 +14,20 @@ module.exports = {
   port: Number(process.env.PORT || 3000),
   isProduction,
   basePath, // '' или '/prefix'
-  // Пароль владельца проекта (вход «Владелец»). В продакшене обязателен.
+  // Пароль владельца проекта (вход «Владелец»). В продакшене обязателен и не короче MIN_ADMIN_PASSWORD символов:
+  // более короткий на боевом сервере не принимается (вход по паролю выключен, при запуске — ошибка в журнале).
   adminPassword: process.env.ADMIN_PASSWORD || '',
+  // 14 — длина пароля, который создаёт скрипт установки сервера (HareKrishna deploy/remote-setup.sh); ручной слабый не пройдёт.
+  minAdminPassword: 14,
   // Публичный адрес сайта для ссылок, писем и QR (например https://example.org). Если пусто — берётся из запроса.
   publicUrl: (process.env.PUBLIC_URL || '').replace(/\/$/, ''),
   // Демо-режим: тестовый переключатель ролей и показ писем на экране вместо отправки.
   // По умолчанию включён, кроме продакшена; DEMO_MODE=1 / 0 задаёт явно.
-  demoMode: process.env.DEMO_MODE ? process.env.DEMO_MODE === '1' : !isProduction,
+  // На боевом сервере демо выключено даже при DEMO_MODE=1 (аудит 19.11.2026): демо-роль может взять любой посетитель,
+  // а демо делит базу с настоящими данными. Вернуть — только отдельным экземпляром с отдельной базой
+  // (там: DEMO_MODE=1 и DEMO_MODE_IN_PRODUCTION=1).
+  demoMode: (process.env.DEMO_MODE ? process.env.DEMO_MODE === '1' : !isProduction)
+    && (!isProduction || process.env.DEMO_MODE_IN_PRODUCTION === '1'),
   // Отправка писем: SMTP_URL=smtps://user:pass@host:465 и MAIL_FROM="Dialogue Cards <noreply@…>".
   smtpUrl: process.env.SMTP_URL || '',
   mailFrom: process.env.MAIL_FROM || 'Dialogue Cards <noreply@localhost>',
