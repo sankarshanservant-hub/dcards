@@ -19,6 +19,7 @@ import * as adm from './views/admin.js';
 import * as xch from './views/exchange.js';
 import * as personal from './personal.js';
 import * as pc from './views/postcard.js';
+import * as solo from './views/solo.js';
 
 const main = document.getElementById('app');
 let renderToken = 0;
@@ -66,7 +67,12 @@ const routes = [
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
   [/^\/group\/?$/, grp.choose],
-  [/^\/group\/solo\/?$/, grp.solo],
+  [/^\/group\/solo\/?$/, solo.hub],
+  [/^\/group\/solo\/story\/?$/, grp.solo],
+  [/^\/group\/solo\/connect\/?$/, solo.connect],
+  [/^\/group\/solo\/eagle\/?$/, solo.eagle],
+  [/^\/group\/solo\/imagine\/?$/, solo.imagine],
+  [/^\/about\/?$/, pub.about],
   [/^\/g\/([A-Za-z0-9]{4,8})\/?$/, grp.room],
   [/^\/chats\/?$/, team.rooms],
   [/^\/chat\/?$/, (ctx) => ctx.navigate('/team/general', { replace: true })], // короткая ссылка для участников Zoom
@@ -85,7 +91,8 @@ const appPath = () => location.pathname.slice(BASE.length) || '/';
 const depth = () => (history.state && history.state.depth) || 0;
 const PARENTS = [
   [/^\/g\//, '/group', 'К играм', 'To games'],
-  [/^\/group\/solo/, '/library#play', 'К играм', 'To games'],
+  [/^\/group\/solo\/./, '/group/solo', 'Играть одному', 'Play solo'],
+  [/^\/group\/solo\/?$/, '/library#play', 'К играм', 'To games'],
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
@@ -288,9 +295,10 @@ function openMenu() {
       ${mi('/me', ic.user, 'Профиль', 'Profile')}
       ${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}
       ${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
+      ${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What is Dialogue Cards?')}
       ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications')}
       ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', '', '', true) : ''}`
-    : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
+    : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What is Dialogue Cards?')}
       <div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
     ${session.config.demoMode ? `<div class="demo-box">
       <p>${esc(tt('Демо-режим прототипа: войдите под тестовой ролью, чтобы пройти её путь. Права проверяются на сервере. Демо-данные помечены и не смешиваются с настоящими.', 'Prototype demo mode: sign in as a test role to walk through its path. Permissions are checked on the server. Demo data is labelled and kept apart from real data.'))}</p>

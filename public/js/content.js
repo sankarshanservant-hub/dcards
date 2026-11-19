@@ -6,10 +6,17 @@
 //   Когда тексты будут готовы — добавить lists (как у «Для двоих»), pending убрать.
 //   «Для двоих»: тексты владельца проекта (14.11.2026, подтверждены 15.11.2026), порядок и формулировки — дословно, без нумерации.
 export const QUESTION_FORMATS = [
-  { key: 'self', title: { ru: 'Для себя', en: 'For yourself' }, lists: null,
-    pending: { ru: 'Вопросы для самостоятельного размышления готовятся.', en: 'Questions for reflecting on your own are being prepared.' } },
+  // «Для себя» (19.11.2026): основа — четыре вопроса на обороте карточки для кафе; первый адаптирован из формата для двоих.
+  // Отвечать про себя, в любом порядке; полей для ответа нет. Под вопросами — «Поиграем?» → игры для одного.
+  { key: 'self', title: { ru: 'Для себя', en: 'For yourself' }, play: '/group/solo',
+    intro: { ru: 'Что в этой карте откликается тебе?', en: 'What resonates with you in this card?' },
+    note: { ru: 'Отвечай про себя, в любом порядке.', en: 'Answer to yourself, in any order.' },
+    lists: [{ key: 'self', title: { ru: 'Для себя', en: 'For yourself' }, items: {
+      ru: ['Что ты заметил первым?', 'Что ты чувствуешь, глядя на эту карту?', 'О чём ты вспомнил, глядя на эту карту?', 'Есть ли в твоей жизни что-то, что ощущается похоже?'],
+      en: ['What caught your attention first?', 'How does this card make you feel?', 'What does this card bring to mind?', 'What in your life feels like this?'],
+    } }] },
   {
-    key: 'pair',
+    key: 'pair', play: '/group', // «Поиграем?» под вопросами для двоих → игры компанией (от двух человек)
     title: { ru: 'Для двоих', en: 'For two' },
     lists: [
       {
@@ -54,8 +61,9 @@ export const QUESTION_FORMATS = [
       },
     ],
   },
-  { key: 'group', title: { ru: 'Для группы', en: 'For a group' }, lists: null,
-    pending: { ru: 'Для компании есть отдельные форматы — откройте «Играть компанией».', en: 'There are separate formats for groups — open “Play with friends”.' }, link: '/group' },
+  // «Для группы» — сразу «Играть с компанией», без промежуточного списка вопросов
+  { key: 'group', title: { ru: 'Для группы', en: 'For a group' }, lists: null, link: '/group',
+    pending: { ru: 'Для компании есть игры: каждый — со своего телефона, от двух человек.', en: 'There are games for groups: everyone on their own phone, from two people.' } },
 ];
 
 // START_GUIDES — «С чего начать?» (показывается под картой в общей галерее).

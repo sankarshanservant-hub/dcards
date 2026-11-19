@@ -39,6 +39,13 @@ export function eventRow(d) {
   </a>`;
 }
 
+/** Пустой результат: приглашение провести встречу. Фасилитатору — сразу форма (с городом), остальным — путь «Провести встречу». */
+function hostInvite(country, city) {
+  const fac = session.user && session.user.roles.some((r) => r === 'facilitator' || r === 'admin');
+  const href = fac ? `/facilitator/m/new${city ? `?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country || '')}` : ''}` : '/facilitator/about';
+  return `<a class="btn yellow" href="${u(href)}">${esc(city ? tt('Проведите встречу в этом городе', 'Host a meeting in this city') : tt('Проведите встречу в своём городе', 'Host a meeting in your city'))}</a>`;
+}
+
 // Поиск: сразу ближайшие опубликованные встречи по дате; над списком — фильтры страны и города (адреса /meetings/Страна/Город сохранены).
 export async function search(ctx, country, city) {
   loading(ctx.main);
@@ -72,7 +79,8 @@ export async function search(ctx, country, city) {
     ${filtered ? `<p class="small muted" style="margin:0">${esc(tt('Показаны встречи:', 'Showing meetings in:'))} <b>${esc([city, country].filter(Boolean).join(', '))}</b></p>` : ''}
     ${dates.length ? `<div class="list">${dates.map(eventRow).join('')}</div>`
       : `<div class="empty stack" style="justify-items:center"><span>${esc(city ? tt('В этом городе пока нет встреч', 'No meetings in this city yet') : country ? tt('В этой стране пока нет встреч', 'No meetings in this country yet') : tt('Пока нет опубликованных встреч', 'No published meetings yet'))}</span>
-          ${filtered ? `<a class="btn sm" href="${u('/meetings')}">${esc(tt('Посмотреть все встречи', 'See all meetings'))}</a>` : ''}</div>`}
+          ${hostInvite(country, city)}
+          ${filtered ? `<a class="btn sm light" href="${u('/meetings')}">${esc(tt('Посмотреть все встречи', 'See all meetings'))}</a>` : ''}</div>`}
     ${session.user && session.user.roles.some((r) => r === 'facilitator' || r === 'admin') ? `<a class="btn" href="${u('/facilitator/m/new')}" style="justify-self:start">${esc(tt('Создать свою встречу', 'Create your meeting'))}</a>` : ''}
   </div>`;
   const f = ctx.main.querySelector('#flt');

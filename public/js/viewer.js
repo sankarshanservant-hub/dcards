@@ -449,13 +449,19 @@ export function openViewer(opts) {
     const f = QUESTION_FORMATS.find((x) => x.key === qs.format);
     let body;
     if (!f) body = `<p class="vb-note">${esc(tt('Выберите, как вы разговариваете: для себя, вдвоём или в группе.', 'Choose how you are talking: on your own, as two or in a group.'))}</p>`;
-    else if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}${f.link ? ` <a href="${u(f.link)}" data-q-go>${esc(tt('Играть компанией →', 'Play with friends →'))}</a>` : ''}</p>`;
+    else if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}</p>${f.link ? `<a class="btn yellow" href="${u(f.link)}" data-q-go>${icons.group} ${esc(tt('Играть с компанией', 'Play with friends'))}</a>` : ''}`;
+    else if (f.lists.length === 1) {
+      const cur = f.lists[0]; qs.list = cur.key;
+      body = `${f.intro ? `<h3 class="q-intro">${esc(L(f.intro))}</h3>` : ''}<ul class="qlist" id="ql">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>${f.note ? `<p class="vb-note">${esc(L(f.note))}</p>` : ''}`;
+    }
     else {
       const cur = f.lists.find((x) => x.key === qs.list) || f.lists[0];
       qs.list = cur.key;
       body = `<div class="qtabs" role="tablist" aria-label="${esc(tt('Кто задаёт вопросы', 'Who asks'))}">${f.lists.map((x) => `<button type="button" role="tab" id="qt-${x.key}" aria-controls="ql" aria-selected="${x.key === cur.key}" tabindex="${x.key === cur.key ? 0 : -1}" data-q-list="${x.key}">${x.key === 'partner' ? icons.user : icons.cardHand}<span>${esc(L(x.title))}</span></button>`).join('')}</div>
         <ul class="qlist" id="ql" role="tabpanel" aria-labelledby="qt-${cur.key}">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>`;
     }
+    // «Поиграем?»: для себя — игры для одного, для двоих — игры компанией
+    if (f && f.play && f.lists) body += `<a class="btn sm light q-play" href="${u(f.play)}" data-q-go>${esc(tt('Поиграем?', 'Shall we play?'))}</a>`;
     qpanel.innerHTML = `<div class="qpanel-head"><h2 id="qp-title">${esc(tt('Вопросы', 'Questions'))}</h2>
         <button class="btn light sm q-back" type="button" data-q-card>${icons.prev}<span>${esc(tt('К карте', 'Back to card'))}</span></button></div>
       <div class="qpanel-body">
@@ -473,7 +479,8 @@ export function openViewer(opts) {
   if (qpanel) {
     qpanel.addEventListener('click', (e) => {
       const go = e.target.closest('a[data-q-go]');
-      if (go) { e.preventDefault(); const href = go.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
+      // к играм и обратно: «Назад» вернёт к этой же карте с открытыми вопросами того же сценария
+      if (go) { e.preventDefault(); const href = go.getAttribute('href'); try { sessionStorage.setItem('dc_q_return', JSON.stringify({ code: opts.cards[index].code, format: qs.format, at: Date.now() })); } catch { /* */ } teardown(); if (window.dcNavigate) window.dcNavigate(href.slice(u('').length) || '/'); else location.href = href; return; }
       const b = e.target.closest('button'); if (!b) return;
       if (b.hasAttribute('data-q-card')) return setView('card');
       if (b.dataset.qFormat) { saveScroll(); qs.format = b.dataset.qFormat; persistQ(); renderQ(); restoreScroll(); qpanel.querySelector(`[data-q-format="${qs.format}"]`).focus(); return; }
@@ -719,7 +726,7 @@ export function openViewer(opts) {
 
   // Открыли выбранную карту подборки («К выбранной карте») — сразу экран разговора.
   if (opts.mode === 'collection' && opts.collection && opts.collection.state().choice === opts.cards[index].code) { mode.talk = true; el.classList.add('is-talk'); }
-  requestAnimationFrame(() => { el.classList.add('is-open'); show(); $('[data-close]').focus({ preventScroll: true }); });
+  requestAnimationFrame(() => { el.classList.add('is-open'); show(); $('[data-close]').focus({ preventScroll: true }); if (opts.startQuestions && withQ) openQ(opts.startQuestions); });
   return state;
 }
 

@@ -7,7 +7,11 @@ const openFromQuery = (cards, openAt) => {
   const code = new URL(location.href).searchParams.get('card');
   if (!code) return;
   const i = cards.findIndex((c) => c.code === code);
-  if (i >= 0) openAt(i); else history.replaceState({}, '', location.pathname);
+  // вернулись из игр («Поиграем?») — та же карта и открытые вопросы того же сценария
+  let back = null; try { back = JSON.parse(sessionStorage.getItem('dc_q_return') || 'null'); } catch { /* */ }
+  const resume = back && back.code === code && Date.now() - back.at < 6 * 3600e3 ? back.format : null;
+  if (resume) try { sessionStorage.removeItem('dc_q_return'); } catch { /* */ }
+  if (i >= 0) openAt(i, resume); else history.replaceState({}, '', location.pathname);
 };
 
 // ---------- главная ----------
@@ -67,6 +71,30 @@ export async function home(ctx) {
   } catch { const t = ctx.main.querySelector('#trio'); if (t) t.innerHTML = ''; /* украшение: без карт блок просто пустой */ }
 }
 
+// ---------- «Что такое Dialogue Cards?» (19.11.2026) ----------
+// Структура будущей страницы. Тексты объединят авторские вступления из руководств — пока их нет, ответов от имени
+// авторов не сочиняем. Полный документ появится для скачивания, когда администратор загрузит файл.
+const ABOUT = [
+  ['Зачем нужны карты и сам проект', 'Why the cards and the project exist'],
+  ['Почему важно общение и как иллюстрация помогает его начать', 'Why conversation matters and how an illustration helps start it'],
+  ['Почему работает метафора и какую роль играет собственный взгляд', 'Why metaphor works and the role of your own view'],
+  ['Чем Dialogue Cards отличаются от Таро и других метафорических карт', 'How Dialogue Cards differ from Tarot and other metaphor cards'],
+];
+export async function about(ctx) {
+  let assets = { pdf: false };
+  try { assets = await api('/api/guides/project/assets'); } catch { /* без документа */ }
+  if (!ctx.alive()) return;
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">
+    <div class="page-head"><h1>${esc(tt('Что такое Dialogue Cards?', 'What is Dialogue Cards?'))}</h1>
+      <p class="sub">${esc(tt('Dialogue Cards — повод начать интересный диалог.', 'Dialogue Cards — a reason to start an interesting dialogue.'))}</p></div>
+    <div class="stack" style="gap:8px">${ABOUT.map(([ru, en], i) => `<details class="about-df card-ui flat" id="about-${i + 1}"><summary><span class="grow">${esc(tt(ru, en))}</span><span class="chev" aria-hidden="true">▾</span></summary>
+      <div class="about-body"><p class="muted">${esc(tt('Текст готовят авторы проекта.', 'The project authors are preparing this text.'))}</p></div></details>`).join('')}</div>
+    <div class="card-ui flat stack"><b>${esc(tt('Полный документ о проекте', 'The full project document'))}</b>
+      ${assets.pdf ? `<a class="btn yellow" href="${u('/guides/project/guide.pdf')}" download style="justify-self:start">${esc(tt('Скачать документ (PDF)', 'Download the document (PDF)'))}</a>` : `<p class="muted" style="margin:0">${esc(tt('Полный документ проекта готовится.', 'The full project document is being prepared.'))}</p>`}</div>
+    <div class="row"><a class="btn" href="${u('/play')}">${esc(tt('Сыграть с другом', 'Play with a friend'))}</a><a class="btn light" href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></div>
+  </div>`;
+}
+
 // ---------- библиотека ----------
 export async function library(ctx) {
   // «Попробовать» с главной: намерение «Сыграть с другом» сохраняется — у выбранной карты сразу форма для друга
@@ -94,7 +122,7 @@ export async function library(ctx) {
     <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
       <p class="muted small">${esc(tt('Предложить иллюстрацию, провести встречу, стать куратором', 'Suggest an illustration, host a meeting, become a curator'))}</p></div>
   </div>`;
-  const openAt = (i) => openViewer({ cards, index: i, mode: 'library', playFriend: new URL(location.href).searchParams.get('play') === 'friend' });
+  const openAt = (i, startQuestions = null) => openViewer({ cards, index: i, mode: 'library', startQuestions });
   ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => (play ? ctx.navigate((intent === 'postcard' ? '/postcard/' : '/play/') + cards[Number(b.dataset.i)].code + (intent === 'friend' && ctx.query.get('reply') ? '?reply=' + encodeURIComponent(ctx.query.get('reply')) : '')) : openAt(Number(b.dataset.i)))));
   // Случайное открытие — только просмотр: счётчик выборов не меняется.
   wireDice(ctx.main.querySelector('#rnd'), () => cards.length && openAt(Math.floor(Math.random() * cards.length)), ctx.alive);

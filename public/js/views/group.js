@@ -33,7 +33,7 @@ export async function choose(ctx) {
   if (!ctx.alive()) return;
   const pre = ctx.query.get('collection');
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией', 'Play with friends'))}</h1>
+    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть с компанией', 'Play with friends'))}</h1><span class="pill" style="justify-self:start">${esc(tt('От двух человек', 'From two people'))}</span>
       <p class="sub">${esc(tt('Для друзей и семьи, от 2 до 20 человек. Один открывает игру и показывает QR, остальные заходят со своих телефонов. Регистрация не нужна.', 'For friends and family, 2 to 20 people. One person opens a game and shows the QR code; the others join from their phones. No sign-up needed.'))}</p></div>
     <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
     <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
@@ -271,7 +271,7 @@ const SOLO_STEPS = () => [
   tt('Вторая карта меняет ход истории. Что случилось неожиданно? Что изменилось?', 'The second card changes the course of the story. What happened unexpectedly? What changed?'),
   tt('Третья карта помогает закончить историю. Чем всё завершилось? С чем остался герой?', 'The third card helps end the story. How did it all end? What is the hero left with?'),
 ];
-export async function solo(ctx) {
+export async function solo(ctx) { // «История из трёх карт» (/group/solo/story)
   loading(ctx.main);
   let cards;
   try { ({ cards } = await api('/api/cards')); } catch (e) { return failed(ctx.main, e, ctx.rerender); }

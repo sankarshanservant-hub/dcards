@@ -729,7 +729,7 @@ admin.post('/guide', (req, res, next) => (req.user.is_demo ? bad(res, 'demo_read
 const assetDir = path.join(config.dataDir, 'guide-assets');
 const assetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 80 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => (/^(application\/pdf|audio\/(mpeg|mp4|x-m4a|aac|ogg|webm|wav))$/.test(file.mimetype) ? cb(null, true) : cb(Object.assign(new Error('bad_file_type'), { code: 'bad_file_type' }))) });
-const assetName = (g, kind, n) => (['facilitator', 'artist'].includes(g) ? (kind === 'pdf' ? `${g}.pdf` : /^\d{1,2}$/.test(String(n)) ? `${g}-ch${Number(n)}.audio` : null) : null);
+const assetName = (g, kind, n) => (['facilitator', 'artist', 'project'].includes(g) ? (kind === 'pdf' ? `${g}.pdf` : /^\d{1,2}$/.test(String(n)) ? `${g}-ch${Number(n)}.audio` : null) : null);
 function guideAssets(g) {
   const out = { pdf: false, audio: {} };
   try { for (const f of fs.readdirSync(assetDir)) { if (f === `${g}.pdf`) out.pdf = true; const m = f.match(new RegExp(`^${g}-ch(\\d+)\\.audio$`)); if (m) out.audio[m[1]] = true; } } catch { /* ещё нет */ }

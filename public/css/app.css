@@ -1039,3 +1039,33 @@ html:not([data-feel="old"]) .sheet-menu.menu-feel .panel { will-change: transfor
 .pc-page.editing .pc-stage { position: sticky; top: calc(var(--head-h) + 4px); z-index: 5; background: var(--bg); padding-bottom: 6px; }
 .pc-page.editing .pc-stage canvas { width: auto; height: min(42vh, 420px); max-width: 82vw; }
 @media (min-width: 900px) { .pc-page.editing .pc-stage canvas { height: min(56vh, 560px); } }
+/* «Для себя», «Поиграем?» (19.11) */
+.q-intro { margin: 0; font-size: 1.1rem; }
+.q-play { justify-self: start; }
+/* игры для одного */
+.solo-page .eyebrow a { color: inherit; }
+.pair-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pair-cards figure { margin: 0; display: grid; gap: 6px; justify-items: center; }
+.pair-cards .live-card { width: 100%; }
+.pair-cards figure.changed .live-card { outline: 3px solid var(--accent); outline-offset: 2px; }
+.solo-page .live-card.sm-card { width: auto; height: min(34vh, 300px); }
+.eagle-hidden { display: grid; place-items: center; gap: 8px; aspect-ratio: 7 / 12; width: min(240px, 60vw); justify-self: center; border-radius: 14px; border: 1px dashed var(--border-strong); color: var(--text-2); }
+.eagle-hidden svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.imag-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .82rem; color: var(--text-2); counter-reset: s; }
+.imag-steps li { counter-increment: s; }
+.imag-steps li::before { content: counter(s) '. '; }
+.imag-steps li.on { color: var(--accent-text); font-weight: 600; }
+.assoc-trees { display: grid; gap: 14px; }
+@media (min-width: 640px) { .assoc-trees { grid-template-columns: 1fr 1fr; } }
+.assoc-tree, .assoc-tree ul { list-style: none; margin: 0; padding: 0; }
+.assoc-tree ul { margin-left: 14px; padding-left: 12px; border-left: 2px solid var(--accent); }
+.assoc-tree li { margin: 6px 0; }
+.assoc { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 14px; min-height: 38px; font: 600 .95rem var(--font-ui); cursor: pointer; }
+.assoc.root { border-color: var(--accent); background: var(--accent-soft); }
+.assoc.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+.assoc-add { display: flex; gap: 6px; margin-top: 6px; }
+.assoc-add input { flex: 1; min-width: 0; }
+.pair-pick { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.pair-pick legend { font-weight: 700; margin-bottom: 4px; }
+.imag-pair { display: flex; align-items: center; justify-content: center; gap: 12px; font: 800 1.4rem var(--font-head); flex-wrap: wrap; }
+.imag-pair b { color: var(--accent-text); }

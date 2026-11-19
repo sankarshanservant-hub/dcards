@@ -97,7 +97,7 @@ export async function page(ctx, token) {
           <a class="btn" href="${u('/play/' + c.code + '?origin=forward')}">${esc(tt('Отправить эту карту ещё кому-то', 'Send this card to someone else'))}</a>
         </div>
         ${storyHtml()}
-        <nav class="x-more"><a href="${u('/start')}">${esc(tt('Что такое Dialogue Cards?', 'What is Dialogue Cards?'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу в своём городе', 'Find a meeting in your city'))}</a><a href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a></nav>
+        <nav class="x-more"><a href="${u('/about')}">${esc(tt('Что такое Dialogue Cards?', 'What is Dialogue Cards?'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу в своём городе', 'Find a meeting in your city'))}</a><a href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a></nav>
         ${backLinkHtml()}`;
     }
     ctx.main.innerHTML = `<div class="wrap page narrow stack x-page">${body}</div>`;

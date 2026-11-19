@@ -121,7 +121,9 @@ export async function meetingEditor(ctx, id) {
   if (!ctx.alive()) return;
   // Часовой пояс вручную не выбирается: его определяет сервер по городу встречи. Время вводится местное для этого города.
   const blank = { title: '', description: '', country: '', city: '', venue: '', lat: null, lng: null, language: 'ru', timezone: '', priceType: 'free', priceAmount: null, currency: '', priceNote: '', durationMin: null, capacity: 12, askContact: false, format: 'standalone' };
-  const v = m || (src ? { ...blank, ...pick(src, Object.keys(blank)) } : blank);
+  // из пустого поиска встреч: город и страна подставлены в форму
+  const qp = new URL(location.href).searchParams;
+  const v = m || (src ? { ...blank, ...pick(src, Object.keys(blank)) } : { ...blank, city: (qp.get('city') || '').slice(0, 80), country: (qp.get('country') || '').slice(0, 80) });
   const whenBlock = `<fieldset class="fs"><legend>${esc(tt('Когда', 'When'))}</legend>
       ${m ? '' : `${datePickerHtml('mf')}<span class="hint small muted" id="datehint"></span>
       ${repeatBlock('mf')}<p class="small muted" style="margin:0">${esc(tt('Нерегулярные даты можно добавить после публикации.', 'Irregular dates can be added after publishing.'))}</p>`}
