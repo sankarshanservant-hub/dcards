@@ -1277,3 +1277,17 @@ test('Демо-роли не видят настоящих людей: заяв�
   assert.equal(prodDemo({}), 'false');
   assert.equal(prodDemo({ DEMO_MODE_IN_PRODUCTION: '1' }), 'true');
 });
+
+test('Превью ссылки: вопрос обмена только как текст', async () => {
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  // вопрос с разметкой, кавычками, «$» и управляющими символами — в превью только как текст
+  const q = `Q "a" 'b' <i>x</i> $' $& $\` & end\u0007\u0000`;
+  const xq = (await call('POST', '/api/exchanges', { code: codes[3], text: 'про вопрос', question: q, clientKey: 'r-q' }, { visitor: 'visitor-qqqq-0000-1111-2222' })).json;
+  const hq = await fetch(base + `/x/${xq.invite}`).then((r) => r.text());
+  const ogTitle = hq.match(/<meta property="og:title" content="([^"]*)">/)[1];
+  assert.equal(ogTitle, 'Q &quot;a&quot; &#39;b&#39; &lt;i&gt;x&lt;/i&gt; $&#39; $&amp; $` &amp; end');
+  assert.ok(hq.includes(`<title>${ogTitle} · Dialogue Cards</title>`));
+  assert.equal((hq.match(/<\/head>/g) || []).length, 1, 'страница цела');
+  const view = (await call('GET', `/api/x/${xq.invite}`, null, { visitor: 'visitor-qqq2-0000-1111-2222' })).json;
+  assert.equal(view.question, q.replace(/[\u0000-\u001f]/g, '').trim(), 'управляющие символы убраны при сохранении');
+});

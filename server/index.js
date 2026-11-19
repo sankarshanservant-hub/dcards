@@ -962,7 +962,8 @@ function ogFor(req) {
   const c = code && pubCard(code); if (!c || c.is_demo) return null;
   return { code: c.code, title, image: `${baseUrl(req)}${B}/og/${c.code}.jpg`, url: `${baseUrl(req)}${B}${req.path}` };
 }
-const escAttr = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const ESC_ATTR = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escAttr = (t) => String(t).replace(/[&<>"']/g, (ch) => ESC_ATTR[ch]);
 const ogDir = path.join(config.dataDir, 'og');
 r.get('/og/:code.jpg', wrap(async (req, res) => {
   const c = pubCard(req.params.code); if (!c || c.is_demo) return bad(res, 'not_found', 404);
@@ -984,7 +985,7 @@ r.get('*', (req, res) => {
   if (og) {
     const tags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Dialogue Cards"><meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
     // приглашение и личные ссылки — не для поисковиков
-    return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(cachedIndex.replace('</head>', `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, `<title>${escAttr(og.title)} · Dialogue Cards</title>`));
+    return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(cachedIndex.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => `<title>${escAttr(og.title)} · Dialogue Cards</title>`)); // функции: «$» в тексте вопроса — обычный символ
   }
   res.set('Cache-Control', 'no-cache').type('html').send(cachedIndex);
 });
