@@ -119,19 +119,23 @@ r.patch('/api/me', auth.requireUser, (req, res) => {
 });
 
 // ---------- вход ----------
+// Ответы входа по коду одинаковы для новых и известных адресов: есть ли аккаунт, видно только после верного кода.
 r.post('/api/auth/request', wrap(async (req, res) => {
+  if (!emailLoginEnabled()) return bad(res, 'mail_not_configured', 503);
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!auth.EMAIL_RE.test(email)) return bad(res, 'bad_email');
-  if (!emailLoginEnabled()) return bad(res, 'mail_not_configured', 503);
   const result = await auth.requestCode(email, req.body.lang === 'en' ? 'en' : 'ru');
-  res.json({ sent: result.sent, demo: result.demo, failed: !!result.failed, demoCode: result.code, isNew: !db.prepare('SELECT 1 FROM users WHERE email = ?').get(email) });
+  res.json({ sent: result.sent, demo: result.demo, failed: !!result.failed, demoCode: result.code });
 }));
 r.post('/api/auth/verify', (req, res) => {
+  if (!emailLoginEnabled()) return bad(res, 'mail_not_configured', 503);
   const email = String(req.body.email || '').trim().toLowerCase();
-  const isNew = !db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
-  if (isNew && !String(req.body.name || '').trim()) return bad(res, 'name_required');
-  const v = auth.verifyCode(email, req.body.code);
+  const v = auth.checkCode(email, req.body.code);
   if (v.error) return bad(res, v.error, 401);
+  // новый человек без имени — просим имя, код остаётся действительным; имя известного аккаунта не меняется
+  const exists = !!db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (!exists && !String(req.body.name || '').trim()) return bad(res, 'name_required');
+  if (!auth.consumeCode(v.id)) return bad(res, 'no_code', 401);
   const u = auth.findOrCreateUser(email, req.body.name, req.body.publicName);
   auth.issue(res, req, u.id);
   res.json({ user: auth.publicUser(u) });

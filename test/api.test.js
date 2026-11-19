@@ -88,6 +88,27 @@ test('03: вход по email без пароля, неверный код от�
   assert.deepEqual(me.json.user.roles, ['curator']);
 });
 
+test('03: вход по коду не раскрывает, есть ли аккаунт; имя спрашивается только после верного кода', async () => {
+  const known = await call('POST', '/api/auth/request', { email: 'artist@example.org' });
+  const fresh = await call('POST', '/api/auth/request', { email: 'brand-new@example.org' });
+  assert.deepEqual(Object.keys(known.json).sort(), Object.keys(fresh.json).sort());
+  assert.ok(!('isNew' in known.json) && !('isNew' in fresh.json), 'в ответе нет признака нового адреса');
+  // неверный код без имени: одинаковый ответ для нового и известного адреса
+  const wrong = (c) => (c === '000000' ? '111111' : '000000');
+  const w1 = await call('POST', '/api/auth/verify', { email: 'artist@example.org', code: wrong(known.json.demoCode) });
+  const w2 = await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: wrong(fresh.json.demoCode) });
+  assert.equal(w1.status, 401); assert.equal(w2.status, 401); assert.equal(w1.json.error, w2.json.error);
+  // верный код нового адреса без имени — просьба указать имя, код при этом не расходуется
+  const n1 = await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: fresh.json.demoCode });
+  assert.equal(n1.json.error, 'name_required');
+  const n2 = await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: fresh.json.demoCode, name: 'Новый' });
+  assert.equal(n2.status, 200); assert.equal(n2.json.user.name, 'Новый');
+  assert.equal((await call('POST', '/api/auth/verify', { email: 'brand-new@example.org', code: fresh.json.demoCode, name: 'Новый' })).status, 401, 'код одноразовый');
+  // известный аккаунт: имя не обязательно, присланное имя не меняет прежнее
+  const k = await call('POST', '/api/auth/verify', { email: 'artist@example.org', code: known.json.demoCode, name: 'Чужое имя' });
+  assert.equal(k.status, 200); assert.equal(k.json.user.name, 'Художник Тест');
+});
+
 // ---------- 04 библиотека ----------
 test('04: первая колода — 40 карт с кодами и автором, библиотека растёт', async () => {
   const r = await call('GET', '/api/cards');

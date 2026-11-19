@@ -101,17 +101,29 @@ async function requestCode(email, lang = 'ru') {
   return { ...result, code: result.demo ? code : undefined };
 }
 
-function verifyCode(email, code) {
+/**
+ * Проверяет код, не расходуя его: неверный код считается попыткой (не больше 5).
+ * Верный код остаётся действительным до consumeCode — так можно сначала запросить недостающее имя.
+ */
+function checkCode(email, code) {
   const row = db.prepare(`SELECT * FROM login_codes WHERE email = ? AND used_at IS NULL ORDER BY id DESC LIMIT 1`).get(email);
   if (!row) return { error: 'no_code' };
   if (row.expires_at < new Date().toISOString()) return { error: 'code_expired' };
   if (row.attempts >= 5) return { error: 'too_many_attempts' };
-  if (row.code_hash !== hash(email + ':' + String(code).trim())) {
+  if (row.code_hash !== hash(email + ':' + String(code ?? '').trim())) {
     db.prepare('UPDATE login_codes SET attempts = attempts + 1 WHERE id = ?').run(row.id);
     return { error: 'wrong_code' };
   }
-  db.prepare(`UPDATE login_codes SET used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(row.id);
-  return { ok: true };
+  return { ok: true, id: row.id };
+}
+/** Расходует проверенный код; повторно израсходовать нельзя. */
+function consumeCode(id) {
+  return db.prepare(`UPDATE login_codes SET used_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND used_at IS NULL`).run(id).changes === 1;
+}
+function verifyCode(email, code) {
+  const v = checkCode(email, code);
+  if (v.error) return v;
+  return consumeCode(v.id) ? { ok: true } : { error: 'no_code' };
 }
 
 function findOrCreateUser(email, name, publicName) {
@@ -205,5 +217,5 @@ function revoke(userId, role) { stmt.revoke.run(userId, role); }
 module.exports = {
   CPATH, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
   loadUser, requireUser, requireRole, issue, clear, publicUser, displayName, rolesOf,
-  siteLogin, requestCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, demoUser, grant, revoke,
+  siteLogin, requestCode, checkCode, consumeCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, demoUser, grant, revoke,
 };
