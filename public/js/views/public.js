@@ -49,7 +49,8 @@ export async function home(ctx) {
       <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
       <div class="home-postcard"><a class="btn light" href="${u('/library?play=postcard')}">${ic.mail || ic.cards} ${esc(tt('Отправить открытку', 'Send a postcard'))}</a></div>
     </div></section>
-    <section class="wrap band">
+    <section class="wrap band" id="join" aria-labelledby="join-h">
+      <h2 class="home-join-h" id="join-h">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</h2>
       <div class="roles">${JOIN.map(([href, icon, ru, en, dru, den]) => `<a class="role" href="${u(href)}"><span class="role-head"><span class="ic">${ic[icon]}</span><b>${esc(tt(ru, en))}</b></span><p>${esc(tt(dru, den))}</p></a>`).join('')}</div>
     </section>`;
   // «Сыграть с другом» — сразу игра со случайной картой; правила — по желанию, без обязательного экрана

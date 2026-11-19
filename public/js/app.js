@@ -144,6 +144,15 @@ export function navigate(path, { replace = false } = {}) {
   window.scrollTo(0, 0);
 }
 window.dcNavigate = navigate;
+// нажатие на push-уведомление при открытом приложении: service worker присылает адрес — переходим внутри приложения
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (e) => {
+  const d = e.data || {}; if (d.type !== 'dc-open' || !d.url) return;
+  try {
+    const t = new URL(d.url, location.href); const root = location.origin + u('');
+    if (t.origin === location.origin && (t.href + '/').startsWith(root + '/')) navigate(t.pathname.slice(u('').length) + t.search + t.hash || '/');
+    else location.href = t.href;
+  } catch { /* */ }
+});
 
 document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
@@ -232,7 +241,6 @@ function renderChrome() {
   ls.setAttribute('aria-label', lang === 'ru' ? 'Switch to English' : 'Переключить на русский');
   document.getElementById('foot').innerHTML = `<span>© Dialogue Cards · Dialogue Flow</span>
     <a href="${u('/start#join')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
-    <a href="${u('/terms')}">${esc(tt('Условия публикации', 'Publication terms'))}</a>
     ${session.config.demoMode ? `<span>${esc(tt('Прототип в демо-режиме', 'Prototype in demo mode'))}</span>` : ''}`;
   const pill = document.getElementById('demo-pill');
   const demoOn = session.config.demoMode && (session.showDemo || (session.user && session.user.isDemo));

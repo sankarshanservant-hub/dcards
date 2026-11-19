@@ -1133,3 +1133,12 @@ html:not([data-feel="old"]) .sheet-menu.menu-feel .panel { will-change: transfor
 .pc-custom { position: relative; display: inline-grid; place-items: center; background: conic-gradient(#f44, #fd4, #4d4, #4dd, #44f, #d4d, #f44); overflow: hidden; }
 .pc-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
 .pc-custom span { color: #fff; font-weight: 700; text-shadow: 0 0 3px #000; pointer-events: none; }
+/* главная 20.11: средняя карта чуть выше и выделена мягкой тенью (без рамки); меньше отступ от текста до карт */
+.hero.home .trio { padding: 18px 0 4px; min-height: calc(clamp(96px, 27vw, 180px) * 12 / 7 + 22px); margin-top: -8px; }
+.trio img, .trio .slot { border: 0; }
+.trio img { box-shadow: 0 6px 16px rgba(0,0,0,.28); }
+.trio a:nth-child(2), .trio .slot:nth-child(2) { transform: translateY(-16px); }
+.trio a:nth-child(2) img { box-shadow: 0 10px 26px rgba(0,0,0,.55), 0 0 34px 6px rgba(0,0,0,.35); }
+@media (hover: hover) { .trio a:nth-child(2):hover { transform: translateY(-26px); } }
+.trio a:nth-child(2):focus-visible { transform: translateY(-26px); }
+.home-join-h { margin: 0 0 14px; font-size: clamp(1.3rem, 4.6vw, 1.8rem); }

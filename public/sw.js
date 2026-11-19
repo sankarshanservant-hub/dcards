@@ -19,8 +19,13 @@ self.addEventListener('notificationclick', (e) => {
   const url = new URL((e.notification.data && e.notification.data.url) || self.registration.scope, self.registration.scope).href;
   e.waitUntil((async () => {
     const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // открытое приложение: выводим вперёд и просим само перейти (на iPhone navigate() из уведомления часто не срабатывает)
     for (const c of list) {
-      if (c.url.startsWith(self.registration.scope) && 'focus' in c) { try { await c.navigate(url); } catch { /* другая вкладка */ } return c.focus(); }
+      if (c.url.startsWith(self.registration.scope) && 'focus' in c) {
+        try { await c.focus(); } catch { /* */ }
+        c.postMessage({ type: 'dc-open', url });
+        return;
+      }
     }
     return self.clients.openWindow(url);
   })());

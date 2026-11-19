@@ -161,7 +161,9 @@ require('./bell').onPush((uid, payload, kind) => {
   const u = db.prepare('SELECT is_demo FROM users WHERE id = ?').get(uid); if (!u || u.is_demo) return;
   const p = prefsOf(uid); if (!p.enabled) return;
   if (/^work_/.test(kind)) return; // о решениях по работам — onWorkDecision (своя настройка «Решения по моим работам»)
-  deliver(uid, payload).catch(() => {});
+  // ссылки колокольчика — от корня приложения («/x/…»); в уведомлении нужен полный путь с /dialogue-cards
+  const url = payload.url && payload.url.startsWith('/') && !(B && payload.url.startsWith(B + '/')) ? B + payload.url : payload.url;
+  deliver(uid, { ...payload, url }).catch(() => {});
 });
 
 module.exports = { vapid, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };
