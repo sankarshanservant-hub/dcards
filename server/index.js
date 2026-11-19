@@ -31,6 +31,8 @@ const guide = require('./guide');
 const { cityKey } = require('./places-key');
 
 cards.syncSeed();
+// новый пароль владельца в окружении — прежние сессии владельца отзываются (сравнение отпечатков при запуске)
+if (auth.checkOwnerPasswordRotation()) console.log('Owner password changed: owner sessions revoked.');
 if (config.demoMode) for (const u of auth.DEMO_USERS) auth.demoUser(u.key);
 
 const B = config.basePath;
@@ -112,7 +114,7 @@ r.get('/api/config', (req, res) => res.json({
   demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl, translationConnected: false,
   termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
 }));
-r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
+r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo, sessions: req.user ? auth.sessionCount(req.user.id) : 0 }));
 r.patch('/api/me', auth.requireUser, (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 100);
   const publicName = String(req.body.publicName ?? '').trim().slice(0, 100);
@@ -140,31 +142,39 @@ r.post('/api/auth/verify', (req, res) => {
   if (!exists && !String(req.body.name || '').trim()) return bad(res, 'name_required');
   if (!auth.consumeCode(v.id)) return bad(res, 'no_code', 401);
   const u = auth.findOrCreateUser(email, req.body.name, req.body.publicName);
-  auth.issue(res, req, u.id);
+  auth.issue(res, req, u.id, 'email');
   res.json({ user: auth.publicUser(u) });
 });
 // Вход общим аккаунтом сайта: браузер передаёт сессию сайта, сервер проверяет её у сайта.
 r.post('/api/auth/site', wrap(async (req, res) => {
   const x = await auth.siteLogin(req.body && req.body.session);
   if (x.error) return bad(res, x.error, x.error === 'site_unreachable' ? 502 : 401);
-  auth.issue(res, req, x.user.id);
+  auth.issue(res, req, x.user.id, 'site');
   res.json({ user: auth.publicUser(x.user) });
+}));
+// Явная привязка аккаунта сайта к вошедшему аккаунту (владелец, люди с правами): только по нажатию, не по email.
+r.post('/api/auth/site/link', auth.requireUser, wrap(async (req, res) => {
+  const x = await auth.linkSite(req.user, req.body && req.body.session);
+  if (x.error) return bad(res, x.error, x.error === 'site_unreachable' ? 502 : x.error === 'forbidden' ? 403 : x.error === 'site_account_in_use' ? 409 : 401);
+  res.json({ ok: true, detached: x.detached, user: auth.publicUser(auth.userById(req.user.id)) });
 }));
 r.post('/api/auth/owner', (req, res) => {
   const c = auth.checkOwnerPassword(req, req.body && req.body.password);
   if (!c.ok) return bad(res, c.error, c.error === 'too_many_attempts' ? 429 : 401);
   const u = auth.ownerUser();
-  auth.issue(res, req, u.id);
+  auth.issue(res, req, u.id, 'password');
   res.json({ user: auth.publicUser(u) });
 });
-r.post('/api/auth/logout', (req, res) => { auth.clear(res); res.json({ ok: true }); });
+r.post('/api/auth/logout', (req, res) => { auth.logout(req, res); res.json({ ok: true }); });
+// «Выйти на всех устройствах»: все сессии аккаунта, включая эту, перестают действовать.
+r.post('/api/auth/logout-all', auth.requireUser, (req, res) => { auth.revokeAll(req.user.id); auth.clear(res); res.json({ ok: true }); });
 // Тестовый переключатель ролей (только в демо-режиме). Права всё равно проверяются по ролям демо-пользователя.
 r.post('/api/demo/login', wrap(async (req, res) => {
   if (!config.demoMode) return bad(res, 'demo_disabled', 403);
   const u = auth.demoUser(String(req.body.as || ''));
   if (!u) return bad(res, 'unknown_role');
   try { await demo.ensure(); } catch (e) { console.error('demo seed', e); } // демо-данные создаются при первом входе в демо
-  auth.issue(res, req, u.id);
+  auth.issue(res, req, u.id, 'demo');
   res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
   res.json({ user: auth.publicUser(u) });
 }));

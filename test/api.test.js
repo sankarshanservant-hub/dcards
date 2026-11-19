@@ -17,7 +17,12 @@ const siteApi = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const s = u.searchParams.get('session');
   res.setHeader('Content-Type', 'application/json');
-  if (u.searchParams.get('api') === 'me' && s === 'good-session-token-1') res.end(JSON.stringify({ ok: true, user: { uid: 'g:123', name: 'Майя', displayName: 'Майя', email: 'maya@example.org' } }));
+  const SITE = {
+    'good-session-token-1': { uid: 'g:123', name: 'Майя', displayName: 'Майя', email: 'maya@example.org' },
+    'owner-site-session-1': { uid: 'g:owner', name: 'Владелец', email: 'owner-site@example.org' },
+    'curator-site-session': { uid: 'g:cur', name: 'Куратор', email: 'curator@example.org' },
+  };
+  if (u.searchParams.get('api') === 'me' && SITE[s]) res.end(JSON.stringify({ ok: true, user: SITE[s] }));
   else res.end(JSON.stringify({ ok: false }));
 }).listen(0);
 process.env.SITE_AUTH_URL = `http://127.0.0.1:${siteApi.address().port}/api/seva`;
@@ -1362,4 +1367,108 @@ test('22.11: демо-сессия, выданная до выключения �
     const me2 = await call('GET', '/api/me', null, { cookie: d.cookie });
     assert.ok(!me2.json || !me2.json.user, 'без демо-режима старая демо-сессия не принимается');
   } finally { config.demoMode = was; }
+});
+
+// ---------- этап 3: сессии, привязка аккаунта сайта, подделка запросов ----------
+const authDb = () => require('../server/db');
+const sessionRow = (cookie) => {
+  const raw = decodeURIComponent(cookie.split('=').slice(1).join('='));
+  return authDb().prepare('SELECT * FROM sessions WHERE id_hash = ?').get(require('crypto').createHash('sha256').update(raw.slice(3)).digest('hex'));
+};
+const meId = async (cookie) => { const r = await call('GET', '/api/me', null, { cookie }); return r.json && r.json.user ? r.json.user.id : null; };
+
+test('Сессии: в cookie — случайный идентификатор, в базе — только его хеш; «Выйти» удаляет сессию', async () => {
+  const a = await emailLogin('sess-a@example.org', 'Сессия');
+  const raw = decodeURIComponent(a.cookie.split('=').slice(1).join('='));
+  assert.match(raw, /^s2\.[A-Za-z0-9_-]{43}$/, '256 бит, без номера пользователя');
+  const row = sessionRow(a.cookie);
+  assert.ok(row && row.user_id === a.user.id && row.via === 'email');
+  assert.ok(row.expires_at - row.created_at <= 30 * 24 * 3600e3 + 1000);
+  assert.equal(authDb().prepare('SELECT COUNT(*) AS n FROM sessions WHERE id_hash = ?').get(raw).n, 0, 'сам идентификатор не хранится');
+  assert.equal(await meId(a.cookie), a.user.id);
+  assert.equal((await call('POST', '/api/auth/logout', null, { cookie: a.cookie })).status, 200);
+  assert.equal(sessionRow(a.cookie), undefined, 'сессия удалена из базы');
+  assert.equal(await meId(a.cookie), null, 'украденная копия cookie после выхода не действует');
+});
+
+test('Сессии: «Выйти на всех устройствах» завершает все сессии аккаунта', async () => {
+  const a1 = await emailLogin('sess-all@example.org', 'Везде');
+  const a2 = await emailLogin('sess-all@example.org', 'Везде');
+  const other = await emailLogin('sess-other@example.org', 'Другой');
+  assert.equal((await call('GET', '/api/me', null, { cookie: a1.cookie })).json.sessions, 2);
+  assert.equal((await call('POST', '/api/auth/logout-all', null, {})).status, 401, 'без входа — нельзя');
+  assert.equal((await call('POST', '/api/auth/logout-all', null, { cookie: a2.cookie })).status, 200);
+  assert.equal(await meId(a1.cookie), null);
+  assert.equal(await meId(a2.cookie), null);
+  assert.equal(await meId(other.cookie), other.user.id, 'чужие сессии не задеты');
+});
+
+test('Сессии: прежняя подписанная cookie действует и заменяется новой сессией; после «выйти везде» — нет', async () => {
+  const crypto = require('crypto');
+  const secret = fs.readFileSync(path.join(dataDir, 'session-secret'), 'utf8').trim();
+  const u = await emailLogin('legacy@example.org', 'Прежний');
+  const legacy = (issuedAgo = 0) => {
+    const payload = `${u.user.id}.${Date.now() - issuedAgo + 30 * 24 * 3600e3}`;
+    return `dc_session=${payload}.${crypto.createHmac('sha256', secret).update(payload).digest('base64url')}`;
+  };
+  const old = legacy(3600e3);
+  const r = await call('GET', '/api/me', null, { cookie: old });
+  assert.equal(r.json.user.id, u.user.id, 'вход сохраняется — массового выхода нет');
+  assert.match(r.cookie, /^dc_session=s2\./, 'выдана новая сессия');
+  assert.equal(sessionRow(r.cookie).via, 'legacy');
+  assert.equal(await meId(old), u.user.id, 'одновременные запросы при открытии страницы проходят');
+  authDb().prepare('UPDATE legacy_sessions_used SET used_at = used_at - 120000').run();
+  assert.equal(await meId(old), null, 'та же прежняя cookie позже — отказ');
+  assert.equal(await meId(r.cookie), u.user.id, 'новая сессия действует');
+  const other = legacy(7200e3);
+  assert.equal(await meId(other), u.user.id);
+  await call('POST', '/api/auth/logout-all', null, { cookie: r.cookie });
+  assert.equal(await meId(legacy(10e3)), null, 'выданная до «выйти везде» — не действует');
+});
+
+test('Сессии: права администратора — не дольше 7 дней; смена пароля владельца отзывает его сессии', async () => {
+  const config = require('../server/config'); const auth = require('../server/auth');
+  const o = await call('POST', '/api/auth/owner', { password: 'test-password' });
+  const row = sessionRow(o.cookie);
+  assert.ok(row.expires_at - row.created_at <= 7 * 24 * 3600e3 + 1000, 'сессия администратора — 7 дней');
+  authDb().prepare('UPDATE sessions SET created_at = created_at - ? WHERE id_hash = ?').run(8 * 24 * 3600e3, row.id_hash);
+  assert.equal(await meId(o.cookie), null, 'через 7 дней — вход заново');
+  // Администратор, получивший роль во время 30-дневной сессии, тоже ограничен 7 днями от входа.
+  const later = await emailLogin('late-admin@example.org', 'Поздний');
+  await call('POST', `/api/admin/users/${later.user.id}/roles`, { role: 'admin', grant: true }, { cookie: owner.cookie });
+  authDb().prepare('UPDATE sessions SET created_at = created_at - ? WHERE id_hash = ?').run(8 * 24 * 3600e3, sessionRow(later.cookie).id_hash);
+  assert.equal(await meId(later.cookie), null);
+  // смена ADMIN_PASSWORD: при запуске отпечаток не совпадает — сессии владельца отзываются
+  const o2 = await call('POST', '/api/auth/owner', { password: 'test-password' });
+  assert.equal(auth.checkOwnerPasswordRotation(), false, 'тот же пароль — ничего не меняется');
+  const was = config.adminPassword; config.adminPassword = 'another-test-password';
+  try { assert.equal(auth.checkOwnerPasswordRotation(), true); } finally { config.adminPassword = was; }
+  assert.equal(await meId(o2.cookie), null, 'сессия со старым паролем отозвана');
+  assert.equal(auth.checkOwnerPasswordRotation(), true, 'вернули прежний пароль — тоже смена');
+  owner.cookie = (await call('POST', '/api/auth/owner', { password: 'test-password' })).cookie; // для следующих проверок
+  assert.equal(await meId(owner.cookie), owner.user.id);
+});
+
+test('Владелец входит аккаунтом сайта только после явной привязки; аккаунт с правами по email не привязывается', async () => {
+  assert.equal((await call('POST', '/api/auth/site', { session: 'owner-site-session-1' })).json.user.isOwner, false, 'до привязки — обычный аккаунт');
+  assert.equal((await call('POST', '/api/auth/site/link', { session: 'owner-site-session-1' })).status, 401, 'без входа — нельзя');
+  const bad0 = await call('POST', '/api/auth/site/link', { session: 'bad-session-token-xx' }, { cookie: owner.cookie });
+  assert.equal(bad0.status, 401);
+  const link = await call('POST', '/api/auth/site/link', { session: 'owner-site-session-1' }, { cookie: owner.cookie });
+  assert.equal(link.status, 200);
+  assert.equal(link.json.detached, true, 'прежний обычный аккаунт с этим входом отвязан');
+  assert.equal(link.json.user.siteLinked, true);
+  const s = await call('POST', '/api/auth/site', { session: 'owner-site-session-1' });
+  assert.equal(s.json.user.id, owner.user.id, 'вход аккаунтом сайта открывает аккаунт владельца');
+  assert.ok(s.json.user.isOwner && s.json.user.roles.includes('admin'));
+  assert.ok((await call('POST', '/api/auth/owner', { password: 'test-password' })).status === 200, 'пароль — запасной способ');
+  // куратор с тем же email, что у аккаунта сайта: автоматической привязки нет
+  const c = await call('POST', '/api/auth/site', { session: 'curator-site-session' });
+  assert.equal(c.status, 401); assert.equal(c.json.error, 'site_link_required');
+  const cl = await call('POST', '/api/auth/site/link', { session: 'curator-site-session' }, { cookie: curatorU.cookie });
+  assert.equal(cl.status, 200);
+  assert.equal((await call('POST', '/api/auth/site', { session: 'curator-site-session' })).json.user.id, curatorU.user.id, 'после явной привязки — свой аккаунт');
+  // аккаунт сайта, привязанный к аккаунту с правами, другой человек к себе не перетянет
+  const stranger = await emailLogin('stranger-link@example.org', 'Чужой');
+  assert.equal((await call('POST', '/api/auth/site/link', { session: 'curator-site-session' }, { cookie: stranger.cookie })).json.error, 'site_account_in_use');
 });

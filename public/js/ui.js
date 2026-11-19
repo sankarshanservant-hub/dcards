@@ -110,7 +110,8 @@ export async function loginWithSite({ force = false } = {}) {
   const s = siteSession();
   if (!s || !session.config.siteLogin) return false;
   if (!force && lsGet('dc_site_skip') === s) return false;
-  try { await api('/api/auth/site', { method: 'POST', body: { session: s } }); lsSet('dc_site_skip', ''); return true; } catch { return false; }
+  loginWithSite.lastError = null;
+  try { await api('/api/auth/site', { method: 'POST', body: { session: s } }); lsSet('dc_site_skip', ''); return true; } catch (e) { loginWithSite.lastError = e; return false; }
 }
 export const skipSiteAutoLogin = () => lsSet('dc_site_skip', siteSession());
 
