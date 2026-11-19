@@ -88,7 +88,7 @@ function fmtLocal(d, m, lang) {
 
 /** Запись на дату: занимает место; при заполнении запись закрывается. Подтверждение — письмом (или показ текста в демо). */
 async function register(dateId, { name, email, contact, userId = null, visitorId = null }, baseUrl, lang = 'ru') {
-  const n = String(name || '').trim().slice(0, 100);
+  const n = line(name, 100);
   const e = String(email || '').trim().toLowerCase().slice(0, 200);
   if (!n) return { error: 'name_required' };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { error: 'email_required' };
@@ -103,7 +103,7 @@ async function register(dateId, { name, email, contact, userId = null, visitorId
     const token = crypto.randomBytes(18).toString('base64url');
     // привязка записи к аккаунту или к этому браузеру — для событий в колокольчике (одного совпавшего email недостаточно)
     db.prepare('INSERT INTO registrations (date_id, name, email, contact, token, is_demo, user_id, visitor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(d.id, n, e, m.ask_contact ? String(contact || '').trim().slice(0, 200) : '', token, m.is_demo, userId, visitorId);
+      .run(d.id, n, e, m.ask_contact ? line(contact, 200) : '', token, m.is_demo, userId, visitorId);
     return { token, d, m };
   })();
   if (result.error) return result;
@@ -127,7 +127,9 @@ function registrationByToken(token) {
   const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
   return { name: r.name, email: r.email, status: r.status, createdAt: r.created_at, cancelledAt: r.cancelled_at, date: dateOut(d, m), meeting: meetingOut(m) };
 }
-const icsText = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+// Текст для .ics: любые переводы строк — «\\n», прочие управляющие символы убираются (строки файла не разрываются).
+const icsText = (s) => String(s || '').replace(/\r\n|\r|\n/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
+  .replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 const icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\.\d+/, '');
 function foldIcs(line) { const out = []; let rest = line; while (Buffer.byteLength(rest) > 74) { let n = 74; while (Buffer.byteLength(rest.slice(0, n)) > 74) n--; out.push(rest.slice(0, n)); rest = ' ' + rest.slice(n); } out.push(rest); return out.join('\r\n'); }
 /** Файл календаря (.ics) для записи: время в UTC (календарь покажет его в поясе устройства), место, ссылка для отмены. */
@@ -156,18 +158,21 @@ function cancelByToken(token) {
 }
 
 // ---------- фасилитатор ----------
+// Однострочные поля встречи — без переводов строк и управляющих символов; в описании остаются переводы строк и табуляция.
+const line = (v, n) => String(v ?? '').replace(/[\r\n\t\u2028\u2029]+/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, n);
+const multiline = (v, n) => String(v ?? '').replace(/\r\n|\r/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '').trim().slice(0, n);
 function parseMeeting(body) {
   const tz = String(body.timezone || '').trim();
   const m = {
-    title: String(body.title || '').trim().slice(0, 140),
-    description: String(body.description || '').trim().slice(0, 3000),
-    country: String(body.country || '').trim().slice(0, 80),
-    city: String(body.city || '').trim().slice(0, 80),
-    venue: String(body.venue || '').trim().slice(0, 300),
+    title: line(body.title, 140),
+    description: multiline(body.description, 3000),
+    country: line(body.country, 80),
+    city: line(body.city, 80),
+    venue: line(body.venue, 300),
     language: LANGS.includes(body.language) ? body.language : 'ru',
     timezone: tz,
     price_type: body.priceType === 'paid' ? 'paid' : 'free',
-    price_note: String(body.priceNote || '').trim().slice(0, 300),
+    price_note: line(body.priceNote, 300),
     price_amount: body.priceType === 'paid' ? Number(String(body.priceAmount ?? '').replace(',', '.')) : null,
     currency: body.priceType === 'paid' ? String(body.currency || '').trim().toUpperCase().slice(0, 3) : '',
     df_format: body.format === 'part' ? 'part' : 'standalone',

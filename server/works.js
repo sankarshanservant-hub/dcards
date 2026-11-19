@@ -220,6 +220,7 @@ function canSee(user, roles, workId) {
 function decide(curator, workId, { action, criteria = [], comment = '', replacementType }) {
   const w = q.work.get(workId);
   if (!w) return { error: 'not_found' };
+  if (w.artist_id === curator.id) return { error: 'own_work' }; // свою работу рассматривают другие кураторы
   if (!['submitted', 'discussion'].includes(w.status)) return { error: 'not_in_review', status: w.status };
   if (action === 'approve') action = 'recommend';
   if (!['recommend', 'return', 'reject'].includes(action)) return { error: 'bad_action' };
@@ -288,6 +289,7 @@ function adminDecide(admin, workId, { action, criteria = [], comment = '', repla
  */
 function discuss(curator, workId, question = '') {
   const w = q.work.get(workId);
+  if (w && w.artist_id === curator.id) return { error: 'own_work' };
   if (!w || w.status !== 'submitted') return { error: 'not_in_review' };
   const text = String(question || '').trim().slice(0, 2000);
   if (!text) return { error: 'question_required' };
@@ -300,6 +302,7 @@ function discuss(curator, workId, question = '') {
 }
 function vote(curator, workId, value, comment = '') {
   const w = q.work.get(workId);
+  if (w && w.artist_id === curator.id) return { error: 'own_work' };
   if (!w || w.status !== 'discussion') return { error: 'not_in_discussion' };
   if (!['approve', 'return', 'reject'].includes(value)) return { error: 'bad_vote' };
   db.prepare(`INSERT INTO votes (work_id, curator_id, vote, comment) VALUES (?, ?, ?, ?)
