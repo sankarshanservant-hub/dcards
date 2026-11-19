@@ -35,6 +35,11 @@ const addCol = (c, def) => { if (!db.prepare('PRAGMA table_info(exchanges)').all
 addCol('conv_id', 'INTEGER'); addCol('round_no', 'INTEGER NOT NULL DEFAULT 1'); addCol('parent_id', 'INTEGER');
 addCol('origin', "TEXT NOT NULL DEFAULT 'fresh'"); addCol('source_ex', 'INTEGER');
 addCol('target_user_id', 'INTEGER'); addCol('target_visitor', 'TEXT');
+// Вопрос другу (20.11.2026): отправитель может изменить стандартный вопрос; хранится у конкретного обмена.
+// Пустой или из пробелов — стандартная формулировка; у прежних обменов (question IS NULL) — тоже стандартная.
+addCol('question', 'TEXT');
+const DEFAULT_QUESTION = 'Что тебе откликается в этой карте?';
+const questionOf = (x) => (x && x.question) || DEFAULT_QUESTION;
 const tok = () => crypto.randomBytes(18).toString('base64url');
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const clean = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -49,7 +54,7 @@ function storyHash(x) {
   return crypto.createHash('sha256').update(JSON.stringify([c.code, c.image_full, c.author, x.a_name, x.a_text, x.b_name, x.b_text])).digest('hex').slice(0, 16);
 }
 
-function create(card, user, visitor, { text, name, clientKey, origin = 'fresh', parent = null, sourceEx = null }) {
+function create(card, user, visitor, { text, name, question, clientKey, origin = 'fresh', parent = null, sourceEx = null }) {
   const t = clean(text, 300); if (!t) return { error: 'text_required' };
   if (!user && !visitor) return { error: 'visitor_required' };
   const key = clientKey ? clean(clientKey, 64).replace(/[^A-Za-z0-9_-]/g, '') : null;
@@ -59,10 +64,11 @@ function create(card, user, visitor, { text, name, clientKey, origin = 'fresh', 
   }
   // кто прислал этот обмен раньше: если создатель — ответивший в другом обмене, отмечаем источник (для аналитики «дальше»)
   const src = sourceEx || (db.prepare(`SELECT id FROM exchanges WHERE b_answered_at IS NOT NULL AND ((b_user_id IS NOT NULL AND b_user_id = ?) OR (b_visitor IS NOT NULL AND b_visitor = ?)) ORDER BY b_answered_at DESC LIMIT 1`).get(user ? user.id : -1, visitor || '') || {}).id || null;
-  const info = db.prepare(`INSERT INTO exchanges (card_id, a_user_id, a_visitor, a_name, a_text, a_secret, a_door, invite_token, client_key, is_demo, origin, source_ex, conv_id, round_no, parent_id, target_user_id, target_visitor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const q = clean(question, 200); // пусто — стандартный вопрос
+  const info = db.prepare(`INSERT INTO exchanges (card_id, a_user_id, a_visitor, a_name, a_text, a_secret, a_door, invite_token, client_key, is_demo, origin, source_ex, conv_id, round_no, parent_id, target_user_id, target_visitor, question)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(card.id, user ? user.id : null, visitor || null, nameOf(user && user.id, clean(name, 40), ''), t, tok(), tok(), tok(), key, (card.is_demo || (user && user.is_demo)) ? 1 : 0,
-      origin, src, parent ? parent.conv : null, parent ? parent.round : 1, parent ? parent.id : null, parent ? parent.targetUser : null, parent ? parent.targetVisitor : null);
+      origin, src, parent ? parent.conv : null, parent ? parent.round : 1, parent ? parent.id : null, parent ? parent.targetUser : null, parent ? parent.targetVisitor : null, q && q !== DEFAULT_QUESTION ? q : null);
   const id = Number(info.lastInsertRowid);
   if (!parent) db.prepare('UPDATE exchanges SET conv_id = ? WHERE id = ?').run(id, id);
   return { ok: true, ...links(db.prepare('SELECT * FROM exchanges WHERE id = ?').get(id), 'a') };
@@ -86,7 +92,7 @@ function resolve(token, user, visitor) {
 function view(x, role) {
   const card = publicCard(db.prepare('SELECT * FROM cards WHERE id = ?').get(x.card_id), { withDetails: true });
   const aName = x.a_name || 'Друг'; const bName = x.b_name || 'Друг';
-  const base = { id: x.id, role, card, answered: !!x.b_answered_at, createdAt: x.created_at, answeredAt: x.b_answered_at, round: x.round_no || 1 };
+  const base = { id: x.id, role, card, answered: !!x.b_answered_at, createdAt: x.created_at, answeredAt: x.b_answered_at, round: x.round_no || 1, question: questionOf(x) };
   if (role === 'invitee') return { ...base, fromName: aName };
   if (role === 'stranger') return { ...base, used: true }; // ничего личного: ни имён, ни ответов
   const me = role; const other = role === 'a' ? 'b' : 'a';
@@ -121,20 +127,20 @@ function sideOf(y, x, me) {
 }
 
 /** «Твоя очередь»: участник раунда отвечает своей картой тому же собеседнику — новый раунд того же разговора. */
-function reply(token, user, visitor, card, { text, name, clientKey }) {
+function reply(token, user, visitor, card, { text, name, question, clientKey }) {
   const { x, role } = resolve(token, user, visitor);
   if (!x) return { error: 'not_found' };
   if (!['a', 'b'].includes(role) || !x.b_answered_at) return { error: 'forbidden' };
   const other = role === 'a' ? 'b' : 'a';
   const r = create(card, user || (x[`${role}_user_id`] ? { id: x[`${role}_user_id`], is_demo: 0 } : null), visitor || x[`${role}_visitor`], {
-    text, name: name || x[`${role}_name`], clientKey, origin: 'reply', sourceEx: x.id,
+    text, name: name || x[`${role}_name`], question, clientKey, origin: 'reply', sourceEx: x.id,
     parent: { id: x.id, conv: x.conv_id || x.id, round: (db.prepare('SELECT MAX(round_no) AS n FROM exchanges WHERE conv_id = ?').get(x.conv_id || x.id).n || 1) + 1,
       targetUser: x[`${other}_user_id`] || null, targetVisitor: x[`${other}_user_id`] ? null : x[`${other}_visitor`] } });
   if (r.error || r.repeated) return r;
   const y = db.prepare('SELECT * FROM exchanges WHERE id = ?').get(r.id);
   const who = x[`${role}_name`] || 'Собеседник';
   bell.add(y.target_user_id ? { userId: y.target_user_id } : { visitorId: y.target_visitor }, { kind: 'exchange_round', title: 'Тебе прислали ответную карту',
-    body: `${who}: что ты здесь видишь?`, url: `/x/${y.invite_token}`, dedupe: `x:${y.id}:round`, isDemo: !!y.is_demo });
+    body: `${who}: ${questionOf(y).replace(/^./, (ch) => ch.toLowerCase())}`, url: `/x/${y.invite_token}`, dedupe: `x:${y.id}:round`, isDemo: !!y.is_demo });
   return r;
 }
 
@@ -242,4 +248,4 @@ function stats(days = 30, showDemo = false) {
     note: 'Гость между устройствами — разные люди для счёта; новый обмен не доказывает нового уникального человека.' };
 }
 
-module.exports = { create, resolve, view, answer, story, mine, claim, storyHash, reply, opened, sent, stats, event };
+module.exports = { create, resolve, view, answer, story, mine, claim, storyHash, reply, opened, sent, stats, event, questionOf, DEFAULT_QUESTION };

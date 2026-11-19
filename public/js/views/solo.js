@@ -22,7 +22,7 @@ export function hub(ctx) {
     <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть одному', 'Play solo'))}</h1>
       <p class="sub">${esc(tt('Игры для одного — без регистрации. Отвечай про себя.', 'Games for one — no sign-up. Answer to yourself.'))}</p></div>
     <div class="list">${SOLO_GAMES.map((g) => `<a class="item" href="${u(g.path)}"><span class="body"><b>${esc(T(g))}</b><span class="small">${esc(D(g))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
-    <p class="small muted">${esc(tt('Играть вдвоём или компанией:', 'Play with others:'))} <a href="${u('/group')}">${esc(tt('Играть с компанией', 'Play with friends'))}</a> · <a href="${u('/play')}">${esc(tt('Сыграть с другом', 'Play with a friend'))}</a></p>
+    <p class="small muted">${esc(tt('Играть вдвоём или компанией:', 'Play with others:'))} <a href="${u('/group')}">${esc(tt('Играть с компанией', 'Play with friends'))}</a> · <a href="${u('/play')}">${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</a></p>
   </div>`;
 }
 

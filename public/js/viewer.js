@@ -376,14 +376,9 @@ export function openViewer(opts) {
           ${ui.fav ? favPanel(c.code) : ''}
           ${shareField()}
           ${xLine}
-          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Сыграть с другом', 'Play with a friend'))}</span></a>
+          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
             <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${icons.mail}<span>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</span></a></div>
-          <div class="vb-panel">
-            <button class="vb-toggle" type="button" data-guide aria-expanded="${ui.guide}"><span>${esc(tt('Попробуй другие форматы', 'Try other formats'))}</span>${chev(ui.guide)}</button>
-            ${ui.guide ? `<div class="vb-body"><div class="seg" role="radiogroup" aria-label="${esc(tt('Как смотреть карту', 'How to use the card'))}">${START_GUIDES.map((x) => `<button type="button" role="radio" data-g="${x.key}" aria-checked="${x.key === ui.guideKey}" tabindex="${x.key === (ui.guideKey || START_GUIDES[0].key) ? 0 : -1}">${esc(L(x.title))}</button>`).join('')}</div>
-              ${g ? `<div class="vb-guide"><p>${guideText(g)}</p>${g.hints ? `<ul>${(g.hints[lang] || g.hints.ru).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>` : ''}
-                ${g.choose ? libChoiceHtml(info) : ''}</div>` : ''}</div>` : ''}
-          </div>`;
+          <div class="card-play"><a class="btn light" href="${u('/games')}" data-xopen>${esc(tt('Поиграем?', 'Shall we play?'))}</a></div>`;
       }
     }
     syncNav();
@@ -446,13 +441,13 @@ export function openViewer(opts) {
   function restoreScroll() { const b = qBody(); if (b) b.scrollTop = qs.scroll[scrollKey()] || 0; }
   function renderQ() {
     if (!qpanel) return;
+    if (!QUESTION_FORMATS.some((x) => x.key === qs.format)) qs.format = 'self'; // сразу содержание категории, без пояснения «выберите»
     const f = QUESTION_FORMATS.find((x) => x.key === qs.format);
     let body;
-    if (!f) body = `<p class="vb-note">${esc(tt('Выберите, как вы разговариваете: для себя, вдвоём или в группе.', 'Choose how you are talking: on your own, as two or in a group.'))}</p>`;
-    else if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}</p>${f.link ? `<a class="btn yellow" href="${u(f.link)}" data-q-go>${icons.group} ${esc(tt('Играть с компанией', 'Play with friends'))}</a>` : ''}`;
+    if (!f.lists || !f.lists.length) body = `<p class="q-pending">${esc(L(f.pending) || tt('Вопросы готовятся.', 'Questions are being prepared.'))}</p>${f.link ? `<a class="btn yellow" href="${u(f.link)}" data-q-go>${icons.group} ${esc(tt('Играть с компанией', 'Play with friends'))}</a>` : ''}`;
     else if (f.lists.length === 1) {
       const cur = f.lists[0]; qs.list = cur.key;
-      body = `${f.intro ? `<h3 class="q-intro">${esc(L(f.intro))}</h3>` : ''}<ul class="qlist" id="ql">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>${f.note ? `<p class="vb-note">${esc(L(f.note))}</p>` : ''}`;
+      body = `${f.note ? `<p class="q-note">${esc(L(f.note))}</p>` : ''}<ol class="qlist" id="ql">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ol>`;
     }
     else {
       const cur = f.lists.find((x) => x.key === qs.list) || f.lists[0];
@@ -461,7 +456,8 @@ export function openViewer(opts) {
         <ul class="qlist" id="ql" role="tabpanel" aria-labelledby="qt-${cur.key}">${(cur.items[lang] || cur.items.ru).map((q) => `<li>${esc(q)}</li>`).join('')}</ul>`;
     }
     // «Поиграем?»: для себя — игры для одного, для двоих — игры компанией
-    if (f && f.play && f.lists) body += `<a class="btn sm light q-play" href="${u(f.play)}" data-q-go>${esc(tt('Поиграем?', 'Shall we play?'))}</a>`;
+    // «Поиграем?»: для себя — игры для одного; для двоих и для группы — игры для компании
+    if (f && f.play && f.lists) body += `<a class="btn q-play" href="${u(f.play)}" data-q-go>${esc(tt('Поиграем?', 'Shall we play?'))}</a>`;
     qpanel.innerHTML = `<div class="qpanel-head"><h2 id="qp-title">${esc(tt('Вопросы', 'Questions'))}</h2>
         <button class="btn light sm q-back" type="button" data-q-card>${icons.prev}<span>${esc(tt('К карте', 'Back to card'))}</span></button></div>
       <div class="qpanel-body">
@@ -556,7 +552,8 @@ export function openViewer(opts) {
     });
     bottom.addEventListener('click', async (e) => {
       const xo = e.target.closest('a[data-xopen]');
-      if (xo) { e.preventDefault(); const href = xo.getAttribute('href'); teardown(); history.replaceState({}, '', href); window.dispatchEvent(new PopStateEvent('popstate')); return; }
+      // переход из открытой карты (обмен, открытка, игры): новая запись истории — «Назад» вернёт к этой же карте
+      if (xo) { e.preventDefault(); const href = xo.getAttribute('href'); teardown(); if (window.dcNavigate) window.dcNavigate(href.slice(u('').length) || '/'); else location.href = href; return; }
       const cb0 = e.target.closest('button'); const code0 = opts.cards[index].code;
       if (cb0 && (cb0.type === 'submit' || cb0.closest('form'))) return; // формы (новая подборка) — своим обработчиком submit
       if (cb0 && cb0.hasAttribute('data-fav')) {

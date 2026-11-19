@@ -5,6 +5,7 @@
 @font-face { font-family: 'Rubik'; font-weight: 700; font-display: swap; src: url('../fonts/rubik-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212; }
 @font-face { font-family: 'Rubik'; font-weight: 800; font-display: swap; src: url('../fonts/rubik-cyrillic-800-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 @font-face { font-family: 'Rubik'; font-weight: 800; font-display: swap; src: url('../fonts/rubik-latin-800-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212; }
+@font-face { font-family: 'Rubik'; font-weight: 400; font-display: swap; src: url('../fonts/rubik-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
 @font-face { font-family: 'Rubik'; font-weight: 500; font-display: swap; src: url('../fonts/rubik-latin-500-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
 @font-face { font-family: 'Onest'; font-weight: 400; font-display: swap; src: url('../fonts/onest-cyrillic-400-normal.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 @font-face { font-family: 'Onest'; font-weight: 400; font-display: swap; src: url('../fonts/onest-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212; }
@@ -1142,3 +1143,51 @@ html:not([data-feel="old"]) .sheet-menu.menu-feel .panel { will-change: transfor
 @media (hover: hover) { .trio a:nth-child(2):hover { transform: translateY(-26px); } }
 .trio a:nth-child(2):focus-visible { transform: translateY(-26px); }
 .home-join-h { margin: 0 0 14px; font-size: clamp(1.3rem, 4.6vw, 1.8rem); }
+
+/* ---------- 20.11: шапка и главная ---------- */
+.brand .brand-name { font-weight: 400; letter-spacing: .04em; }
+.hero.home .wrap.home-wrap { display: grid; grid-template-columns: 1fr; gap: 22px; justify-items: center; text-align: center; padding-block: 30px 40px; }
+@media (min-width: 900px) { .hero.home .wrap.home-wrap { grid-template-columns: 1fr; padding-block: 48px 56px; } }
+.home-title h1 { margin: 0; font-size: clamp(2.6rem, 9vw, 4.8rem); line-height: 1.02; letter-spacing: -.01em; }
+.home-title .greet { margin: 8px 0 0; font-size: clamp(1rem, 3.6vw, 1.3rem); font-weight: 400; color: var(--text-2); }
+.home-axis { display: grid; justify-items: center; gap: 14px; width: 100%; }
+.home-axis .home-q { margin: 0; font-size: clamp(1.55rem, 6.2vw, 2.4rem); line-height: 1.15; }
+.hero.home .home-axis .trio { margin: 0; padding: 18px 0 2px; }
+/* три карты: статичный нахлёст, без выезда и смены слоёв; мышью — деликатный контур */
+.trio a, .trio a:hover, .trio a:focus-visible, .trio a:nth-child(2):hover, .trio a:nth-child(2):focus-visible { transition: none; }
+.trio a:nth-child(1) { z-index: 1; } .trio a:nth-child(2) { z-index: 2; } .trio a:nth-child(3) { z-index: 1; }
+.trio a:hover, .trio a:focus-visible { z-index: auto; }
+.trio a:nth-child(1):hover, .trio a:nth-child(3):hover, .trio a:nth-child(1):focus-visible, .trio a:nth-child(3):focus-visible { transform: none; z-index: 1; }
+.trio a:nth-child(2):hover, .trio a:nth-child(2):focus-visible { transform: translateY(-16px); z-index: 2; }
+.trio img { transition: outline-color .15s ease; outline: 1.5px solid transparent; outline-offset: 2px; }
+@media (hover: hover) { .trio a:hover img { outline-color: color-mix(in srgb, var(--accent) 55%, transparent); } }
+.trio a:focus-visible img { outline: 3px solid var(--focus); }
+.trio a { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.home-all { min-width: min(320px, 100%); justify-content: center; }
+.home-send { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100%; max-width: 640px; }
+.home-out { flex: 1 1 auto; justify-content: center; gap: 8px; border: 1.5px solid var(--border-strong); background: transparent; color: var(--text); text-decoration: none; white-space: nowrap; }
+.home-out svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.home-join-h { margin: 30px 0 14px; }
+/* режимы выбора в галерее: компактная подсказка с крестиком */
+.pick-mode { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 10px; row-gap: 2px; padding: 10px 8px 10px 14px; border: 1.5px solid var(--accent); border-radius: 16px; margin: 6px 0 14px; max-width: 560px; }
+.pick-mode svg { width: 22px; height: 22px; stroke: var(--accent-text, currentColor); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pick-mode b { font-size: 1.05rem; }
+.pick-mode p { grid-column: 1 / -1; margin: 0; color: var(--text-2); }
+.pick-mode .pick-x { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; }
+.pick-mode .pick-x:hover { background: var(--surface-3); }
+.pick-mode .pick-x:focus-visible { outline: 3px solid var(--focus); }
+.pick-mode .pick-x svg { stroke: currentColor; width: 20px; height: 20px; }
+/* открытая карта: «Поиграем?» по центру под двумя кнопками */
+.card-play { display: flex; justify-content: center; }
+.card-play .btn { min-width: 160px; justify-content: center; text-decoration: none; }
+/* вкладка «Вопросы» */
+.qfmt button { white-space: nowrap; }
+.q-note { margin: 0; color: var(--text-2); }
+ol.qlist { list-style: none; }
+.qpanel .q-play { justify-self: start; border: 1.5px solid var(--accent); background: transparent; color: var(--text); font-size: 1.05rem; padding: 11px 22px; text-decoration: none; }
+/* подготовка обмена: вопрос другу */
+.ask-field textarea { min-height: 64px; }
+.x-asks { margin: 0; color: var(--text-2); }
+.x-question { overflow-wrap: anywhere; }
+.x-asked { margin: 0; text-align: center; overflow-wrap: anywhere; }
+.ask-q { font-weight: 600; }

@@ -569,7 +569,7 @@ test('19.11: раунды разговора, отдельный обмен, п�
   await call('POST', `/api/x/${x.secret}/sent`, { via: 'tg' });
   // превью мессенджера: картинка карты и вопрос, ни ответов, ни имени; не считается открытием
   const html = await fetch(base + `/x/${x.invite}`, { headers: { 'User-Agent': 'TelegramBot (like TwitterBot)' } }).then((r) => r.text());
-  assert.ok(html.includes('og:image') && html.includes(`/og/${codes[3]}.jpg`) && html.includes('Что ты здесь видишь?'));
+  assert.ok(html.includes('og:image') && html.includes(`/og/${codes[3]}.jpg`) && html.includes('Что тебе откликается в этой карте?'));
   assert.ok(!html.includes('Первый раунд') && !html.includes('Аня'), 'в превью нет ответа и имени');
   const img = await fetch(base + `/og/${codes[3]}.jpg`); assert.equal(img.status, 200); assert.match(img.headers.get('content-type'), /jpeg/);
   await fetch(base + `/api/x/${x.invite}`, { headers: { 'User-Agent': 'WhatsApp/2.23', 'X-DC-Visitor': VC } });

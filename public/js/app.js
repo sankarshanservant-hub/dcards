@@ -73,6 +73,7 @@ const routes = [
   [/^\/group\/solo\/eagle\/?$/, solo.eagle],
   [/^\/group\/solo\/imagine\/?$/, solo.imagine],
   [/^\/about\/?$/, pub.about],
+  [/^\/games\/?$/, pub.games],
   [/^\/g\/([A-Za-z0-9]{4,8})\/?$/, grp.room],
   [/^\/chats\/?$/, team.rooms],
   [/^\/chat\/?$/, (ctx) => ctx.navigate('/team/general', { replace: true })], // короткая ссылка для участников Zoom

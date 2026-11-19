@@ -13,6 +13,10 @@ const forName = (n) => { const g = n && /^[А-ЯЁ][а-яё]+$/.test(n) ? cityCa
 const when = (iso) => fmtDate(iso, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const cardBtn = (c, cls = '') => `<button type="button" class="live-card-btn ${cls}" data-zoom aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="live-card" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
 // сведения о карте (художник, номер) — не главная информация: компактно, за значком ⓘ
+// вопрос другу (20.11.2026): стандартный — на языке интерфейса, изменённый — как написал отправитель
+const DEFAULT_Q = 'Что тебе откликается в этой карте?';
+const defaultQ = () => tt(DEFAULT_Q, 'What resonates with you in this card?');
+const questionText = (q) => (!q || q === DEFAULT_Q ? defaultQ() : q);
 const withInfo = (c, cls) => `<div class="card-with-info">${cardBtn(c, cls)}${authorLine(c)}</div>`;
 const authorLine = (c) => `<details class="card-info"><summary aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}"><span aria-hidden="true">i</span></summary><p class="small muted">${c.author ? `${esc(tt('Художник', 'Artist'))}: ${esc(c.author)} · ` : ''}${esc(c.code)}</p></details>`;
 const cardShareUrl = (c) => `${location.origin}${u('/play/' + c.code)}`; // публичная ссылка карты: каждый начинает свой обмен
@@ -80,9 +84,9 @@ export async function page(ctx, token) {
         <a class="btn yellow" href="${u('/play/' + c.code)}">${esc(tt('Начать свой обмен с этой картой', 'Start your own exchange with this card'))}</a>`;
     } else if (v.role === 'invitee') {
       const dr = storage.get(TKEY) || '';
-      body = `${v.round > 1 ? `<p class="eyebrow" style="margin:0">${esc(tt(`Ответная карта · раунд ${v.round}`, `A card in reply · round ${v.round}`))}</p>` : ''}<h1 class="x-h">${esc(v.fromName && v.fromName !== 'Друг' ? tt(`${v.fromName} спрашивает: что ты здесь видишь?`, `${v.fromName} asks: what do you see here?`) : tt('Что ты здесь видишь?', 'What do you see here?'))}</h1>${withInfo(c, 'sm')}
+      body = `${v.round > 1 ? `<p class="eyebrow" style="margin:0">${esc(tt(`Ответная карта · раунд ${v.round}`, `A card in reply · round ${v.round}`))}</p>` : ''}<p class="x-asks">${esc(v.fromName && v.fromName !== 'Друг' ? tt(`${v.fromName} спрашивает:`, `${v.fromName} asks:`) : tt('Тебя спрашивают:', 'You are asked:'))}</p><h1 class="x-h x-question">${esc(questionText(v.question))}</h1>${withInfo(c, 'sm')}
         <div class="locked">${ic.lock} ${esc(tt('Ответ друга откроется, когда ответишь ты', 'Your friend’s answer opens once you answer'))}</div>
-        <form class="form" id="xa"><label class="field" for="xt">${esc(tt('Что тебе откликнулось в этой карте?', 'What speaks to you in this card?'))}</label>
+        <form class="form" id="xa"><label class="field" for="xt">${esc(tt('Твой ответ', 'Your answer'))}</label>
           <textarea id="xt" maxlength="300" rows="3" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}" required>${esc(dr)}</textarea>
           ${session.user ? '' : `<label class="field small">${esc(tt('Твоё имя', 'Your name'))} <span class="hint">${esc(tt('по желанию — его увидит друг', 'optional — your friend will see it'))}</span><input id="xn" maxlength="40" value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
           ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : ''}
@@ -100,7 +104,7 @@ export async function page(ctx, token) {
       const other = v.otherName && v.otherName !== 'Друг' ? v.otherName : '';
       const nextRound = (v.rounds || []).some((r) => r.round > v.round); // следующий раунд уже начат — кнопка не нужна
       const rounds = (v.rounds || []).length > 1 ? `<nav class="rounds small" aria-label="${esc(tt('Раунды разговора', 'Rounds of the conversation'))}">${v.rounds.map((r) => r.current ? `<b>${esc(tt(`Раунд ${r.round}`, `Round ${r.round}`))}</b>` : r.secret ? `<a href="${u('/x/' + r.secret)}">${esc(tt(`Раунд ${r.round}`, `Round ${r.round}`))}${r.answered ? '' : ' · ' + esc(tt('ждёт ответа', 'waiting'))}</a>` : `<span class="muted">${esc(tt(`Раунд ${r.round}`, `Round ${r.round}`))}</span>`).join(' · ')}</nav>` : '';
-      body = `${rounds}<h1 class="x-h">${esc(tt('Одна карта — два взгляда', 'One card — two views'))}</h1>${withInfo(c, 'sm')}
+      body = `${rounds}<h1 class="x-h">${esc(tt('Одна карта — два взгляда', 'One card — two views'))}</h1>${withInfo(c, 'sm')}<p class="x-asked"><span class="muted">${esc(tt('Вопрос', 'Question'))}:</span> ${esc(questionText(v.question))}</p>
         <div class="pair"><div><b>${esc(v.myName || tt('Ты', 'You'))}</b>${esc(v.myText)}</div><div><b>${esc(v.otherName || tt('Друг', 'Friend'))}</b>${esc(v.otherText)}</div></div>
         <div class="x-next">
           ${v.role === 'b' && !nextRound ? `<a class="btn yellow big" href="${u('/play?reply=' + encodeURIComponent(v.secret))}">${esc(other && forName(other) ? tt(`Твоя очередь — выбрать карту для ${forName(other)}`, `Your turn — choose a card for ${other}`) : tt('Твоя очередь — ответить своей картой', 'Your turn — reply with your card'))}</a>`
@@ -192,9 +196,11 @@ function wireNotify(root) {
 // разговоре; ?origin=forward — эту карту ещё кому-то (отдельный обмен). Черновик принадлежит своей карте.
 const PKEY = 'dc_play_drafts';
 export async function playPage(ctx, code) {
+  const reply = ctx.query.get('reply');
+  // без выбранной карты — вся галерея в режиме «Вопрос другу» (случайную карту не подставляем)
+  if (!code) { ctx.navigate('/library?play=friend' + (reply ? '&reply=' + encodeURIComponent(reply) : ''), { replace: true }); return; }
   loading(ctx.main);
-  let cards; let parent = null;
-  const reply = ctx.query.get('reply'); const origin = ctx.query.get('origin') === 'forward' ? 'forward' : code ? 'public' : 'fresh';
+  let cards; let parent = null; const origin = ctx.query.get('origin') === 'forward' ? 'forward' : code ? 'public' : 'fresh';
   try {
     ({ cards } = await api('/api/cards'));
     if (reply) parent = await api(`/api/x/${encodeURIComponent(reply)}`);
@@ -232,7 +238,9 @@ export async function playPage(ctx, code) {
       <h1 class="x-h">${esc(reply ? (other && forName(other) ? tt(`Карта для ${forName(other)}: что ты здесь видишь?`, `A card for ${other}: what do you see here?`) : tt('Ответь своей картой: что ты здесь видишь?', 'Reply with your card: what do you see here?')) : tt('Что ты здесь видишь?', 'What do you see here?'))}</h1>
       ${withInfo(card, 'sm')}
       <div class="row" style="justify-content:center"><button class="btn sm light" type="button" data-other>${esc(tt('Другая карта', 'Another card'))}</button><a class="btn sm light" href="${u('/library?play=friend' + (reply ? '&reply=' + encodeURIComponent(reply) : ''))}">${esc(tt('Все карты', 'All cards'))}</a></div>
-      <form class="form" id="pf"><label class="field" for="pt">${esc(tt('Что тебе откликнулось в этой карте?', 'What speaks to you in this card?'))}</label>
+      <form class="form" id="pf"><label class="field" for="pq">${esc(tt('Вопрос другу', 'Question to your friend'))} <span class="hint">${esc(tt('можно изменить', 'you can edit it'))}</span></label>
+        <textarea id="pq" class="ask-q" maxlength="200" rows="2">${esc(dr.q != null ? dr.q : defaultQ())}</textarea>
+        <label class="field" for="pt">${esc(tt('Твой ответ', 'Your answer'))}</label>
         <textarea id="pt" maxlength="300" rows="3" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}">${esc(dr.text || '')}</textarea>
         ${session.user || reply ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))} <span class="hint">${esc(tt('по желанию', 'optional'))}</span><input id="pn" maxlength="40" value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
         <p class="vb-note" style="margin:0">${esc(tt('Друг увидит твой ответ, когда напишет свой.', 'Your friend will see your answer once they write theirs.'))}</p>
@@ -240,6 +248,7 @@ export async function playPage(ctx, code) {
         <button class="btn yellow big" type="submit" ${ui.sending || !String(dr.text || '').trim() ? 'disabled' : ''}>${esc(ui.sending ? tt('Готовим приглашение…', 'Preparing…') : reply ? tt('Отправить карту', 'Send the card') : tt('Отправить другу', 'Send to a friend'))}</button></form></div>`;
     const f = ctx.main.querySelector('#pf');
     f.pt.addEventListener('input', () => { drafts[card.code] = { ...(drafts[card.code] || {}), text: f.pt.value }; keep(); f.querySelector('[type=submit]').disabled = ui.sending || !f.pt.value.trim(); });
+    f.pq.addEventListener('input', () => { drafts[card.code] = { ...(drafts[card.code] || {}), q: f.pq.value }; keep(); });
     f.pt.addEventListener('focus', () => setTimeout(() => f.pt.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250)); // клавиатура не закрывает поле
     ctx.main.querySelector('[data-zoom]').onclick = () => openViewer({ cards: [card], index: 0, mode: 'admin' });
     // автор иллюстрации: в списке галереи его нет — берём из сведений карты
@@ -248,11 +257,13 @@ export async function playPage(ctx, code) {
     f.onsubmit = async (e) => {
       e.preventDefault(); const d = drafts[card.code] || {}; const text = String(d.text || '').trim(); if (!text) return;
       const name = f.pn ? f.pn.value.trim() : ''; if (name) storage.set('dc_live_name', name);
+      // пустой вопрос или из пробелов — стандартный; стандартный на любом языке хранится как стандартный
+      const q0 = f.pq.value.replace(/\s+/g, ' ').trim(); const question = !q0 || q0 === defaultQ() ? '' : q0;
       d.key = d.key || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)).replace(/[^A-Za-z0-9_-]/g, '');
       drafts[card.code] = d; keep(); ui.sending = true; ui.err = ''; draw();
       try {
-        const r = reply ? await api(`/api/x/${encodeURIComponent(reply)}/reply`, { method: 'POST', body: { code: card.code, text, clientKey: d.key } })
-          : await api('/api/exchanges', { method: 'POST', body: { code: card.code, text, name, clientKey: d.key, origin } });
+        const r = reply ? await api(`/api/x/${encodeURIComponent(reply)}/reply`, { method: 'POST', body: { code: card.code, text, question, clientKey: d.key } })
+          : await api('/api/exchanges', { method: 'POST', body: { code: card.code, text, name, question, clientKey: d.key, origin } });
         ui.sent = r; delete drafts[card.code]; keep(); try { sessionStorage.removeItem('dc_play_card'); } catch { /* */ }
       } catch (x) { ui.err = `${errorText(x)} ${tt('Текст сохранён — попробуйте ещё раз.', 'Your text is kept — try again.')}`; }
       ui.sending = false; draw(); window.scrollTo(0, 0);
@@ -296,7 +307,7 @@ export async function myExchanges(ctx) {
     ${d.exchanges.length ? `<div class="list">${d.exchanges.map((x) => `<a class="item" href="${u('/x/' + x.secret)}"><img src="${esc(x.thumb)}" alt="" width="44" height="75" style="border-radius:8px;flex:none">
       <span class="body"><b>${esc(x.answered ? (x.storyAsk ? tt('Предложили сторис', 'Stories invitation') : tt('Два взгляда', 'Two views')) : tt('Ждём ответа', 'Waiting for an answer'))}</b>
       <span class="small">${esc(x.code)}${x.otherName ? ` · ${esc(x.otherName)}` : ''} · ${esc(when(x.createdAt))}${x.role === 'b' ? ` · ${esc(tt('вас пригласили', 'you were invited'))}` : ''}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>`
-      : `<p class="empty">${esc(tt('Обменов пока нет. Выбери карту и отправь её другу.', 'No exchanges yet. Choose a card and send it to a friend.'))}</p><a class="btn yellow" href="${u('/library?play=friend')}">${esc(tt('Сыграть с другом', 'Play with a friend'))}</a>`}</div>`;
+      : `<p class="empty">${esc(tt('Обменов пока нет. Выбери карту и отправь её другу.', 'No exchanges yet. Choose a card and send it to a friend.'))}</p><a class="btn yellow" href="${u('/library?play=friend')}">${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</a>`}</div>`;
 }
 
 // ---------- мои подборки ----------

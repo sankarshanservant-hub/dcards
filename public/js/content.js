@@ -6,14 +6,13 @@
 //   Когда тексты будут готовы — добавить lists (как у «Для двоих»), pending убрать.
 //   «Для двоих»: тексты владельца проекта (14.11.2026, подтверждены 15.11.2026), порядок и формулировки — дословно, без нумерации.
 export const QUESTION_FORMATS = [
-  // «Для себя» (19.11.2026): основа — четыре вопроса на обороте карточки для кафе; первый адаптирован из формата для двоих.
-  // Отвечать про себя, в любом порядке; полей для ответа нет. Под вопросами — «Поиграем?» → игры для одного.
+  // «Для себя» (20.11.2026, согласовано): один список из пяти вопросов, дословно и в этом порядке; полей для ответа нет.
+  // Под вопросами — «Поиграем?» → игры для одного.
   { key: 'self', title: { ru: 'Для себя', en: 'For yourself' }, play: '/group/solo',
-    intro: { ru: 'Что в этой карте откликается тебе?', en: 'What resonates with you in this card?' },
-    note: { ru: 'Отвечай про себя, в любом порядке.', en: 'Answer to yourself, in any order.' },
+    note: { ru: 'Можно отвечать в любом порядке', en: 'You can answer in any order' },
     lists: [{ key: 'self', title: { ru: 'Для себя', en: 'For yourself' }, items: {
-      ru: ['Что ты заметил первым?', 'Что ты чувствуешь, глядя на эту карту?', 'О чём ты вспомнил, глядя на эту карту?', 'Есть ли в твоей жизни что-то, что ощущается похоже?'],
-      en: ['What caught your attention first?', 'How does this card make you feel?', 'What does this card bring to mind?', 'What in your life feels like this?'],
+      ru: ['Что на карте первым привлекло твоё внимание?', 'Что в этой карте откликается тебе?', 'Есть ли на этой карте что-то, что напоминает тебе о твоей жизни?', 'Помогает ли эта карта по-новому взглянуть на что-то в твоей жизни?', 'Если бы карта могла задать тебе один вопрос, что бы она спросила?'],
+      en: ['What on the card caught your attention first?', 'What in this card resonates with you?', 'Is there anything on this card that reminds you of your own life?', 'Does this card help you see something in your life in a new way?', 'If the card could ask you one question, what would it ask?'],
     } }] },
   {
     key: 'pair', play: '/group', // «Поиграем?» под вопросами для двоих → игры компанией (от двух человек)
@@ -61,9 +60,13 @@ export const QUESTION_FORMATS = [
       },
     ],
   },
-  // «Для группы» — сразу «Играть с компанией», без промежуточного списка вопросов
-  { key: 'group', title: { ru: 'Для группы', en: 'For a group' }, lists: null, link: '/group',
-    pending: { ru: 'Для компании есть игры: каждый — со своего телефона, от двух человек.', en: 'There are games for groups: everyone on their own phone, from two people.' } },
+  // «Для группы» (20.11.2026, согласовано): вопросы без запуска игры; «Поиграем?» → игры для компании.
+  { key: 'group', title: { ru: 'Для группы', en: 'For a group' }, play: '/group',
+    note: { ru: 'Можно отвечать по очереди или по желанию', en: 'You can answer in turn or whenever you like' },
+    lists: [{ key: 'group', title: { ru: 'Для группы', en: 'For a group' }, items: {
+      ru: ['Что каждый из вас заметил первым?', 'О чём эта карта напомнила вам?', 'Что вы увидели по-разному?', 'Что вы заметили в карте после того, как услышали других?'],
+      en: ['What did each of you notice first?', 'What did this card remind you of?', 'What did you see differently?', 'What did you notice in the card after hearing the others?'],
+    } }] },
 ];
 
 // START_GUIDES — «С чего начать?» (показывается под картой в общей галерее).

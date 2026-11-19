@@ -833,7 +833,7 @@ const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND sta
 r.post('/api/exchanges', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
-  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, clientKey: b.clientKey, origin: ['fresh', 'forward', 'public'].includes(b.origin) ? b.origin : 'fresh' }), 201);
+  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey, origin: ['fresh', 'forward', 'public'].includes(b.origin) ? b.origin : 'fresh' }), 201);
 });
 r.get('/api/exchanges', (req, res) => res.json({ exchanges: exchanges.mine(req.user, req.visitor, req.query.card ? String(req.query.card) : null) }));
 r.get('/api/x/:token', (req, res) => {
@@ -845,7 +845,7 @@ r.get('/api/x/:token', (req, res) => {
 r.post('/api/x/:token/reply', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
-  out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, clientKey: b.clientKey }), 201);
+  out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201);
 });
 r.post('/api/x/:token/sent', (req, res) => out(res, exchanges.sent(String(req.params.token), req.user, req.visitor, String((req.body || {}).via || ''))));
 r.post('/api/x/:token/answer', (req, res) => {
@@ -895,10 +895,11 @@ const OG_DESC = 'Dialogue Cards — повод начать интересный
 function ogFor(req) {
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
   let code = m && m[3];
-  if (m && m[2]) { const x = db.prepare('SELECT card_id FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(m[2], m[2], m[2], m[2]); code = x && (db.prepare('SELECT code FROM cards WHERE id = ?').get(x.card_id) || {}).code; }
+  let title = 'Что ты здесь видишь?';
+  if (m && m[2]) { const x = db.prepare('SELECT card_id, question FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(m[2], m[2], m[2], m[2]); code = x && (db.prepare('SELECT code FROM cards WHERE id = ?').get(x.card_id) || {}).code; if (x) title = exchanges.questionOf(x); }
   if (!code && req.path.startsWith('/library') && /^DC-\d{4,6}$/.test(String(req.query.card || ''))) code = String(req.query.card);
   const c = code && pubCard(code); if (!c || c.is_demo) return null;
-  return { code: c.code, title: 'Что ты здесь видишь?', image: `${baseUrl(req)}${B}/og/${c.code}.jpg`, url: `${baseUrl(req)}${B}${req.path}` };
+  return { code: c.code, title, image: `${baseUrl(req)}${B}/og/${c.code}.jpg`, url: `${baseUrl(req)}${B}${req.path}` };
 }
 const escAttr = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const ogDir = path.join(config.dataDir, 'og');
