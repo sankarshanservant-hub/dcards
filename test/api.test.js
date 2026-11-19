@@ -1315,3 +1315,10 @@ test('Заголовки: CSP запрещает отправку форм на 
   const csp = (await fetch(base + '/')).headers.get('content-security-policy');
   assert.match(csp, /form-action 'self'/); assert.match(csp, /object-src 'none'/); assert.match(csp, /frame-ancestors 'self'/);
 });
+
+test('Адрес клиента — последний, дописанный прокси: подстановка первого адреса не обходит ограничение попыток', async () => {
+  const tryOwner = (xff) => fetch(base + '/api/auth/owner', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': xff }, body: JSON.stringify({ password: 'wrong' }) }).then((r) => r.json());
+  for (let i = 0; i < 5; i++) assert.equal((await tryOwner(`10.0.0.${i}, 203.0.113.7`)).error, 'wrong_password');
+  assert.equal((await tryOwner('10.0.0.99, 203.0.113.7')).error, 'too_many_attempts', 'первый адрес списка не считается адресом клиента');
+  assert.equal((await tryOwner('203.0.113.8')).error, 'wrong_password', 'другой клиент не заблокирован');
+});

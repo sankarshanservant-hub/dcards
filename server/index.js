@@ -34,7 +34,9 @@ if (config.demoMode) for (const u of auth.DEMO_USERS) auth.demoUser(u.key);
 
 const B = config.basePath;
 const app = express();
-app.set('trust proxy', true);
+// Адрес клиента: nginx на этом же сервере (127.0.0.1) дописывает его в X-Forwarded-For; верим только ему,
+// иначе первый адрес списка мог бы прислать сам клиент. TRUST_PROXY — для другой схемы (например, контейнер за своим прокси).
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.set({
