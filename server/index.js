@@ -508,10 +508,41 @@ r.patch('/api/fac/dates/:id', fac, (req, res) => {
 const live = require('./live');
 const FEEDBACK_DIR = path.join(config.mediaDir, 'feedback');
 fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
+// Отзыв встречи: аудио или видео. Расширение файла — по проверенному типу (не по имени файла),
+// содержимое сверяется с типом по первым байтам.
+const FEEDBACK_TYPES = {
+  'audio/mpeg': ['.mp3', 'mpeg'], 'audio/mp3': ['.mp3', 'mpeg'], 'audio/aac': ['.aac', 'mpeg'],
+  'audio/mp4': ['.m4a', 'mp4'], 'audio/x-m4a': ['.m4a', 'mp4'], 'audio/m4a': ['.m4a', 'mp4'], 'audio/3gpp': ['.3gp', 'mp4'],
+  'video/mp4': ['.mp4', 'mp4'], 'video/quicktime': ['.mov', 'mp4'], 'video/3gpp': ['.3gp', 'mp4'],
+  'audio/webm': ['.webm', 'webm'], 'video/webm': ['.webm', 'webm'], 'video/x-matroska': ['.mkv', 'webm'],
+  'audio/ogg': ['.ogg', 'ogg'], 'video/ogg': ['.ogv', 'ogg'],
+  'audio/wav': ['.wav', 'wav'], 'audio/x-wav': ['.wav', 'wav'], 'audio/wave': ['.wav', 'wav'],
+  'audio/flac': ['.flac', 'flac'], 'audio/amr': ['.amr', 'amr'],
+};
+const mediaType = (mime) => String(mime || '').split(';')[0].trim().toLowerCase();
+/** Первые байты файла соответствуют заявленному контейнеру. */
+function mediaMatches(family, b) {
+  const at = (o, str) => b.length >= o + str.length && b.toString('latin1', o, o + str.length) === str;
+  switch (family) {
+    case 'mpeg': return at(0, 'ID3') || (b.length > 1 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0);
+    case 'mp4': return ['ftyp', 'moov', 'mdat', 'wide', 'free', 'skip'].some((t) => at(4, t));
+    case 'webm': return b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
+    case 'ogg': return at(0, 'OggS');
+    case 'wav': return at(0, 'RIFF') && at(8, 'WAVE');
+    case 'flac': return at(0, 'fLaC');
+    case 'amr': return at(0, '#!AMR');
+    default: return false;
+  }
+}
+function fileHead(file, n = 16) {
+  const fd = fs.openSync(file, 'r');
+  try { const b = Buffer.alloc(n); return b.subarray(0, fs.readSync(fd, b, 0, n, 0)); } finally { fs.closeSync(fd); }
+}
+const dropUpload = (req) => { if (req.file && req.file.path) try { fs.rmSync(req.file.path, { force: true }); } catch (e) { console.error('feedback file:', e.message); } };
 const feedbackUpload = multer({
-  storage: multer.diskStorage({ destination: FEEDBACK_DIR, filename: (req, file, cb) => cb(null, crypto.randomBytes(12).toString('hex') + path.extname(file.originalname || '').slice(0, 8).replace(/[^.\w]/g, '')) }),
-  limits: { fileSize: 80 * 1024 * 1024, files: 1 },
-  fileFilter: (req, file, cb) => (/^(audio|video)\//.test(file.mimetype) ? cb(null, true) : cb(Object.assign(new Error('bad_media_type'), { code: 'bad_media_type' }))),
+  storage: multer.diskStorage({ destination: FEEDBACK_DIR, filename: (req, file, cb) => cb(null, crypto.randomBytes(12).toString('hex') + FEEDBACK_TYPES[mediaType(file.mimetype)][0]) }),
+  limits: { fileSize: 80 * 1024 * 1024, files: 1, fields: 10, fieldSize: 64 * 1024 },
+  fileFilter: (req, file, cb) => (FEEDBACK_TYPES[mediaType(file.mimetype)] ? cb(null, true) : cb(Object.assign(new Error('bad_media_type'), { code: 'bad_media_type' }))),
 });
 const liveDevice = (req, res) => { const v = (req.body && req.body.deviceId) || req.query.device; if (typeof v !== 'string' || !VISITOR_RE.test(v)) { bad(res, 'bad_visitor'); return null; } return v; };
 const liveDone = (res, r) => { if (r && r.ok && r.sessionId) live.touch(r.sessionId); out(res, r); };
@@ -579,12 +610,35 @@ r.post('/api/live/:slug/join', (req, res) => { const d = liveDevice(req, res); i
 r.post('/api/live/:slug/leave', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.leave(req.params.slug, d)); });
 r.post('/api/live/:slug/pick', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.holderPick(req.params.slug, d, (req.body || {}).code)); });
 r.post('/api/live/:slug/partner', (req, res) => { const d = liveDevice(req, res); if (d) liveDone(res, live.listenerPick(req.params.slug, d, (req.body || {}).slotId)); });
-r.post('/api/live/feedback/:id', feedbackUpload.single('media'), (req, res) => {
-  const d = liveDevice(req, res); if (!d) return;
-  const b = req.body || {};
-  const x = live.feedback(Number(req.params.id), d, { text: b.text, file: req.file ? req.file.filename : null, mime: req.file ? req.file.mimetype : null, mayPublish: b.mayPublish === '1' || b.mayPublish === true });
-  if (x.ok) live.touch(Number(req.params.id));
-  out(res, x, 201);
+// Отзыв: сначала проверка встречи и участника (до приёма файла), затем файл; при любой ошибке принятый файл удаляется.
+r.post('/api/live/feedback/:id', (req, res, next) => {
+  const v = (req.body && req.body.deviceId) || req.query.device || req.visitor;
+  if (typeof v !== 'string' || !VISITOR_RE.test(v)) return bad(res, 'bad_visitor');
+  const g = live.feedbackAllowed(Number(req.params.id), v);
+  if (g.error) return bad(res, g.error, g.status || 400);
+  req.liveDevice = v;
+  feedbackUpload.single('media')(req, res, (err) => {
+    if (!err) return next();
+    dropUpload(req);
+    bad(res, err.code === 'bad_media_type' ? 'bad_media_type' : err.code === 'LIMIT_FILE_SIZE' ? 'media_too_large' : 'upload_error');
+  });
+}, (req, res) => {
+  let done = false;
+  try {
+    const b = req.body || {};
+    if (b.deviceId !== undefined && b.deviceId !== req.liveDevice) return bad(res, 'bad_visitor');
+    let file = null; let mime = null;
+    if (req.file) {
+      mime = mediaType(req.file.mimetype);
+      if (!mediaMatches(FEEDBACK_TYPES[mime][1], fileHead(req.file.path))) return bad(res, 'bad_media_type');
+      file = req.file.filename;
+    }
+    const x = live.feedback(Number(req.params.id), req.liveDevice, { text: b.text, file, mime, mayPublish: b.mayPublish === '1' || b.mayPublish === true });
+    if (x.error) return bad(res, x.error, x.status || 400);
+    done = true;
+    live.touch(Number(req.params.id));
+    res.status(201).json({ ok: true });
+  } finally { if (!done) dropUpload(req); }
 });
 
 // ---------- игры компанией (без фасилитатора): комната по QR/коду ----------

@@ -1042,6 +1042,42 @@ test('Встреча по телефонам: вход по QR, деление �
   assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(1), text: 'Было тепло', mayPublish: true })).status, 201);
   assert.equal((await st(1)).feedbackSent, true);
   assert.equal((await call('GET', `/api/fac/live/${sid}`, null, { cookie: facil.cookie })).json.feedback[0].text, 'Было тепло');
+  // отзыв: только участники встречи; файл проверяется до записи на диск, расширение — по типу, не по имени
+  const fbDir = path.join(dataDir, 'media', 'feedback');
+  const fbFiles = () => fs.readdirSync(fbDir).sort();
+  const before0 = fbFiles();
+  const media = (buf, type, name) => { const f = new FormData(); f.append('text', 'запись'); f.append('media', new Blob([buf], { type }), name); return f; };
+  const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(200, 1)]);
+  const fbPost = (d, f) => call('POST', `/api/live/feedback/${fin.id}?device=${d}`, null, { form: f });
+  let rr = await fbPost('device-not-in-meeting-0001', media(mp3, 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.status, 403); assert.equal(rr.json.error, 'live_not_member');
+  rr = await fbPost(dev(6), media(mp3, 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.json.error, 'live_not_member', 'удалённый участник отзыв не оставляет');
+  assert.equal((await call('POST', '/api/live/feedback/999999', { deviceId: dev(1), text: 'x' })).status, 404);
+  assert.deepEqual(fbFiles(), before0, 'посторонний запрос не оставляет файлов');
+  rr = await fbPost(dev(2), media(await png(), 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.json.error, 'bad_media_type', 'содержимое не совпадает с типом');
+  rr = await fbPost(dev(2), media(mp3, 'image/png', 'a.png'));
+  assert.equal(rr.json.error, 'bad_media_type');
+  assert.deepEqual(fbFiles(), before0, 'отклонённый файл удалён');
+  rr = await fbPost(dev(2), (() => { const f = media(mp3, 'audio/mpeg', 'a.mp3'); f.append('deviceId', dev(3)); return f; })());
+  assert.equal(rr.json.error, 'bad_visitor', 'устройство в форме и в адресе должно совпадать');
+  assert.deepEqual(fbFiles(), before0);
+  rr = await fbPost(dev(2), media(mp3, 'audio/mpeg', 'evil.html'));
+  assert.equal(rr.status, 201);
+  const added = fbFiles().filter((x) => !before0.includes(x));
+  assert.equal(added.length, 1); assert.ok(/^[0-9a-f]{24}\.mp3$/.test(added[0]), 'расширение по типу файла');
+  // не больше трёх отзывов от участника
+  for (let i = 0; i < 2; i++) assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(2), text: 'ещё ' + i })).status, 201);
+  rr = await fbPost(dev(2), media(mp3, 'audio/mpeg', 'a.mp3'));
+  assert.equal(rr.status, 429); assert.equal(rr.json.error, 'feedback_limit');
+  assert.equal(fbFiles().length, before0.length + 1);
+  // через 12 часов после завершения отзывы не принимаются
+  const ldb = require('../server/db');
+  const endedAt = ldb.prepare('SELECT ended_at FROM live_sessions WHERE id = ?').get(fin.id).ended_at;
+  ldb.prepare('UPDATE live_sessions SET ended_at = ? WHERE id = ?').run(new Date(Date.now() - 13 * 3600e3).toISOString(), fin.id);
+  assert.equal((await call('POST', `/api/live/feedback/${fin.id}`, { deviceId: dev(3), text: 'поздно' })).json.error, 'live_feedback_closed');
+  ldb.prepare('UPDATE live_sessions SET ended_at = ? WHERE id = ?').run(endedAt, fin.id);
   const sid2 = (await call('POST', '/api/fac/live', { collectionId: cid }, { cookie: facil.cookie })).json.id;
   assert.ok(sid2 && sid2 !== sid, 'после завершения по тому же QR — новая встреча');
   assert.equal((await st(1)).me, null, 'в новой встрече прежние участники заходят заново');

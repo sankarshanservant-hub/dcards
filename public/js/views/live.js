@@ -195,7 +195,7 @@ export function participant(ctx, slug, col, first) {
         const f = new FormData(); f.append('deviceId', dev); f.append('text', fb.text.value); f.append('mayPublish', fb.mayPublish.checked ? '1' : '');
         if (file) f.append('media', file, file.name);
         ui.sending = true; const keep = fb.text.value; draw();
-        try { await api(`/api/live/feedback/${st.id}`, { method: 'POST', form: f }); ui.fbSent = true; ui.sending = false; draw(); }
+        try { await api(`/api/live/feedback/${st.id}?device=${encodeURIComponent(dev)}`, { method: 'POST', form: f }); ui.fbSent = true; ui.sending = false; draw(); }
         catch (x) { ui.sending = false; draw(); const t = ctx.main.querySelector('#fbt'); if (t) t.value = keep; ctx.main.querySelector('#fberr').textContent = errorText(x); }
       };
     }
