@@ -1,6 +1,6 @@
 // Проверки по заданию (разделы 01–20 и «Проверка полноты»). Запуск: npm test.
 // Используется временная папка данных; почта не подключена (код входа и письма возвращаются как демо).
-const { test, before, after } = require('node:test');
+const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -79,6 +79,7 @@ before(async () => {
     assert.equal(r.status, 200);
   }
 });
+beforeEach(() => require('../server/limits').reset()); // у каждой проверки — свежие окна ограничений
 after(() => { server.close(); siteApi.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
 
 // ---------- 03 вход и роли, серверные права ----------
@@ -1489,4 +1490,51 @@ test('Подделка запросов: изменяющий запрос с ч
   assert.equal((await call('GET', '/api/me', null, { cookie: u.cookie, origin: 'https://evil.example' })).status, 200, 'чтение не затронуто');
   // гость без cookie (не браузер или старый браузер): по заголовку X-DC-Visitor, как раньше
   assert.equal((await call('POST', '/api/bell/read', { all: true }, { visitor: visitorA, origin: false })).status, 200);
+});
+
+test('Квоты без входа: обмены и комнаты — по браузеру и по адресу; выбор карты с одного адреса считается до 20 раз', async () => {
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  const ip = (n) => ({ 'X-Forwarded-For': `203.0.113.${n}` });
+  const mk = (v, n, i) => call('POST', '/api/exchanges', { code: codes[0], text: 'Квота ' + i }, { visitor: v, headers: ip(n) });
+  const V1 = 'quota-visitor-1111-2222'; const V2 = 'quota-visitor-3333-4444';
+  for (let i = 0; i < 20; i++) assert.equal((await mk(V1, 10, i)).status, 201);
+  const over = await mk(V1, 10, 20);
+  assert.equal(over.status, 429); assert.equal(over.json.error, 'too_many_requests');
+  for (let i = 0; i < 10; i++) assert.equal((await mk(V2, 10, i)).status, 201, 'другой браузер с того же адреса');
+  assert.equal((await mk(V2, 10, 99)).status, 429, 'адрес: не больше 30 в час');
+  assert.equal((await mk(V2, 11, 100)).status, 201, 'другой адрес — свои окна');
+  // комнаты игр
+  const room = (d, n) => call('POST', '/api/group', { format: 'one', deviceId: d, name: 'Квота' }, { headers: ip(n) });
+  for (let i = 0; i < 10; i++) assert.equal((await room('quota-device-aaaa-0001', 20)).status, 201);
+  assert.equal((await room('quota-device-aaaa-0001', 20)).status, 429);
+  // выбор карты: браузеры создаются свободно, но с одного адреса в общий счёт карты — не больше 20 в сутки
+  const card = codes[5];
+  const count = async () => (await call('GET', `/api/cards/${card}`)).json.selectedCount;
+  const t0 = await count();
+  for (let i = 0; i < 25; i++) {
+    const r = await call('POST', `/api/cards/${card}/choose`, { visitorId: `quota-choose-${String(i).padStart(4, '0')}-xxxx` }, { headers: ip(30) });
+    assert.equal(r.status, 200);
+  }
+  assert.equal(await count(), t0 + 20, 'сверх 20 — выбор сохраняется, но не в общий счёт');
+});
+
+test('Сроки хранения: гостевые обмены — год, комнаты игр — 30 дней; обмены с аккаунтом и счётчик карты остаются', async () => {
+  const db = authDb(); const retention = require('../server/retention');
+  const codes = (await call('GET', '/api/cards')).json.cards.filter((c) => !c.isDemo).map((c) => c.code);
+  const VG = 'retention-guest-0000-1111';
+  const gx = (await call('POST', '/api/exchanges', { code: codes[2], text: 'старый гостевой' }, { visitor: VG })).json;
+  await call('POST', `/api/x/${gx.invite}/answer`, { text: 'ответ', name: 'Б' }, { visitor: 'retention-guest-2222-3333' });
+  const u = await emailLogin('retention@example.org', 'Хранение');
+  const ux = (await call('POST', '/api/exchanges', { code: codes[2], text: 'с аккаунтом' }, { cookie: u.cookie })).json;
+  const room = (await call('POST', '/api/group', { format: 'one', deviceId: 'retention-device-0000-1', name: 'В' })).json.code;
+  const before = (await call('GET', `/api/cards/${codes[2]}`)).json.selectedCount;
+  const old = new Date(Date.now() - 400 * 24 * 3600e3).toISOString();
+  db.prepare('UPDATE exchanges SET updated_at = ? WHERE id IN (?, ?)').run(old, gx.id, ux.id);
+  db.prepare('UPDATE group_rooms SET updated_at = ? WHERE code = ?').run(new Date(Date.now() - 31 * 24 * 3600e3).toISOString(), room);
+  const r = retention.run();
+  assert.ok(r.exchanges >= 1 && r.rooms >= 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE id = ?').get(gx.id).n, 0, 'гостевой обмен удалён');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE id = ?').get(ux.id).n, 1, 'обмен с аккаунтом остался');
+  assert.equal((await call('GET', `/api/group/${room}/state?device=retention-device-0000-1`)).status, 404);
+  assert.equal((await call('GET', `/api/cards/${codes[2]}`)).json.selectedCount, before, 'счётчик карты не меняется');
 });

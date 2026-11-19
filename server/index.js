@@ -29,6 +29,8 @@ const choices = require('./choices');
 const places = require('./places');
 const guide = require('./guide');
 const { cityKey } = require('./places-key');
+const limits = require('./limits');
+const retention = require('./retention');
 
 cards.syncSeed();
 // новый пароль владельца в окружении — прежние сессии владельца отзываются (сравнение отпечатков при запуске)
@@ -76,6 +78,20 @@ r.use((req, res, next) => {
 r.use((req, res, next) => { const v = String(req.get('x-dc-visitor') || ''); req.visitor = /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null; next(); });
 
 const VISITOR_RE = /^[A-Za-z0-9-]{16,64}$/;
+// ---------- квоты на записи без входа (limits.js): по IP и по браузеру/аккаунту ----------
+const { MIN, HOUR, DAY } = limits;
+const who = (req) => (req.user ? 'u' + req.user.id : req.visitor || (req.body && typeof req.body.visitorId === 'string' && req.body.visitorId) || (req.body && typeof req.body.deviceId === 'string' && req.body.deviceId) || null);
+const Q = {
+  exIpH: limits.win(HOUR, 30), exIpD: limits.win(DAY, 150), exWhoH: limits.win(HOUR, 20), exWhoD: limits.win(DAY, 100),     // обмены
+  ansIpH: limits.win(HOUR, 60), ansIpD: limits.win(DAY, 300),                                                               // ответы на обмены
+  roomIpH: limits.win(HOUR, 20), roomIpD: limits.win(DAY, 60), roomWhoH: limits.win(HOUR, 10),                              // комнаты игр
+  chooseIp: limits.win(HOUR, 120), chooseWho: limits.win(HOUR, 60),                                                         // выбор карты
+  chooseIpCard: limits.win(DAY, 20),            // выборов одной карты с одного адреса в сутки, которые идут в общий счёт
+};
+const exchangeQuota = limits.guard((req) => [[Q.exIpH, req.ip], [Q.exIpD, req.ip], [Q.exWhoH, who(req)], [Q.exWhoD, who(req)]]);
+const answerQuota = limits.guard((req) => [[Q.ansIpH, req.ip], [Q.ansIpD, req.ip]]);
+const roomQuota = limits.guard((req) => [[Q.roomIpH, req.ip], [Q.roomIpD, req.ip], [Q.roomWhoH, who(req)]]);
+const chooseQuota = limits.guard((req) => [[Q.chooseIp, req.ip], [Q.chooseWho, who(req)]]);
 const CODE_RE = /^DC-\d{4,6}$/;
 const baseUrl = (req) => config.publicUrl || `${req.protocol}://${req.get('host')}`;
 const bad = (res, error, status = 400, extra = {}) => res.status(status).json({ error, ...extra });
@@ -219,10 +235,11 @@ const publishedCardRow = (req) => {
   const row = CODE_RE.test(req.params.code) && db.prepare('SELECT * FROM cards WHERE code = ?').get(req.params.code);
   return row && row.status === 'published' && (!row.is_demo || req.showDemo) ? row : null;
 };
-r.post('/api/cards/:code/choose', (req, res) => {
+r.post('/api/cards/:code/choose', chooseQuota, (req, res) => {
   const row = publishedCardRow(req); if (!row) return bad(res, 'not_found', 404);
   const v = visitorFrom(req, res); if (!v) return;
-  res.json(choices.choose(row, v, req.user));
+  // идентификатор браузера создаётся свободно: с одного адреса в общий счёт карты идёт не больше 20 выборов в сутки
+  res.json(choices.choose(row, v, req.user, () => Q.chooseIpCard.hit(`${req.ip}|${row.id}`)));
 });
 r.post('/api/cards/:code/unchoose', (req, res) => {
   const row = publishedCardRow(req); if (!row) return bad(res, 'not_found', 404);
@@ -680,7 +697,7 @@ r.post('/api/live/feedback/:id', (req, res, next) => {
 // ---------- игры компанией (без фасилитатора): комната по QR/коду ----------
 const group = require('./group');
 const groupDone = (res, x, status = 200) => { if (x && x.ok && x.id) group.touch(x.id); out(res, x, status); };
-r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
+r.post('/api/group', roomQuota, (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
 r.get('/api/group/:code/state', (req, res) => {
   const d = liveDevice(req, res); if (!d) return;
   const st = group.state(req.params.code, d, req.showDemo);
@@ -923,7 +940,7 @@ admin.post('/cards/:code/restore', (req, res) => {
 });
 // ---------- обмен с другом «Что ты здесь видишь?» (exchanges.js) ----------
 const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND status = 'published'").get(String(code || ''));
-r.post('/api/exchanges', (req, res) => {
+r.post('/api/exchanges', exchangeQuota, (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
   if (b.multi) return out(res, xgroups.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201); // «Отправить нескольким людям»
@@ -944,13 +961,13 @@ r.get('/api/x/:token', (req, res) => {
   exchanges.opened(x, role, req.get('user-agent')); // первое открытие человеком (не превью и не сам отправитель)
   res.set('Cache-Control', 'no-store').json(exchanges.view(x, role));
 });
-r.post('/api/x/:token/reply', (req, res) => {
+r.post('/api/x/:token/reply', exchangeQuota, (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
   out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201);
 });
 r.post('/api/x/:token/sent', (req, res) => out(res, exchanges.sent(String(req.params.token), req.user, req.visitor, String((req.body || {}).via || ''))));
-r.post('/api/x/:token/answer', (req, res) => {
+r.post('/api/x/:token/answer', answerQuota, (req, res) => {
   const b = req.body || {};
   const G = xgroups.answer(String(req.params.token), req.user, req.visitor, { text: b.text, name: b.name, answerKey: b.answerKey });
   if (G.error !== 'not_found') { if (G.error) return out(res, G); return res.status(201).json({ ok: true, repeated: !!G.repeated, exchange: xgroups.view(G.g, 'member', G.m) }); }
@@ -1056,6 +1073,7 @@ if (require.main === module) {
   }
   console.log(`Demo mode: ${config.demoMode ? 'on' : 'off'}; mail: ${mail.connected() ? 'SMTP' : 'not connected (letters shown on screen)'}`);
   app.listen(config.port, () => console.log(`Dialogue Cards: http://localhost:${config.port}${B}/`));
+  retention.schedule(); // удаление устаревших записей без аккаунта: при запуске и раз в 6 часов
 }
 
 module.exports = app;
