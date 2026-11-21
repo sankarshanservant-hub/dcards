@@ -108,10 +108,10 @@ async function register(dateId, { name, email, contact, userId = null, visitorId
   })();
   if (result.error) return result;
   const { token, d, m } = result;
-  const link = `${baseUrl}${config.basePath}/r/${token}`;
+  const link = `${baseUrl}${require('./site').base()}/r/${token}`;
   const when = fmtLocal(d, m, lang);
   const subject = lang === 'en' ? `You are registered: ${m.title}` : `Вы записаны: ${m.title}`;
-  const ics = `${baseUrl}${config.basePath}/api/registrations/${token}/ics`;
+  const ics = `${baseUrl}${require('./site').base()}/api/registrations/${token}/ics`;
   const body = lang === 'en'
     ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
     : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} за участника. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
@@ -138,7 +138,7 @@ function icsByToken(token, baseUrl, lang = 'ru') {
   if (!r) return null;
   const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(r.date_id);
   const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
-  const link = `${baseUrl}${config.basePath}/r/${token}`;
+  const link = `${baseUrl}${require('./site').base()}/r/${token}`;
   const place = [m.venue, m.city, m.country].filter(Boolean).join(', ');
   const desc = (lang === 'en'
     ? `Dialogue Flow meeting.\nLocal time: ${fmtLocal(d, m, 'en')}\nPlace: ${place}\nFacilitator: ${userName(m.facilitator_id)}\nCannot come? Cancel to free your seat: ${link}`

@@ -33,7 +33,7 @@ const { cityKey } = require('./places-key');
 cards.syncSeed();
 if (config.demoMode) for (const u of auth.DEMO_USERS) auth.demoUser(u.key);
 
-const B = config.basePath;
+const site = require('./site');
 const app = express();
 // Адрес клиента: nginx на этом же сервере (127.0.0.1) дописывает его в X-Forwarded-For; верим только ему,
 // иначе первый адрес списка мог бы прислать сам клиент. TRUST_PROXY — для другой схемы (например, контейнер за своим прокси).
@@ -48,6 +48,7 @@ app.use((req, res, next) => {
   next();
 });
 const r = express.Router();
+r.use(site.middleware); // какой вход: dialogue.cards или портал (server/site.js)
 r.use(express.json({ limit: '200kb' }));
 r.use(cookieParser());
 r.use(auth.loadUser);
@@ -58,7 +59,7 @@ r.use((req, res, next) => { const l = String(req.get('x-dc-lang') || ''); if (re
 
 const VISITOR_RE = /^[A-Za-z0-9-]{16,64}$/;
 const CODE_RE = /^DC-\d{4,6}$/;
-const baseUrl = (req) => config.publicUrl || `${req.protocol}://${req.get('host')}`;
+const baseUrl = (req) => req.site.origin; // адрес входа, с которого пришёл человек (server/site.js)
 const bad = (res, error, status = 400, extra = {}) => res.status(status).json({ error, ...extra });
 const out = (res, result, okStatus = 200) => (result && result.error
   ? bad(res, result.error, result.error === 'not_found' ? 404 : result.error === 'forbidden' ? 403 : 400, result)
@@ -111,8 +112,8 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 // На сервере (NODE_ENV=production) без SMTP он выключен: иначе войти можно было бы под чужим адресом.
 const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
-  demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl, translationConnected: false,
-  termsVersion: config.termsVersion, basePath: B, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
+  demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl && req.site.portal, translationConnected: false,
+  termsVersion: config.termsVersion, basePath: req.site.base, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
 }));
 r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
 r.patch('/api/me', auth.requireUser, (req, res) => {
@@ -167,13 +168,13 @@ r.post('/api/demo/login', wrap(async (req, res) => {
   if (!u) return bad(res, 'unknown_role');
   try { await demo.ensure(); } catch (e) { console.error('demo seed', e); } // демо-данные создаются при первом входе в демо
   auth.issue(res, req, u.id);
-  res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
+  res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.cpath(), maxAge: 30 * 24 * 3600 * 1000 });
   res.json({ user: auth.publicUser(u) });
 }));
 r.post('/api/demo/view', (req, res) => {
   if (!config.demoMode) return bad(res, 'demo_disabled', 403);
-  if (req.body.on) res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.CPATH, maxAge: 30 * 24 * 3600 * 1000 });
-  else res.clearCookie(auth.DEMO_COOKIE, { path: auth.CPATH });
+  if (req.body.on) res.cookie(auth.DEMO_COOKIE, '1', { sameSite: 'lax', path: auth.cpath(), maxAge: 30 * 24 * 3600 * 1000 });
+  else res.clearCookie(auth.DEMO_COOKIE, { path: auth.cpath() });
   res.json({ ok: true });
 });
 
@@ -260,7 +261,7 @@ r.post('/api/c/:slug/unselect', (req, res) => {
 });
 r.get('/api/c/:slug/qr.:fmt(svg|png)', wrap(async (req, res) => {
   const f = loadCollection(req, res); if (!f) return;
-  const url = `${baseUrl(req)}${B}/s/${f.col.slug}`;
+  const url = `${baseUrl(req)}${req.site.base}/s/${f.col.slug}`;
   const opts = { errorCorrectionLevel: 'M', margin: 2, color: { dark: '#0f1430', light: '#ffffff' } };
   if (req.params.fmt === 'svg') return res.type('image/svg+xml').send(await QRCode.toString(url, { ...opts, type: 'svg' }));
   const size = Math.min(Math.max(Number(req.query.size) || 1024, 256), 2048);
@@ -411,14 +412,14 @@ r.get('/api/chats/:room/media/:kind(full|thumb)/:file', auth.requireUser, roomGu
 const fac = auth.requireRole('facilitator');
 const ownsCollection = (req, id) => collections.ownerOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('collections', 'id', id)));
 r.get('/api/collections', fac, (req, res) => res.json({
-  collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => (req.user.is_demo ? c.isDemo : !c.isDemo || req.showDemo)), baseUrl: baseUrl(req) + B,
+  collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => (req.user.is_demo ? c.isDemo : !c.isDemo || req.showDemo)), baseUrl: baseUrl(req) + req.site.base,
 }));
 r.post('/api/collections', fac, (req, res) => res.json({ id: collections.create(req.body && req.body.title, !!(req.body && req.body.isTest), req.user.id, !!req.user.is_demo) }));
 r.get('/api/collections/:id', fac, (req, res) => {
   const id = Number(req.params.id);
   if (!collections.exists(id) || !ownsCollection(req, id)) return bad(res, 'not_found', 404);
   const d = collections.adminDetail(id);
-  res.json({ ...d, url: `${baseUrl(req)}${B}/s/${d.slug}` });
+  res.json({ ...d, url: `${baseUrl(req)}${req.site.base}/s/${d.slug}` });
 });
 r.patch('/api/collections/:id', fac, (req, res) => {
   const id = Number(req.params.id);
@@ -449,7 +450,7 @@ r.get('/api/places/geocode', fac, wrap(async (req, res) => {
   const wait = Math.max(0, geoLast + 1100 - Date.now()); if (wait) await new Promise((r2) => setTimeout(r2, wait)); geoLast = Date.now(); // не чаще 1 запроса в секунду
   try {
     const url = `${process.env.GEOCODER_URL || 'https://nominatim.openstreetmap.org/search'}?${new URLSearchParams({ format: 'jsonv2', limit: '5', q, 'accept-language': req.query.lang === 'en' ? 'en' : 'ru', ...(cc ? { countrycodes: cc } : {}) })}`;
-    const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://harekrishna.info/dialogue-cards/)' }, signal: AbortSignal.timeout(8000) });
+    const rr = await fetch(url, { headers: { 'User-Agent': 'DialogueCards/1.0 (+https://dialogue.cards/)' }, signal: AbortSignal.timeout(8000) });
     if (!rr.ok) throw new Error('geocoder ' + rr.status);
     const results = (await rr.json()).map((x) => ({ label: x.display_name, lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
     geoCache.set(key, results); if (geoCache.size > 500) geoCache.delete(geoCache.keys().next().value);
@@ -673,7 +674,7 @@ r.post('/api/group/:code/leave', (req, res) => { const d = liveDevice(req, res);
 r.post('/api/group/:code/act', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; groupDone(res, group.act(req.params.code, d, String(b.action || ''), b, req.showDemo)); });
 r.get('/api/group/:code/qr.png', wrap(async (req, res) => {
   const rm = group.room(req.params.code); if (!rm) return bad(res, 'group_not_found', 404);
-  const png = await QRCode.toBuffer(`${baseUrl(req)}${B}/g/${rm.code}`, { width: Math.min(1600, Math.max(200, Number(req.query.size) || 600)), margin: 2 });
+  const png = await QRCode.toBuffer(`${baseUrl(req)}${req.site.base}/g/${rm.code}`, { width: Math.min(1600, Math.max(200, Number(req.query.size) || 600)), margin: 2 });
   res.type('png').send(png);
 }));
 
@@ -968,8 +969,8 @@ r.use(express.static(publicDir, {
   index: false,
   setHeaders: (res, file) => res.set('Cache-Control', /\.(js|css|html|json)$/.test(file) ? 'no-cache' : 'public, max-age=86400'),
 }));
-const indexHtml = () => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').replaceAll('{{BASE}}', B);
-let cachedIndex = null;
+const indexHtml = (base) => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').replaceAll('{{BASE}}', base);
+const cachedIndex = new Map(); // путь входа → index.html
 // Превью ссылок для мессенджеров (19.11.2026): у приглашения и публичной ссылки карты — сама иллюстрация и вопрос.
 // Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.
 const OG_DESC = 'Dialogue Cards — повод для интересного разговора';
@@ -980,7 +981,7 @@ function ogFor(req) {
   if (m && m[2]) { const x = db.prepare('SELECT card_id, question FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(m[2], m[2], m[2], m[2]) || xgroups.cardCodeOf(m[2]); code = x && (db.prepare('SELECT code FROM cards WHERE id = ?').get(x.card_id) || {}).code; if (x) title = exchanges.questionOf(x); }
   if (!code && req.path.startsWith('/library') && /^DC-\d{4,6}$/.test(String(req.query.card || ''))) code = String(req.query.card);
   const c = code && pubCard(code); if (!c || c.is_demo) return null;
-  return { code: c.code, title, image: `${baseUrl(req)}${B}/og/${c.code}.jpg`, url: `${baseUrl(req)}${B}${req.path}` };
+  return { code: c.code, title, image: `${baseUrl(req)}${req.site.base}/og/${c.code}.jpg`, url: `${baseUrl(req)}${req.site.base}${req.path}` };
 }
 const ESC_ATTR = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const escAttr = (t) => String(t).replace(/[&<>"']/g, (ch) => ESC_ATTR[ch]);
@@ -1000,14 +1001,16 @@ r.get('/og/:code.jpg', wrap(async (req, res) => {
   res.set('Cache-Control', 'public, max-age=86400').type('jpeg').sendFile(file);
 }));
 r.get('*', (req, res) => {
-  if (!cachedIndex || !config.isProduction) cachedIndex = indexHtml();
+  const base = req.site.base;
+  if (!cachedIndex.has(base) || !config.isProduction) cachedIndex.set(base, indexHtml(base));
+  const html = cachedIndex.get(base);
   const og = ogFor(req);
   if (og) {
     const tags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Dialogue Cards"><meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
     // приглашение и личные ссылки — не для поисковиков
-    return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(cachedIndex.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => `<title>${escAttr(og.title)} · Dialogue Cards</title>`)); // функции: «$» в тексте вопроса — обычный символ
+    return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(html.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => `<title>${escAttr(og.title)} · Dialogue Cards</title>`)); // функции: «$» в тексте вопроса — обычный символ
   }
-  res.set('Cache-Control', 'no-cache').type('html').send(cachedIndex);
+  res.set('Cache-Control', 'no-cache').type('html').send(html);
 });
 
 r.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
@@ -1018,8 +1021,14 @@ r.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err instanceof multer.MulterError) return bad(res, err.code === 'LIMIT_FILE_SIZE' ? 'file_too_large' : 'upload_error');
   bad(res, 'server_error', 500);
 });
-app.use(B || '/', r);
-if (B) app.get('/', (req, res) => res.redirect(B + '/'));
+// Один и тот же набор адресов — на каждом входе: '/dialogue-cards' (портал) и '' (dialogue.cards); без SITE_URL — только BASE_PATH.
+// На своём домене старые адреса с /dialogue-cards/ ведут в корень (ссылки, скопированные с портала).
+if (config.siteUrl && site.appHost) {
+  app.use(config.siteBasePath, (req, res, next) => (String(req.get('host') || '').toLowerCase() === site.appHost ? res.redirect(301, '/' + req.originalUrl.slice(config.siteBasePath.length).replace(/^\/+/, '')) : next()));
+}
+for (const m of site.mounts()) app.use(m || '/', r);
+const B = site.mounts()[0];
+if (B && !config.siteUrl) app.get('/', (req, res) => res.redirect(B + '/'));
 
 if (require.main === module) {
   if (auth.ownerPasswordTooShort()) {
