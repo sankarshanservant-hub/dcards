@@ -7,7 +7,15 @@ import { langName } from './meetings.js';
 
 const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['works', 'Работы', 'Works'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
   ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters']];
-const tabs = (cur) => `<div class="chips" style="margin-bottom:18px">${TABS.map(([k, ru, en]) => `<a class="chip ${cur === k ? 'on' : ''}" href="${u('/admin' + (k ? '/' + k : ''))}">${esc(tt(ru, en))}</a>`).join('')}</div>`;
+// Разделы сгруппированы по назначению (21.11.2026): обзор, люди, работы и карты, встречи и общение, служебное.
+const GROUPS = [
+  ['Обзор', 'Overview', ['']],
+  ['Люди', 'People', ['users', 'applications']],
+  ['Работы и карты', 'Works & cards', ['works', 'cards', 'criteria']],
+  ['Встречи и общение', 'Meetings & talk', ['meetings', 'comments']],
+  ['Материалы и почта', 'Materials & mail', ['guide', 'letters']],
+];
+const tabs = (cur) => `<nav class="adm-nav" aria-label="${esc(tt('Разделы администрирования', 'Administration sections'))}">${GROUPS.map(([gru, gen, keys]) => `<div class="adm-group"><span class="adm-g">${esc(tt(gru, gen))}</span><div class="adm-links">${keys.map((k) => { const t = TABS.find((x) => x[0] === k); return `<a class="${cur === k ? 'on' : ''}" ${cur === k ? 'aria-current="page"' : ''} href="${u('/admin' + (k ? '/' + k : ''))}">${esc(tt(t[1], t[2]))}</a>`; }).join('')}</div></div>`).join('')}</nav>`;
 const guard = (ctx) => {
   if (!session.user) { needLogin(ctx.main, tt('Раздел администратора.', 'Administrator section.')); return false; }
   if (!hasRole('admin') || !session.user.roles.includes('admin')) { noRole(ctx.main, ROLE_LABEL.admin()); return false; }

@@ -3,7 +3,7 @@ import { lang } from '../i18n.js';
 import { esc, tt, u, api, errorText, toast, storage, fmtDate, cityCase } from '../util.js';
 import { ic, loading, failed, session } from '../ui.js';
 import { openViewer } from '../viewer.js';
-import { shareInvite, friendText, storyText, SLOGAN, sendButton, send, STORY_APPS, saveImage, openStoryApp } from '../share.js';
+import { shareInvite, friendText, storyText, SLOGAN, sendButton, send, sendInvite, copyInvite, STORY_APPS, saveImage, openStoryApp } from '../share.js';
 import { pushSupport, enablePush } from '../push.js';
 import { storyCanvas } from '../story.js';
 import * as personal from '../personal.js';
@@ -100,7 +100,7 @@ export async function page(ctx, token) {
         <p class="x-asked"><span class="muted">${esc(tt('Вопрос', 'Question'))}:</span> ${esc(questionText(v.question))}</p>
         <div class="pair many">${v.answers.map((a) => `<div class="${a.me ? 'me' : ''}"><b>${esc(a.me ? tt('Ты', 'You') : a.name || tt('Участник', 'Participant'))}</b>${esc(a.text)}</div>`).join('')}</div>
         ${owner && !v.count ? `<p class="vb-note" style="text-align:center">${esc(tt('Пока никто не ответил. Ответы появятся здесь, и придёт уведомление.', 'No answers yet. They will appear here, and you will get a notification.'))}</p>` : ''}</div>
-      ${owner ? `<div class="x-invite"><button class="btn yellow big" type="button" data-copy-invite>${esc(tt('Скопировать ссылку-приглашение', 'Copy the invitation link'))}</button>
+      ${owner ? `<div class="x-invite"><button class="btn yellow big" type="button" data-copy-invite>${esc(tt('Скопировать приглашение', 'Copy the invitation'))}</button>
         ${sendButton('data-sinv-send', tt('Отправить', 'Send'))}</div>` : ''}
       ${v.count ? storyBtn() : ''}
       ${moreBtns(c, null)}${signinHint()}${navRow()}`;
@@ -121,15 +121,15 @@ export async function page(ctx, token) {
         ui.busy = false; draw(); window.scrollTo(0, 0);
       };
     }
-    const si = $('[data-sinv-send]'); if (si) si.onclick = async () => { const k = await send(`${location.origin}${u('/x/' + v.invite)}`, friendText()); if (k && !isGroup) markSent(v.secret, k); };
-    const ci = $('[data-copy-invite]'); if (ci) ci.onclick = () => shareInvite('copy', `${location.origin}${u('/x/' + v.invite)}`, friendText(), tt('Ссылка-приглашение скопирована', 'Invitation link copied'));
+    const si = $('[data-sinv-send]'); if (si) si.onclick = async () => { const k = await sendInvite(`${location.origin}${u('/x/' + v.invite)}`); if (k && !isGroup) markSent(v.secret, k); };
+    const ci = $('[data-copy-invite]'); if (ci) ci.onclick = () => copyInvite(`${location.origin}${u('/x/' + v.invite)}`);
     wireNotify(ctx.main);
   }
   draw();
 }
 
 // Нижняя навигация страниц обмена (21.11.2026): «Мои обмены», «О проекте», «Найти встречу» — в одну строку и на телефоне.
-const navRow = () => (!session.user && storage.get('dc_via_invite') === '1' ? '' : `<nav class="x-nav" aria-label="${esc(tt('Дальше', 'More'))}"><a class="x-nav-main" href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a><a href="${u('/about')}">${esc(tt('О проекте', 'About'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></nav>`);
+const navRow = () => (!session.user && storage.get('dc_via_invite') === '1' ? '' : `<nav class="x-nav" aria-label="${esc(tt('Дальше', 'More'))}"><a class="x-nav-main" href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a><a href="${u('/start')}">${esc(tt('О проекте', 'About'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></nav>`);
 
 // ---------- «Поделиться в Instagram Stories» (21.11.2026): отдельный экран ----------
 // С ответами — только после согласия обоих на показанный макет (с выбранными фрагментами). До этого и в общем обмене —
@@ -333,7 +333,7 @@ export async function playPage(ctx, code) {
         <textarea id="pt" class="autogrow" maxlength="300" rows="1" placeholder="${esc(tt('Напиши пару слов', 'Write a few words'))}" aria-describedby="pt-h">${esc(dr.text || '')}</textarea>
         ${session.user || reply ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))}<input id="pn" maxlength="40" value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : ''}
-        ${ui.cancelled && dr.tok ? `<p class="vb-note x-cancelled" role="status">${esc(tt('Отправка отменена. Текст и ссылка сохранены — можно отправить ещё раз или скопировать ссылку.', 'Sending was cancelled. Your text and link are kept — send again or copy the link.'))} <button class="link-btn" type="button" data-copy-link>${esc(tt('Скопировать ссылку', 'Copy the link'))}</button></p>` : ''}
+        ${ui.cancelled && dr.tok ? `<p class="vb-note x-cancelled" role="status">${esc(tt('Отправка отменена. Текст и ссылка сохранены — можно отправить ещё раз или скопировать ссылку.', 'Sending was cancelled. Your text and link are kept — send again or copy the link.'))} <button class="link-btn" type="button" data-copy-link>${esc(tt('Скопировать приглашение', 'Copy the invitation'))}</button></p>` : ''}
         <button class="btn yellow big send-btn" type="submit" ${ui.sending || !String(dr.text || '').trim() ? 'disabled' : ''}>${esc(reply ? tt('Отправить карту', 'Send the card') : multi ? tt('Отправить', 'Send') : tt('Отправить другу', 'Send to a friend'))}</button></form></div>`;
     const f = ctx.main.querySelector('#pf');
     const upd = (k, v) => { drafts[card.code] = { ...(drafts[card.code] || {}), [k]: v }; keep(); };
@@ -345,7 +345,7 @@ export async function playPage(ctx, code) {
     ctx.main.querySelector('[data-zoom]').onclick = () => openViewer({ cards: [card], index: 0, mode: 'admin', simple: true });
     if (!card.author) api(`/api/cards/${encodeURIComponent(card.code)}`).then((d) => { if (d.author) { card.author = d.author; const al = ctx.main.querySelector('.x-page .card-info'); if (al) al.outerHTML = authorLine(card); } }).catch(() => {});
     ctx.main.querySelector('[data-other]').onclick = () => { card = pick(card.code); ui.cancelled = false; draw(); }; // черновик остаётся у своей карты
-    const cl = ctx.main.querySelector('[data-copy-link]'); if (cl) cl.onclick = () => shareInvite('copy', `${location.origin}${u('/x/' + drafts[card.code].tok)}`, friendText(), tt('Ссылка-приглашение скопирована', 'Invitation link copied'));
+    const cl = ctx.main.querySelector('[data-copy-link]'); if (cl) cl.onclick = () => copyInvite(`${location.origin}${u('/x/' + drafts[card.code].tok)}`);
     // одно нажатие: ссылка готова заранее, системное меню открывается сразу, обмен сохраняется параллельно
     f.onsubmit = async (e) => {
       e.preventDefault(); if (ui.sending) return; // двойной тап — без второго обмена
@@ -355,7 +355,7 @@ export async function playPage(ctx, code) {
       const q0 = f.pq.value.replace(/\s+/g, ' ').trim(); const question = !q0 || q0 === defaultQ() ? '' : q0;
       d.key = d.key || newKey(); d.tok = d.tok || newToken(); drafts[card.code] = d; keep();
       ui.sending = true; ui.err = ''; f.querySelector('[type=submit]').disabled = true;
-      const sending = send(`${location.origin}${u('/x/' + d.tok)}`, friendText());
+      const sending = sendInvite(`${location.origin}${u('/x/' + d.tok)}`);
       let r = null;
       try {
         r = reply ? await api(`/api/x/${encodeURIComponent(reply)}/reply`, { method: 'POST', body: { code: card.code, text, question, clientKey: d.key, inviteToken: d.tok } })

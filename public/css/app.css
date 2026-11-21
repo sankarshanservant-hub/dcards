@@ -1441,3 +1441,45 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .img-text-s { font-weight: 600; }
 .about-intro p { margin: 0 0 12px; line-height: 1.55; }
 .about-closing { margin: 8px 0 0; }
+/* «Знакомство с Dialogue Cards»: две раскрывающиеся кнопки с пояснениями о проекте */
+.about-blocks { display: grid; gap: 12px; }
+@media (min-width: 760px) { .about-blocks { grid-template-columns: 1fr 1fr; align-items: start; } }
+.about-big { border-radius: 18px; padding: 0; overflow: hidden; }
+.about-big.yellow { background: var(--accent); color: #10142a; }
+.about-big.navy { background: #1f2a5c; color: #f1e6c8; }
+.about-big > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 16px 18px; min-height: 60px; font-size: 1.1rem; }
+.about-big > summary::-webkit-details-marker { display: none; }
+.about-big > summary .ic svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.about-big > summary b { flex: 1; }
+.about-big[open] > summary .chev { transform: rotate(180deg); }
+.about-big > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.about-big .about-intro { padding: 0 18px 16px; }
+.about-big .about-intro h3 { margin: 4px 0 8px; font-size: 1rem; }
+.about-big .steps { margin: 0; }
+#join, #flow, #cards { scroll-margin-top: calc(var(--head-h) + 12px); }
+/* кабинет куратора: компактный ряд вкладок; на узком экране — столбец без растянутой «овальной» подложки */
+.cur-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.cur-tabs a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; min-height: 40px; border-radius: 12px; border: 1.5px solid var(--border); color: var(--text); text-decoration: none; font-weight: 600; font-size: .92rem; background: transparent; }
+.cur-tabs a .n { font-weight: 500; color: var(--text-2); }
+.cur-tabs a.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #10142a); }
+.cur-tabs a.on .n { color: inherit; }
+.cur-tabs a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 560px) { .cur-tabs { display: grid; } .cur-tabs a { justify-content: space-between; } }
+.chat-link span { overflow-wrap: anywhere; }
+/* кабинет фасилитатора: подписи блоков — основным цветом, счётчики немного легче */
+.kpi-link span { color: var(--text); font-size: .9rem; }
+.kpi-link b { font-weight: 600; }
+/* кабинет администратора: разделы по группам; ровные отступы; файлы и кнопки не обрезаются */
+.adm-nav { display: grid; gap: 10px; margin: 6px 0 20px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+@media (min-width: 900px) { .adm-nav { grid-template-columns: repeat(5, auto); justify-content: start; gap: 18px; } }
+.adm-group { display: grid; gap: 6px; align-content: start; }
+.adm-g { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.adm-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-links a { padding: 6px 12px; min-height: 36px; display: inline-flex; align-items: center; border-radius: 10px; border: 1px solid var(--border); color: var(--text); text-decoration: none; font-weight: 600; font-size: .9rem; }
+.adm-links a.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #10142a); }
+.adm-links a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#sec form.row.ga { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: stretch; }
+@media (min-width: 700px) { #sec form.row.ga { grid-template-columns: minmax(12em, auto) 1fr auto; align-items: center; } }
+#sec input[type="file"] { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+#sec .btn { max-width: 100%; white-space: normal; }
+#sec select { max-width: 100%; }

@@ -5,7 +5,7 @@ import { esc, api, u, tt, toast, visitorId, errorText, storage } from './util.js
 import { session } from './ui.js';
 import { QUESTION_FORMATS, START_GUIDES } from './content.js';
 import * as personal from './personal.js';
-import { shareInvite, friendText, SLOGAN } from './share.js';
+import { shareInvite, friendText, SLOGAN, sendInvite, copyInvite } from './share.js';
 
 let current = null; // открытый просмотр
 // новое поведение (скилл apple-design, vendor/hk-feel): карта листается за пальцем 1:1, бросок по скорости, пружины;
@@ -603,7 +603,7 @@ export function openViewer(opts) {
         } catch (x) { ui.sendErr = `${errorText(x)} ${tt('Текст сохранён — попробуйте ещё раз.', 'Your text is kept — try again.')}`; }
         ui.sending = false; renderBottom(); focusIn('[data-sh]'); return;
       }
-      if (cb0 && cb0.dataset.sh && ui.sent) { shareInvite(cb0.dataset.sh, `${location.origin}${u('/x/' + ui.sent.invite)}`, friendText()); return; }
+      if (cb0 && cb0.dataset.sh && ui.sent) { (cb0.dataset.sh === 'copy' ? copyInvite : sendInvite)(`${location.origin}${u('/x/' + ui.sent.invite)}`); return; }
       if (cb0 && cb0.hasAttribute('data-copy-back') && ui.sent) { shareInvite('copy', `${location.origin}${u('/x/' + ui.sent.secret)}`, '', tt('Личная ссылка скопирована — сохраните её', 'Personal link copied — keep it')); return; }
       const ql = e.target.closest('a[data-q-open]');
       if (ql) { e.preventDefault(); openQ(ql.dataset.qOpen); return; }

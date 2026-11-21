@@ -7,8 +7,12 @@ import { tt, toast, esc, u } from './util.js';
 // Подпись проекта (21.11.2026, окончательная): одна строка для интерфейса, сообщений и метаданных.
 export const TAGLINE = () => tt('Повод для интересного разговора', 'A reason for an interesting conversation');
 export const SLOGAN = () => tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation');
-export const friendText = () => tt('Мне интересно, что ты увидишь в этой карте. Напиши пару слов о том, что тебе откликнулось, и увидишь мой ответ.',
-  'I wonder what you will see in this card. Write a few words about what speaks to you, and you will see my answer.');
+// Приглашение к карте с вопросом (21.11.2026): готовое сообщение на языке отправителя — личная фраза, ссылка, подпись.
+// Подходит к любому вопросу: сам вопрос открывается по ссылке.
+export const friendText = () => tt('Посмотри на эту карту. Мне интересно, что ты ответишь.', 'Take a look at this card. I’m curious to hear your answer.');
+const INVITE_SIGN = () => tt('Dialogue Cards — повод для интересного разговора.', 'Dialogue Cards — a reason for an interesting conversation.');
+/** Полное приглашение: фраза, ссылка с новой строки, через пустую строку — подпись. */
+export const inviteMessage = (url) => `${friendText()}\n${url}\n\n${INVITE_SIGN()}`;
 export const storyText = () => tt('Хочешь поделиться нашими ответами в сторис? Открой эту ссылку и посмотри, как это будет выглядеть.',
   'Would you like to share our answers in stories? Open this link and see how it will look.');
 
@@ -36,6 +40,28 @@ export async function send(url, text) {
   if (!kind) return null;
   await shareInvite(kind, url, text);
   return kind;
+}
+/**
+ * Приглашение к карте с вопросом: системное меню сразу с готовым сообщением (текст с ссылкой внутри — так его сохраняют
+ * и мессенджеры, которые отбрасывают текст при отдельной ссылке). Без системного меню — выбор; «Скопировать» копирует
+ * приглашение целиком. Возвращает способ или null.
+ */
+export async function sendInvite(url) {
+  const full = inviteMessage(url);
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (navigator.share && touch) { try { await navigator.share({ text: full }); return 'sys'; } catch { return null; } }
+  const kind = await chooser();
+  if (!kind) return null;
+  if (kind === 'tg') window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(`${friendText()}\n\n${INVITE_SIGN()}`)}`, '_blank', 'noopener');
+  else if (kind === 'wa') window.open(`https://wa.me/?text=${encodeURIComponent(full)}`, '_blank', 'noopener');
+  else if (kind === 'sys' && navigator.share) { try { await navigator.share({ text: full }); } catch { return null; } }
+  else await copyInvite(url);
+  return kind;
+}
+export async function copyInvite(url) {
+  const full = inviteMessage(url);
+  try { await navigator.clipboard.writeText(full); toast(tt('Приглашение скопировано', 'Invitation copied')); return true; }
+  catch { prompt(tt('Скопируйте приглашение:', 'Copy the invitation:'), full); return true; }
 }
 function chooser() {
   return new Promise((resolve) => {

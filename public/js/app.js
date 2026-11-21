@@ -103,7 +103,6 @@ const PARENTS = [
   [/^\/group\/?$/, '/games', 'К играм', 'To games'],
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
-  [/^\/about\/flow/, '/about', 'О проекте', 'About'],
   [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],
   [/^\/me\/images/, '/me/collections', 'Мои подборки', 'My collections'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
@@ -253,8 +252,8 @@ function renderChrome() {
   // гость, впервые пришедший по ссылке в обмен (21.11.2026): в подвале — «Мои обмены», «О проекте», «Найти встречу»
   const guestX = !session.user && /^\/x\//.test(p) && storage.get('dc_via_invite') === '1';
   document.getElementById('foot').innerHTML = `<span>© Dialogue Cards · Dialogue Flow</span>
-    ${guestX ? `<nav class="foot-x" aria-label="${esc(tt('Дальше', 'More'))}"><a href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a><a href="${u('/about')}">${esc(tt('О проекте', 'About'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></nav>`
-      : `<a href="${u('/start#join')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>`}
+    ${guestX ? `<nav class="foot-x" aria-label="${esc(tt('Дальше', 'More'))}"><a href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a><a href="${u('/start')}">${esc(tt('О проекте', 'About'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></nav>`
+      : `<a href="${u('/start')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>`}
     ${session.config.demoMode ? `<span>${esc(tt('Прототип в демо-режиме', 'Prototype in demo mode'))}</span>` : ''}`;
   const pill = document.getElementById('demo-pill');
   const demoOn = session.config.demoMode && (session.showDemo || (session.user && session.user.isDemo));
@@ -317,7 +316,7 @@ function openMenu() {
         : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Иллюстрации для живого разговора', 'Illustrations for real conversation'))}</span></div>`}
       <button class="icon-btn" type="button" data-close aria-label="${esc(tt('Закрыть', 'Close'))}">${ic.close}</button>
     </div>
-    ${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What are Dialogue Cards?')}
+    ${mi('/start', ic.book || ic.cards, 'Знакомство с проектом', 'Discover the project')}
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
     ${mi('/games', ic.cube, 'Играть', 'Play')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}

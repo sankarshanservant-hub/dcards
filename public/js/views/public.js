@@ -65,56 +65,10 @@ export async function home(ctx) {
   } catch { const t = ctx.main.querySelector('#trio'); if (t) t.innerHTML = ''; /* украшение: без карт блок просто пустой */ }
 }
 
-// ---------- «Что такое Dialogue Cards?» (19.11.2026) ----------
-// Структура будущей страницы. Тексты объединят авторские вступления из руководств — пока их нет, ответов от имени
-// авторов не сочиняем. Полный документ появится для скачивания, когда администратор загрузит файл.
-const ABOUT = [
-  ['Зачем нужны карты и сам проект', 'Why the cards and the project exist'],
-  ['Почему важно общение и как иллюстрация помогает его начать', 'Why conversation matters and how an illustration helps start it'],
-  ['Почему работает метафора и какую роль играет собственный взгляд', 'Why metaphor works and the role of your own view'],
-  ['Чем Dialogue Cards отличаются от Таро и других метафорических карт', 'How Dialogue Cards differ from Tarot and other metaphor cards'],
-];
-export async function about(ctx) {
-  let assets = { pdf: false };
-  try { assets = await api('/api/guides/project/assets'); } catch { /* без документа */ }
-  if (!ctx.alive()) return;
-  ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><h1>${esc(tt('Что такое Dialogue Cards?', 'What are Dialogue Cards?'))}</h1></div>
-    <div class="about-intro stack" style="gap:10px">
-      ${paras(ABOUT_CARDS)}
-      <p><b>${esc(tt('Обмен взглядами', 'Exchanging views'))}</b></p>
-      <ol class="steps"><li>${esc(tt('Выбери карту.', 'Choose a card.'))}</li><li>${esc(tt('Напиши, что тебе в ней откликнулось.', 'Write what speaks to you in it.'))}</li>
-        <li>${esc(tt('Отправь карту другу. Он увидит твой ответ, когда напишет свой.', 'Send the card to a friend. They will see your answer once they write theirs.'))}</li><li>${esc(tt('Посмотрите, что увидел каждый.', 'See what each of you saw.'))}</li></ol>
-      <a class="about-flow-link" href="${u('/about/flow')}">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))} →</a>
-    </div>
-    <div class="stack" style="gap:8px">${ABOUT.map(([ru, en], i) => `<details class="about-df card-ui flat" id="about-${i + 1}"><summary><span class="grow">${esc(tt(ru, en))}</span><span class="chev" aria-hidden="true">▾</span></summary>
-      <div class="about-body"><p class="muted">${esc(tt('Текст готовят авторы проекта.', 'The project authors are preparing this text.'))}</p></div></details>`).join('')}</div>
-    <div class="card-ui flat stack"><b>${esc(tt('Полный документ о проекте', 'The full project document'))}</b>
-      ${assets.pdf ? `<a class="btn yellow" href="${u('/guides/project/guide.pdf')}" download style="justify-self:start">${esc(tt('Скачать документ (PDF)', 'Download the document (PDF)'))}</a>` : `<p class="muted" style="margin:0">${esc(tt('Полный документ проекта готовится.', 'The full project document is being prepared.'))}</p>`}</div>
-    <p class="about-closing">${esc(tt(ABOUT_CLOSING.ru, ABOUT_CLOSING.en))}</p>
-    <a class="btn yellow" href="${u('/start#join')}" style="justify-self:start">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
-  </div>`;
-}
 
 // абзацы текста о проекте: строки абзаца — с новой строки; **Dialogue Cards** — выделение
 const paras = (T) => (lang === 'en' ? T.en : T.ru).map((p) => `<p>${p.map((l) => esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')).join('<br>')}</p>`).join('');
 
-// ---------- «Что такое Dialogue Flow?» — для тех, кто впервые идёт на встречу (21.11.2026; тексты — как в поиске встреч) ----------
-export function aboutFlow(ctx) {
-  ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><p class="eyebrow">Dialogue Flow</p><h1>${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</h1></div>
-    <div class="about-intro">${paras(ABOUT_FLOW)}</div>
-    <h2 style="margin:0;font-size:1.2rem">${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h2>
-    <ol class="steps">
-      <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
-      <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в естественном потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a natural flow.'))}</li>
-      <li>${esc(tt('В конце участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
-    </ol>
-    <h2 style="margin:0;font-size:1.2rem">${esc(tt('Как выбирают карты', 'How cards are chosen'))}</h2>
-    <ol class="steps"><li>${esc(t('home.how1'))}</li><li>${esc(t('home.how2'))}</li><li>${esc(t('home.how3'))}</li></ol>
-    <a class="btn yellow" href="${u('/meetings')}" style="justify-self:start">${esc(tt('Найти встречу', 'Find a meeting'))}</a>
-  </div>`;
-}
 
 // ---------- «Поиграем?» из открытой карты: игры для себя или для компании (20.11.2026) ----------
 export function games(ctx) {
@@ -248,27 +202,48 @@ export async function cardPage(ctx, code) {
   draw();
 }
 
-// ---------- стартовая страница участника ----------
-// Просмотр галереи и поиск встреч — без входа и без профиля; имя и email просят только при записи на встречу.
-export function start(ctx) {
-  const big = [
-    ['/library', ic.cards, 'Смотреть карты', 'View cards', 'Выбери карту, начни диалог.', 'Pick a card, start a dialogue.', 'yellow'],
-    ['/meetings', ic.calendar, 'Найти встречу', 'Find a meeting', 'Посмотрите, где проходят ближайшие встречи Dialogue Flow', 'See where the next Dialogue Flow meetings are held', 'navy'],
-  ];
+// ---------- «Знакомство с Dialogue Cards» (21.11.2026): единая страница о проекте ----------
+// Раскрывающиеся «Что такое Dialogue Cards?» и «Что такое Dialogue Flow?», завершающая подпись и блоки участия.
+// Входы: /start — с начала, /start#join — сразу у «Хотите присоединиться…», /start#flow — открыт блок о Dialogue Flow.
+// Прежние адреса /about и /about/flow ведут сюда же.
+export async function start(ctx) {
   const more = [
     ['/artist/submit', ic.picPlus, 'Предложить иллюстрацию', 'Suggest an illustration', 'Отправьте свою работу кураторам', 'Send your work to the curators'],
     ['/facilitator/about', ic.people, 'Провести встречу', 'Host a meeting', 'Узнайте, как проводить встречи Dialogue Flow', 'Find out how to host Dialogue Flow meetings'],
     ['/curator/apply', ic.picCheck, 'Стать куратором', 'Become a curator', 'Подайте заявку, чтобы помогать отбирать работы для галереи', 'Apply to help choose works for the gallery'],
   ];
-  ctx.main.innerHTML = `<div class="wrap page stack">
-    <div><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Знакомство с Dialogue Cards', 'Getting to know Dialogue Cards'))}</h1></div>
-    <div class="big-actions">${big.map(([href, icon, ru, en, dru, den, tone]) => `<a class="big-action ${tone}" href="${u(href)}"><span class="ic">${icon}</span><b>${esc(tt(ru, en))}</b><span>${esc(tt(dru, den))}</span></a>`).join('')}</div>
+  const hash = location.hash.slice(1);
+  let assets = { pdf: false };
+  try { assets = await api('/api/guides/project/assets'); } catch { /* без документа */ }
+  if (!ctx.alive()) return;
+  ctx.main.innerHTML = `<div class="wrap page stack about-page">
+    <div><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Знакомство с Dialogue Cards', 'Discover Dialogue Cards'))}</h1></div>
+    <div class="about-blocks">
+      <details class="about-big yellow" id="cards" ${hash === 'cards' ? 'open' : ''}><summary><span class="ic">${ic.cards}</span><b>${esc(tt('Что такое Dialogue Cards?', 'What are Dialogue Cards?'))}</b><span class="chev" aria-hidden="true">▾</span></summary>
+        <div class="about-intro">${paras(ABOUT_CARDS)}</div></details>
+      <details class="about-big navy" id="flow" ${hash === 'flow' ? 'open' : ''}><summary><span class="ic">${ic.calendar}</span><b>${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</b><span class="chev" aria-hidden="true">▾</span></summary>
+        <div class="about-intro">${paras(ABOUT_FLOW)}
+          <h3>${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h3>
+          <ol class="steps">
+            <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
+            <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в естественном потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a natural flow.'))}</li>
+            <li>${esc(tt('В конце участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
+          </ol></div></details>
+    </div>
+    <p class="about-closing">${esc(tt(ABOUT_CLOSING.ru, ABOUT_CLOSING.en))}</p>
+    ${assets.pdf ? `<a class="small" href="${u('/guides/project/guide.pdf')}" download>${esc(tt('Полный документ о проекте (PDF)', 'The full project document (PDF)'))}</a>` : ''}
     <section class="join-block" id="join">
-      <h2>${esc(tt('Хотите присоединиться к проекту?', 'Want to join the project?'))}</h2>
+      <h2>${esc(tt('Хотите присоединиться к проекту?', 'Would you like to join the project?'))}</h2>
       <div class="list">${more.map(([href, icon, ru, en, dru, den]) => `<a class="item" href="${u(href)}"><span class="ic">${icon}</span><span class="body"><b>${esc(tt(ru, en))}</b><span class="small">${esc(tt(dru, den))}</span></span><span>→</span></a>`).join('')}</div>
     </section>
   </div>`;
+  // переход к нужной части: заголовок не прячется под закреплённой верхней панелью (scroll-margin)
+  if (hash === 'join' || hash === 'flow' || hash === 'cards') requestAnimationFrame(() => { const t = ctx.main.querySelector('#' + hash); if (t) t.scrollIntoView({ block: 'start' }); });
+  else window.scrollTo(0, 0);
 }
+// прежние адреса страницы о проекте
+export function about(ctx) { ctx.navigate('/start', { replace: true }); }
+export function aboutFlow(ctx) { ctx.navigate('/start#flow', { replace: true }); }
 
 // ---------- «Провести встречу»: что нужно будущему фасилитатору ----------
 export function facilitatorAbout(ctx) {

@@ -60,7 +60,7 @@ export async function cabinet(ctx) {
     ${lv.sessions.filter((x) => x.status !== 'ended').map((x) => `<a class="notice live-on" href="${u('/facilitator/live/' + x.id)}">${ic.people} <b>${esc(tt('Идёт встреча по телефонам', 'A phone meeting is on'))}: ${esc(x.title)}</b> · ${esc(tt(`участников: ${x.people}`, `participants: ${x.people}`))} · ${esc(tt('открыть пульт', 'open console'))} →</a>`).join('')}
     <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
       <a class="btn" href="${u('/facilitator/collections?new=1')}">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</a></div>
-    <div><a class="chat-link" href="${u('/chats')}">${ic.chat}<span>${esc(tt('Написать в чат', 'Write in a chat'))}</span></a></div>
+    <div><a class="chat-link" href="${u('/team/facilitators')}">${ic.chat}<span>${esc(tt('Написать в чат фасилитаторов', 'Message the facilitators'))}</span></a></div>
     <div class="kpis three">
       ${kpi('/facilitator/collections', cols.collections.length, tt('Подборки', 'Selections'))}
       ${kpi('/facilitator/meetings?when=upcoming', occ.upcoming.length, tt('Предстоящие встречи', 'Upcoming meetings'))}
