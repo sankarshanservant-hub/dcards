@@ -75,11 +75,13 @@ export const STORY_APPS = [
 export async function saveImage(blob, name, hint) {
   const file = new File([blob], name, { type: 'image/png' });
   const touch = matchMedia('(pointer: coarse)').matches;
-  if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+  // Android: обычная загрузка надёжнее — файл попадает в «Загрузки» и сразу виден галерее и настройкам обоев
+  const android = /Android/i.test(navigator.userAgent);
+  if (touch && !android && navigator.canShare && navigator.canShare({ files: [file] })) {
     if (hint) hint(tt('В меню выбери «Сохранить изображение» — картинка попадёт в «Фото». Или «Сохранить в Файлы».', 'In the menu choose “Save Image” to put it in Photos, or “Save to Files”.'));
     try { await navigator.share({ files: [file] }); return 'menu'; } catch (e) { if (e && e.name === 'AbortError') return 'cancel'; }
   }
-  if (touch) { imageOverlay(blob); return 'overlay'; }
+  if (touch && !android) { imageOverlay(blob); return 'overlay'; }
   const a = document.createElement('a'); const url = URL.createObjectURL(blob); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   toast(tt('Картинка скачана', 'Image downloaded'));

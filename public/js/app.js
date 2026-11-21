@@ -35,6 +35,7 @@ const routes = [
   [/^\/postcard\/?$/, (ctx) => pc.postcard(ctx, null)],
   [/^\/postcard\/(DC-\d{4,6})\/?$/, pc.postcard],
   [/^\/me\/postcards\/?$/, pc.myPostcards],
+  [/^\/wallpaper\/(DC-\d{4,6})\/?$/, pc.wallpaper],
   [/^\/me\/images\/?$/, solo.myImages],
   [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
@@ -102,12 +103,13 @@ const PARENTS = [
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
   [/^\/about\/flow/, '/about', 'О проекте', 'About'],
+  [/^\/wallpaper\//, '/library', 'Галерея', 'Gallery'],
   [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],
   [/^\/me\/images/, '/me/collections', 'Мои подборки', 'My collections'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
   [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
-  [/^\/admin\/./, '/admin', 'Администрирование', 'Administration'],
+  [/^\/admin\/./, '/admin', 'Кабинет администратора', 'Admin space'],
   [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
 ];
 function addBackLink(path, ctx) {
@@ -303,6 +305,7 @@ function openMenu() {
     if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет художника', 'Artist space'));
     if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space'));
     if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space'));
+    if (s.roles.includes('admin')) cabinets.push(mi('/admin', ic.shield, 'Кабинет администратора', 'Admin space', '', '', true));
   }
   const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Художник', 'Artist'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
   el.innerHTML = `<div class="panel" aria-label="${esc(tt('Меню', 'Menu'))}">
@@ -323,7 +326,7 @@ function openMenu() {
       ${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}
       ${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
       ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications')}
-      ${hasRole('admin') ? mi('/admin', ic.shield, 'Администрирование', 'Administration', '', '', true) : ''}`
+`
     : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
       <div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
     ${session.config.demoMode ? `<div class="demo-box">

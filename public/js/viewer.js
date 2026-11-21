@@ -318,6 +318,10 @@ export function openViewer(opts) {
   const chev = (open) => `<span class="chev ${open ? 'open' : ''}" aria-hidden="true">▾</span>`;
   const countLine = (info) => (info && typeof info.selectedCount === 'number'
     ? `<p class="choose-count">${esc(info.selectedCount ? t('viewer.selectedCount', { n: info.selectedCount }) : t('viewer.selectedNone'))}</p>` : '');
+  // «Поделиться» (23.11.2026): ссылка на карту или «Сохранить как обои» — предпросмотр вертикальной картинки для телефона
+  const shareMenu = () => (ui.shareMenu ? `<div class="share-pop" role="group" aria-label="${esc(tt('Поделиться', 'Share'))}">
+      <button class="btn light sm" type="button" data-share-link>${esc(tt('Отправить ссылку на карту', 'Send a link to the card'))}</button>
+      <a class="btn light sm" href="${u('/wallpaper/' + opts.cards[index].code)}" data-xopen>${esc(tt('Сохранить как обои', 'Save as wallpaper'))}</a></div>` : '');
   const shareField = () => (ui.share ? `<label class="field small">${esc(tt('Скопируйте ссылку:', 'Copy the link:'))}<input type="text" readonly value="${esc(ui.share)}" data-share-url></label>` : '');
   const linkBtn = (attr, ru, en) => `<button class="link-btn" type="button" ${attr}>${esc(tt(ru, en))}</button>`;
   const questionsBtn = (primary) => `<button class="btn ${primary ? 'yellow wide' : 'light sm'}" type="button" data-questions>${icons.questions}<span>${esc(primary && opts.mode === 'collection' ? tt('Вопросы для собеседника', 'Questions for your partner') : tt('Вопросы', 'Questions'))}</span></button>`;
@@ -339,17 +343,17 @@ export function openViewer(opts) {
         ${talkBadge()}
         ${questionsBtn(true)}
         <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}</div>
-        ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}`
+        ${shareMenu()}${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}`
       : chosen ? `${navRow()}
         <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>${linkBtn('data-talk', 'Открыть экран разговора', 'Open conversation view')}</div>
         ${questionsBtn(true)}
         <div class="vb-row">${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
-        ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}${countLine(info)}`
+        ${shareMenu()}${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}${countLine(info)}`
       : `${navRow()}
         <button class="btn yellow wide" type="button" data-choose ${ui.saving ? 'disabled aria-busy="true"' : ''}>${esc(ui.saving ? tt('Сохраняем…', 'Saving…') : t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}
         <div class="vb-row">${questionsBtn(false)}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
-        ${shareField()}${countLine(info)}`;
+        ${shareMenu()}${shareField()}${countLine(info)}`;
     } else if (opts.mode === 'library') {
       if (mode.talk && info && !info.chosenByMe) { mode.talk = false; el.classList.remove('is-talk'); syncNav(); }
       if (mode.talk) {
@@ -374,7 +378,7 @@ export function openViewer(opts) {
             <button class="icon-btn sm plain" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button>
           </div>
           ${ui.fav ? favPanel(c.code) : ''}
-          ${shareField()}
+          ${shareMenu()}${shareField()}
           <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
             <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${icons.mail}<span>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</span></a></div>
           <div class="card-play"><a class="btn light" href="${u('/games')}" data-xopen>${esc(tt('Поиграем?', 'Shall we play?'))}</a></div>`;
@@ -598,7 +602,8 @@ export function openViewer(opts) {
       if (btn.hasAttribute('data-questions')) { openQ(opts.mode === 'collection' ? (qs.format || 'pair') : (ui.guideKey || qs.format)); return; }
       if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); focusIn('[data-guide]'); return; }
       if (btn.dataset.g) { ui.guideKey = btn.dataset.g; ui.err = ''; renderBottom(); focusIn(`[data-g="${ui.guideKey}"]`); return; }
-      if (btn.hasAttribute('data-copy')) { copyLink(); return; }
+      if (btn.hasAttribute('data-copy')) { ui.shareMenu = !ui.shareMenu; renderBottom(); focusIn('[data-share-link]'); return; }
+      if (btn.hasAttribute('data-share-link')) { ui.shareMenu = false; copyLink(); return; }
       if (btn.hasAttribute('data-info')) { toggleSheet(); return; }
       if (btn.hasAttribute('data-other')) { setTalk(false); focusIn('[data-choose], [data-guide]'); return; }
       if (btn.hasAttribute('data-talk')) { setTalk(true); focusIn('[data-questions]'); return; }

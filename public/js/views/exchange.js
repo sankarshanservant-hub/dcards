@@ -15,8 +15,9 @@ const ZOOM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 
 const cardBtn = (c, cls = '') => `<button type="button" class="live-card-btn ${cls}" data-zoom aria-label="${esc(tt('Рассмотреть карту на весь экран', 'View the card full screen'))} ${esc(c.code)}"><img class="live-card" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"><span class="zoom-ic" aria-hidden="true">${ZOOM}</span></button>`;
 // сведения о карте (художник, номер) — не главная информация: компактно, за значком ⓘ
 // вопрос другу (20.11.2026): стандартный — на языке интерфейса, изменённый — как написал отправитель
-const DEFAULT_Q = 'Что тебе откликается в этой карте?';
-const defaultQ = () => tt(DEFAULT_Q, 'What resonates with you in this card?');
+// 23.11.2026: вопрос по умолчанию — как на главной («Что ты здесь видишь?»); «Что тебе откликается…» остаётся среди вопросов «Для себя»
+const DEFAULT_Q = 'Что ты здесь видишь?';
+const defaultQ = () => tt(DEFAULT_Q, 'What do you see here?');
 const questionText = (q) => (!q || q === DEFAULT_Q ? defaultQ() : q);
 const withInfo = (c, cls) => `<div class="card-with-info">${cardBtn(c, cls)}${authorLine(c)}</div>`;
 const authorLine = (c) => `<details class="card-info"><summary aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}"><span aria-hidden="true">i</span></summary><p class="small muted">${c.author ? `${esc(tt('Художник', 'Artist'))}: ${esc(c.author)} · ` : ''}${esc(c.code)}</p></details>`;
@@ -322,11 +323,11 @@ export async function playPage(ctx, code) {
     }
     ctx.main.innerHTML = `<div class="wrap page narrow stack x-page">
       ${reply ? `<p class="eyebrow" style="margin:0">${esc(tt('Твоя очередь', 'Your turn'))}</p>` : ''}
-      <h1 class="x-h x-center">${esc(reply ? (other && forName(other) ? tt(`Карта для ${forName(other)}: что ты здесь видишь?`, `A card for ${other}: what do you see here?`) : tt('Ответь своей картой: что ты здесь видишь?', 'Reply with your card: what do you see here?')) : tt('Что ты здесь видишь?', 'What do you see here?'))}</h1>
+      <h1 class="x-h x-center">${esc(reply ? (other && forName(other) ? tt(`Карта для ${forName(other)}`, `A card for ${other}`) : tt('Ответь своей картой', 'Reply with your card')) : multi ? tt('Вопрос нескольким людям', 'A question for several people') : tt('Вопрос другу', 'Question to a friend'))}</h1>
       ${withInfo(card, 'md')}
       <div class="row" style="justify-content:center"><button class="btn sm light" type="button" data-other>${esc(tt('Другая карта', 'Another card'))}</button><a class="btn sm light" href="${u('/library?play=friend' + (reply ? '&reply=' + encodeURIComponent(reply) : ''))}">${esc(tt('Все карты', 'All cards'))}</a></div>
       ${multi ? `<p class="eyebrow" style="margin:0">${esc(tt('Отправить нескольким людям', 'Send to several people'))}</p>` : ''}
-      <form class="form" id="pf"><label class="field" for="pq">${esc(tt('Вопрос другу', 'Question to your friend'))}</label>
+      <form class="form" id="pf"><label class="field" for="pq">${esc(tt('Твой вопрос', 'Your question'))}</label>
         <textarea id="pq" class="ask-q autogrow" maxlength="200" rows="1">${esc(dr.q != null ? dr.q : defaultQ())}</textarea>
         <label class="field" for="pt">${esc(tt('Твой ответ', 'Your answer'))}</label>
         <p class="vb-note" style="margin:-4px 0 0" id="pt-h">${esc(multi ? tt('Каждый увидит твой ответ, когда напишет свой.', 'Everyone will see your answer once they write theirs.') : tt('Друг увидит твой ответ, когда напишет свой.', 'Your friend will see your answer once they write theirs.'))}</p>

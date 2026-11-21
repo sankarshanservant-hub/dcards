@@ -23,8 +23,13 @@ CREATE TABLE IF NOT EXISTS x_group_members (
 );
 CREATE INDEX IF NOT EXISTS xgm_group ON x_group_members(group_id);`);
 
+// 23.11.2026: прежний вопрос по умолчанию у уже созданных общих обменов сохраняется (см. exchanges.js)
+if (!db.prepare('PRAGMA table_info(x_groups)').all().some((x) => x.name === 'q_v2')) {
+  db.exec('ALTER TABLE x_groups ADD COLUMN q_v2 INTEGER NOT NULL DEFAULT 1');
+  db.prepare("UPDATE x_groups SET question = 'Что тебе откликается в этой карте?' WHERE question IS NULL").run();
+}
 const MAX_MEMBERS = 50;
-const DEFAULT_QUESTION = 'Что тебе откликается в этой карте?';
+const DEFAULT_QUESTION = 'Что ты здесь видишь?'; // как на главной (23.11.2026)
 const tok = () => crypto.randomBytes(18).toString('base64url');
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 // пробелы и переводы строк — в один пробел, прочие управляющие символы убираются (как в exchanges.js)

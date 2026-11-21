@@ -41,7 +41,13 @@ addCol('target_user_id', 'INTEGER'); addCol('target_visitor', 'TEXT');
 addCol('question', 'TEXT');
 // фрагменты длинных ответов для сторис (21.11.2026): выбирает предложивший, согласие относится именно к ним
 addCol('story_frag', 'TEXT');
-const DEFAULT_QUESTION = 'Что тебе откликается в этой карте?';
+// 23.11.2026: вопрос по умолчанию сменился на «Что ты здесь видишь?». У обменов, созданных с прежним вопросом по умолчанию
+// (поле появилось 19.11.2026), он записывается явно — один раз при обновлении, чтобы у них ничего не поменялось.
+if (!db.prepare('PRAGMA table_info(exchanges)').all().some((x) => x.name === 'q_v2')) {
+  db.exec("ALTER TABLE exchanges ADD COLUMN q_v2 INTEGER NOT NULL DEFAULT 1");
+  db.prepare("UPDATE exchanges SET question = 'Что тебе откликается в этой карте?' WHERE question IS NULL AND created_at >= '2026-11-19'").run();
+}
+const DEFAULT_QUESTION = 'Что ты здесь видишь?'; // как на главной (23.11.2026)
 const questionOf = (x) => (x && x.question) || DEFAULT_QUESTION;
 const tok = () => crypto.randomBytes(18).toString('base64url');
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";

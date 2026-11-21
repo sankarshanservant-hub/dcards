@@ -36,10 +36,10 @@ export async function home(ctx) {
         <p class="greet">${esc(TAGLINE())}</p></div>
       <div class="home-axis">
         <h2 class="home-q">${esc(tt('Что ты здесь видишь?', 'What do you see here?'))}</h2>
+        <a class="btn home-ask" href="${u('/library?play=friend')}">${esc(tt('Спроси друга', 'Ask a friend'))}</a>
         <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
-        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards"><span class="cards2" aria-hidden="true"><i class="c-back"></i><i class="c-front"><b></b></i></span>${esc(tt('Все карты', 'All cards'))}</a>
+        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards"><span class="cards2" aria-hidden="true"><i class="c-back"></i><i class="c-front"></i></span>${esc(tt('Все карты', 'All cards'))}</a>
         <div class="home-send">
-          <a class="btn home-out" href="${u('/library?play=friend')}">${ic.people}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
           <a class="btn home-out" href="${u('/library?play=postcard')}">${ic.mail || ic.cards}<span>${esc(tt('Отправить открытку', 'Send a postcard'))}</span></a>
         </div>
       </div>
@@ -153,9 +153,9 @@ export async function library(ctx) {
   ctx.main.innerHTML = `<div class="wrap page">
     <div id="pick">${pickHtml()}</div>
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
-      <p class="muted">${esc(tt(`${cards.length} карт · новые сверху · нажмите на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
+      <p class="muted gal-hint" ${intent ? 'hidden' : ''}>${esc(tt(`${cards.length} карт · новые сверху · нажми на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
       <div class="play-rows" id="play"><div>${diceButtonHtml()}</div>
-        <div class="play-two"><a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a>
+        <div class="play-two" ${intent ? 'hidden' : ''}><a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a>
         <a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div></div>
     ${cards.length ? groups.map((g) => `<h2 class="month-title">${esc(g.label)}</h2><div class="grid">${g.items.map(([c, i]) => tileHtml(c, i)).join('')}</div>`).join('') : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
     <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
@@ -169,6 +169,7 @@ export async function library(ctx) {
     const anchor = [...ctx.main.querySelectorAll('.tile')].find((t) => t.getBoundingClientRect().bottom > 0);
     const y0 = anchor ? anchor.getBoundingClientRect().top : 0;
     intent = null; ctx.main.querySelector('#pick').innerHTML = '';
+    ctx.main.querySelectorAll('.gal-hint, .play-two').forEach((x) => { x.hidden = false; }); // обычный вид: подсказка и игры возвращаются
     if (anchor) { const d = anchor.getBoundingClientRect().top - y0; if (Math.abs(d) > 1) window.scrollBy(0, d); }
     const q = new URL(location.href); q.searchParams.delete('play'); q.searchParams.delete('reply');
     history.replaceState(history.state, '', q.pathname + q.search + q.hash); // остаёмся в той же галерее, без перезагрузки

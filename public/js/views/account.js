@@ -121,7 +121,7 @@ export function profile(ctx) {
     ...(has('artist') ? [['/artist', ic.brush, tt('Кабинет художника', 'Artist space')]] : []),
     ...(has('facilitator') ? [['/facilitator', ic.qr, tt('Кабинет фасилитатора', 'Facilitator space')]] : []),
     ...(has('curator') ? [['/curator', ic.check, tt('Кабинет куратора', 'Curator space')]] : []),
-    ...(s.roles.includes('admin') ? [['/admin', ic.shield, tt('Администрирование', 'Administration')]] : []),
+    ...(s.roles.includes('admin') ? [['/admin', ic.shield, tt('Кабинет администратора', 'Admin space')]] : []),
   ];
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <p class="eyebrow">${esc(rolesText(s.roles))}${s.isDemo ? ' · ' + esc(tt('демо-пользователь', 'demo user')) : ''}</p>

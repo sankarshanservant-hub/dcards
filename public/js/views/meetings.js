@@ -43,7 +43,9 @@ export function eventRow(d) {
 function hostInvite(country, city) {
   const fac = session.user && session.user.roles.some((r) => r === 'facilitator' || r === 'admin');
   const href = fac ? `/facilitator/m/new${city ? `?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country || '')}` : ''}` : '/facilitator/about';
-  return `<a class="btn yellow" href="${u(href)}">${esc(city ? tt('Проведите встречу в этом городе', 'Host a meeting in this city') : tt('Проведите встречу в своём городе', 'Host a meeting in your city'))}</a>`;
+  // на телефоне — перенос ровно между фразами: «Проведите встречу / в своём городе»
+  const [a, b] = city ? [tt('Проведите встречу', 'Host a meeting'), tt('в этом городе', 'in this city')] : [tt('Проведите встречу', 'Host a meeting'), tt('в своём городе', 'in your city')];
+  return `<a class="btn yellow host-invite" href="${u(href)}"><span>${esc(a)}</span> <span>${esc(b)}</span></a>`;
 }
 
 // Поиск: сразу ближайшие опубликованные встречи по дате; над списком — фильтры страны и города (адреса /meetings/Страна/Город сохранены).
@@ -59,9 +61,10 @@ export async function search(ctx, country, city) {
   const now = new Date().toISOString();
   dates = dates.filter((d) => d.startsAt >= now).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   const filtered = !!country;
+  const none = !places.length; // опубликованных встреч нет вообще — без пустых фильтров и подсказки о сортировке
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><p class="eyebrow" style="margin:0">Dialogue Flow</p><h1>${esc(tt('Найти встречу', 'Find a meeting'))}</h1>
-      <p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))}</p></div>
+      ${none ? '' : `<p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))}</p>`}</div>
     <details class="about-df card-ui flat accent-line"><summary><span class="grow">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="about-body">
         <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet.'))}</p>
@@ -71,20 +74,20 @@ export async function search(ctx, country, city) {
           <li>${esc(tt('Участники выбирают карты и общаются в парах. Карта помогает начать диалог, а дальше он продолжается в естественном потоке.', 'Participants choose cards and talk in pairs. The card helps start the dialogue, and then it carries on in a natural flow.'))}</li>
           <li>${esc(tt('В конце участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
         </ol></div></details>
-    <form class="filters card-ui flat" id="flt" style="padding:14px">
+    ${none ? `<div class="empty stack" style="justify-items:center"><span>${esc(tt('Пока нет запланированных встреч', 'No meetings planned yet'))}</span>${hostInvite('', '')}</div>` : `<form class="filters card-ui flat" id="flt" style="padding:14px">
       <label class="field">${esc(tt('Страна', 'Country'))}<select name="country"><option value="">${esc(tt('Все страны', 'All countries'))}</option>${places.map((p) => `<option ${p.country === country ? 'selected' : ''} value="${esc(p.country)}">${esc(p.country)} (${p.count})</option>`).join('')}</select></label>
       <label class="field">${esc(tt('Город', 'City'))}<select name="city" ${cur ? '' : 'disabled'}><option value="">${esc(cur ? tt('Все города', 'All cities') : tt('Сначала выберите страну', 'Choose a country first'))}</option>${cur ? cur.cities.map((c) => `<option ${c.city === city ? 'selected' : ''} value="${esc(c.city)}">${esc(c.city)} (${c.count})</option>`).join('') : ''}</select></label>
       ${filtered ? `<a class="btn sm light" href="${u('/meetings')}">${esc(tt('Сбросить фильтр', 'Clear filter'))}</a>` : ''}
     </form>
     ${filtered ? `<p class="small muted" style="margin:0">${esc(tt('Показаны встречи:', 'Showing meetings in:'))} <b>${esc([city, country].filter(Boolean).join(', '))}</b></p>` : ''}
-    ${dates.length ? `<div class="list">${dates.map(eventRow).join('')}</div>`
+    ${none ? '' : dates.length ? `<div class="list">${dates.map(eventRow).join('')}</div>`
       : `<div class="empty stack" style="justify-items:center"><span>${esc(city ? tt('В этом городе пока нет встреч', 'No meetings in this city yet') : country ? tt('В этой стране пока нет встреч', 'No meetings in this country yet') : tt('Пока нет опубликованных встреч', 'No published meetings yet'))}</span>
-          ${hostInvite(country, city)}
-          ${filtered ? `<a class="btn sm light" href="${u('/meetings')}">${esc(tt('Посмотреть все встречи', 'See all meetings'))}</a>` : ''}</div>`}
+          ${filtered ? `<a class="btn light" href="${u('/meetings')}">${esc(tt('Посмотреть встречи в других городах', 'See meetings in other cities'))}</a>` : ''}
+          ${hostInvite(country, city)}</div>`}`}
     ${session.user && session.user.roles.some((r) => r === 'facilitator' || r === 'admin') ? `<a class="btn" href="${u('/facilitator/m/new')}" style="justify-self:start">${esc(tt('Создать свою встречу', 'Create your meeting'))}</a>` : ''}
   </div>`;
   const f = ctx.main.querySelector('#flt');
-  f.addEventListener('change', (e) => {
+  if (f) f.addEventListener('change', (e) => {
     const c = f.country.value; const ci = e.target.name === 'country' ? '' : f.city.value;
     ctx.navigate(c ? `/meetings/${encodeURIComponent(c)}${ci ? '/' + encodeURIComponent(ci) : ''}` : '/meetings');
   });

@@ -1340,3 +1340,25 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .branch .assoc-add { max-width: 100%; }
 .branch .assoc-add input { width: 0; flex: 1 1 auto; font-size: 16px; }
 .branch .assoc-add input::placeholder { font-size: .85rem; }
+
+/* ---------- 23.11: главная ---------- */
+.home-axis .home-q { margin-bottom: 0; }
+.btn.home-ask { margin-top: -4px; margin-bottom: 14px; min-height: 42px; padding: 8px 18px; border: 1.5px solid color-mix(in srgb, var(--accent) 60%, transparent); background: transparent; color: var(--text); text-decoration: none; font-weight: 600; }
+.btn.home-ask:hover { border-color: var(--accent); }
+.btn.home-ask:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+:root[data-theme="light"] .btn.home-ask { border-color: color-mix(in srgb, var(--accent-text) 55%, transparent); color: var(--text); }
+.home-send { max-width: none; }
+.home-out { flex: 0 0 auto; }
+/* «Все карты»: васильковая передняя и коралловая задняя карточки */
+.cards2 .c-back { background: #e46d4f; border-color: #fff4e0; }
+.cards2 .c-front { background: #5867df; border-color: #fff4e0; }
+.play-two[hidden], .gal-hint[hidden] { display: none; }
+.share-pop { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.share-pop .btn { text-decoration: none; }
+.wp-page { justify-items: center; }
+.wp-stage canvas { width: auto; height: min(60vh, 560px); max-width: 80vw; border-radius: 18px; box-shadow: var(--shadow); display: block; }
+.wp-page .btn.big { width: min(360px, 100%); justify-content: center; }
+.wp-hint { text-align: center; max-width: 360px; }
+/* 23.11: «Проведите встречу / в своём городе» — на телефоне перенос ровно между фразами, ширина по длинной строке */
+.btn.host-invite { display: inline-flex; flex-wrap: wrap; justify-content: center; column-gap: .3em; text-align: center; text-decoration: none; }
+@media (max-width: 560px) { .btn.host-invite { flex-direction: column; align-items: center; width: max-content; max-width: 100%; line-height: 1.25; padding-block: 10px; } .btn.host-invite span { white-space: nowrap; } }
