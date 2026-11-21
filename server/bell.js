@@ -32,6 +32,11 @@ const PUSH_TEXT = {
   work_published: 'Решение по вашей работе', work_returned: 'Решение по вашей работе', work_rejected: 'Решение по вашей работе',
   application: 'Новости по вашей заявке', registration: 'Новости по вашей записи на встречу',
 };
+const PUSH_TEXT_EN = {
+  exchange_answered: 'Your friend answered the card', story_proposed: 'You were invited to share your answers in Instagram Stories', story_agreed: 'Your friend agreed to share in Instagram Stories',
+  work_published: 'A decision on your work', work_returned: 'A decision on your work', work_rejected: 'A decision on your work',
+  application: 'News about your application', registration: 'News about your meeting registration',
+};
 
 /**
  * to: { userId } | { visitorId }; n: { kind, title, body, url, dedupe?, group?, isDemo?, push? }
@@ -54,7 +59,10 @@ function add(to, n) {
     .run(uid, vid, n.kind, n.title, n.body || '', n.url || '', n.dedupe || null, n.group || null, n.count || 1, n.isDemo ? 1 : 0);
   if (!info.changes) return null;
   const id = Number(info.lastInsertRowid);
-  if (uid && n.push !== false && pushHook) pushHook(uid, { title: 'Dialogue Cards', body: PUSH_TEXT[n.kind] || 'Новое событие в D-Cards', url: n.url, tag: `dc-n${id}` }, n.kind);
+  if (uid && n.push !== false && pushHook) {
+    const en = (db.prepare('SELECT lang FROM users WHERE id = ?').get(uid) || {}).lang === 'en';
+    pushHook(uid, { title: 'Dialogue Cards', body: en ? (PUSH_TEXT_EN[n.kind] || 'Something new in D-Cards') : (PUSH_TEXT[n.kind] || 'Новое событие в D-Cards'), url: n.url, tag: `dc-n${id}` }, n.kind);
+  }
   return id;
 }
 /** Задача решена (например, работу опубликовал другой администратор): запись остаётся, но показывает актуальный итог. */

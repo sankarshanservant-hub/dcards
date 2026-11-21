@@ -1,5 +1,5 @@
 import { lang, setLang } from './i18n.js';
-import { esc, tt, u, api, BASE, toast, errorText } from './util.js';
+import { esc, tt, u, api, BASE, toast, errorText, storage } from './util.js';
 import { isViewerOpen, handleViewerPopState, closeViewer } from './viewer.js';
 import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } from './ui.js';
 import * as pub from './views/public.js';
@@ -35,7 +35,6 @@ const routes = [
   [/^\/postcard\/?$/, (ctx) => pc.postcard(ctx, null)],
   [/^\/postcard\/(DC-\d{4,6})\/?$/, pc.postcard],
   [/^\/me\/postcards\/?$/, pc.myPostcards],
-  [/^\/wallpaper\/(DC-\d{4,6})\/?$/, pc.wallpaper],
   [/^\/me\/images\/?$/, solo.myImages],
   [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
@@ -90,6 +89,8 @@ const routes = [
 ];
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
+// первое посещение этого браузера сразу по ссылке в обмен — гостевой вариант подвала на страницах обмена
+if (!storage.get('dc_seen')) { if (/^\/x\//.test(appPath())) storage.set('dc_via_invite', '1'); storage.set('dc_seen', '1'); }
 
 // Вверху внутренних страниц (19.11.2026) — слева домик (всегда на главную) и рядом стрелка «Назад», когда в приложении
 // есть предыдущий экран: она возвращает туда, откуда пришли, с прежней прокруткой. Без текста — с доступными названиями.
@@ -103,7 +104,6 @@ const PARENTS = [
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
   [/^\/about\/flow/, '/about', 'О проекте', 'About'],
-  [/^\/wallpaper\//, '/library', 'Галерея', 'Gallery'],
   [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],
   [/^\/me\/images/, '/me/collections', 'Мои подборки', 'My collections'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
@@ -250,8 +250,11 @@ function renderChrome() {
   const ls = document.getElementById('lang');
   ls.textContent = lang === 'ru' ? 'EN' : 'RU';
   ls.setAttribute('aria-label', lang === 'ru' ? 'Switch to English' : 'Переключить на русский');
+  // гость, впервые пришедший по ссылке в обмен (21.11.2026): в подвале — «Мои обмены», «О проекте», «Найти встречу»
+  const guestX = !session.user && /^\/x\//.test(p) && storage.get('dc_via_invite') === '1';
   document.getElementById('foot').innerHTML = `<span>© Dialogue Cards · Dialogue Flow</span>
-    <a href="${u('/start#join')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
+    ${guestX ? `<nav class="foot-x" aria-label="${esc(tt('Дальше', 'More'))}"><a href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a><a href="${u('/about')}">${esc(tt('О проекте', 'About'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></nav>`
+      : `<a href="${u('/start#join')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>`}
     ${session.config.demoMode ? `<span>${esc(tt('Прототип в демо-режиме', 'Prototype in demo mode'))}</span>` : ''}`;
   const pill = document.getElementById('demo-pill');
   const demoOn = session.config.demoMode && (session.showDemo || (session.user && session.user.isDemo));
@@ -287,7 +290,7 @@ function mi(href, icon, ru, en, noteRu = '', noteEn = '', hl = false, badge = ''
 // Закрытие системного меню ничего не меняет — человек остаётся на своём экране.
 async function shareApp() {
   const url = `${location.origin}${u('/')}`;
-  const text = tt('Dialogue Cards — яркий повод для интересного разговора', 'Dialogue Cards — a bright reason for an interesting conversation');
+  const text = tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation');
   if (navigator.share) { try { await navigator.share({ title: 'Dialogue Cards', text, url }); } catch { /* отмена */ } return; }
   try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
   catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), url); }
@@ -314,9 +317,9 @@ function openMenu() {
         : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Иллюстрации для живого разговора', 'Illustrations for real conversation'))}</span></div>`}
       <button class="icon-btn" type="button" data-close aria-label="${esc(tt('Закрыть', 'Close'))}">${ic.close}</button>
     </div>
-    ${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What is Dialogue Cards?')}
+    ${mi('/about', ic.book || ic.cards, 'Что такое Dialogue Cards?', 'What are Dialogue Cards?')}
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
-    ${mi('/games', ic.dice, 'Играть', 'Play')}
+    ${mi('/games', ic.cube, 'Играть', 'Play')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}
     ${mi('/start#join', ic.people, 'Участвовать', 'Take part')}
     ${mi('/chats', ic.chats, 'Общение в чатах', 'Chats', '', '', false, session.unread ? String(session.unread) : '')}

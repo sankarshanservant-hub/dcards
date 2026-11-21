@@ -53,6 +53,8 @@ r.use(cookieParser());
 r.use(auth.loadUser);
 // Гость: случайный идентификатор этого браузера (заголовок X-DC-Visitor) — привязка его обменов, колокольчика, записей.
 r.use((req, res, next) => { const v = String(req.get('x-dc-visitor') || ''); req.visitor = /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null; next(); });
+// язык интерфейса вошедшего человека — для push-уведомлений (только ru/en; хранится последний выбранный)
+r.use((req, res, next) => { const l = String(req.get('x-dc-lang') || ''); if (req.user && (l === 'ru' || l === 'en') && req.user.lang !== l) { try { db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(l, req.user.id); req.user.lang = l; } catch { /* */ } } next(); });
 
 const VISITOR_RE = /^[A-Za-z0-9-]{16,64}$/;
 const CODE_RE = /^DC-\d{4,6}$/;
@@ -897,8 +899,8 @@ const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND sta
 r.post('/api/exchanges', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
-  if (b.multi) return out(res, xgroups.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201); // «Отправить нескольким людям»
-  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey, origin: ['fresh', 'forward', 'public'].includes(b.origin) ? b.origin : 'fresh' }), 201);
+  if (b.multi) return out(res, xgroups.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey, inviteToken: b.inviteToken }), 201); // «Отправить нескольким людям»
+  out(res, exchanges.create(c, req.user, req.visitor, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey, inviteToken: b.inviteToken, origin: ['fresh', 'forward', 'public'].includes(b.origin) ? b.origin : 'fresh' }), 201);
 });
 r.get('/api/exchanges', (req, res) => {
   const list = exchanges.mine(req.user, req.visitor, req.query.card ? String(req.query.card) : null);
@@ -918,7 +920,7 @@ r.get('/api/x/:token', (req, res) => {
 r.post('/api/x/:token/reply', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
-  out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey }), 201);
+  out(res, exchanges.reply(String(req.params.token), req.user, req.visitor, c, { text: b.text, name: b.name, question: b.question, clientKey: b.clientKey, inviteToken: b.inviteToken }), 201);
 });
 r.post('/api/x/:token/sent', (req, res) => out(res, exchanges.sent(String(req.params.token), req.user, req.visitor, String((req.body || {}).via || ''))));
 r.post('/api/x/:token/answer', (req, res) => {
@@ -970,7 +972,7 @@ const indexHtml = () => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf
 let cachedIndex = null;
 // Превью ссылок для мессенджеров (19.11.2026): у приглашения и публичной ссылки карты — сама иллюстрация и вопрос.
 // Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.
-const OG_DESC = 'Dialogue Cards — яркий повод для интересного разговора';
+const OG_DESC = 'Dialogue Cards — повод для интересного разговора';
 function ogFor(req) {
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
   let code = m && m[3];

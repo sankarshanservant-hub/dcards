@@ -107,3 +107,28 @@ export const START_GUIDES = [
 
 // Памятка участника — дословно из «Руководства фасилитатора Dialogue Flow» (приложение 5).
 export const MEMO = { ru: ["Сегодня вы участвуете в Dialogue Flow — формате для разговора чуть более глубокого, чем это обычно бывает при первой встрече.", "Карта, которую вы выберете, — не тест и не предсказание. У неё нет правильного значения: то, что вы в ней увидите, то она и означает. Она нужна лишь для того, чтобы разговору было с чего начать — и если через несколько минут вы забудете о самой карте, значит, она уже выполнила свою работу.", "Карточка с вопросами — это помощь, а не экзамен. Можно идти по вопросам по порядку, можно пропускать, можно вообще отложить её в сторону, если разговор потёк сам.", "Никто не обязан отвечать на каждый вопрос или рассказывать больше, чем хочется. Если какая-то тема пока не хочется — вполне достаточно сказать: «Я пока не готов об этом говорить».", "Всё, чем вы поделитесь друг с другом, остаётся между вами — если вы сами не договоритесь иначе.", "Если что-то понадобится — фасилитатор всегда рядом, его можно позвать в любой момент."], en: ["Today you are taking part in Dialogue Flow — a format for a conversation a little deeper than usual when people first meet.", "The card you choose is not a test or a prediction. It has no correct meaning: whatever you see in it is what it means. It is only there so the conversation has somewhere to start — and if after a few minutes you forget about the card itself, it has done its job.", "The question card is a help, not an exam. You can go through the questions in order, skip some, or put the card aside altogether if the conversation flows on its own.", "Nobody has to answer every question or share more than they want to. If you would rather not talk about something yet, it is enough to say: “I’m not ready to talk about this yet.”", "Everything you share with each other stays between you — unless you agree otherwise.", "If you need anything, the facilitator is always nearby — you can call them at any moment."] };
+
+// EAGLE_BANK — «Глаз-алмаз» (21.11.2026): проверенные вопросы к конкретным картам, RU/EN, с ответами.
+// Формат: { 'DC-0004': [{ q: { ru: '…', en: '…' }, a: { ru: '…', en: '…' } }, …], … }.
+// Наполняют авторы проекта; вопросы и ответы не сочиняем. Пока пусто — в игре общие вопросы (solo.js).
+export const EAGLE_BANK = {};
+
+// Тексты о проекте (21.11.2026): английский — согласованный оригинал (дословно), русский — перевод.
+// Абзацы — массивы строк; строки внутри абзаца идут с новой строки.
+export const ABOUT_CARDS = {
+  en: [['Dialogue Cards capture different sides of life in pictures.', 'There’s no one right meaning for a card. Each person brings a new meaning to it.'],
+    ['A metaphor can express a subtle feeling or a thought that’s hard to put into words. A picture can help you see a situation in a new way or find an answer that might not have come to you otherwise.'],
+    ['The picture gives you both neutral ground. You can talk about what’s happening in the picture or share something personal when you feel like it.']],
+  ru: [['Dialogue Cards запечатлевают разные стороны жизни в изображениях.', 'У карты нет единственного правильного значения. Каждый человек привносит в неё новый смысл.'],
+    ['Метафора может выразить тонкое чувство или мысль, которую трудно облечь в слова. Изображение может помочь по-новому взглянуть на ситуацию или найти ответ, который иначе мог бы не прийти в голову.'],
+    ['Изображение даёт вам обоим нейтральную территорию. Вы можете говорить о том, что происходит на картинке, или делиться чем-то личным, когда вам этого хочется.']],
+};
+export const ABOUT_FLOW = {
+  en: [['We all hunger for heart-to-heart conversations.', 'Each of us has a unique life story we want to share, and that story can inspire someone else.', 'But in everyday life, we find fewer and fewer chances to have a deep conversation.'],
+    ['A real conversation can give us the motivation and strength to act. It can help us get through hard times and find meaning.', 'That’s why we started Dialogue Flow gatherings — to give people a safe place to have more of these conversations.'],
+    ['**Dialogue Cards** give you an easy, creative way to start that kind of conversation.']],
+  ru: [['Мы все жаждем разговоров по душам.', 'У каждого из нас есть уникальная история жизни, которой хочется поделиться, и эта история может вдохновить кого-то ещё.', 'Но в повседневной жизни у нас всё меньше возможностей для глубокого разговора.'],
+    ['Настоящий разговор может дать нам мотивацию и силы действовать. Он может помочь пережить трудные времена и найти смысл.', 'Именно поэтому мы начали проводить встречи Dialogue Flow — чтобы у людей было безопасное пространство, где такие разговоры могут происходить чаще.'],
+    ['**Dialogue Cards** предлагают простой и творческий способ начать такой разговор.']],
+};
+export const ABOUT_CLOSING = { en: 'Our project is growing around these ideas. If they speak to you, you can be part of it.', ru: 'Наш проект растёт вокруг этих идей. Если они вам близки, вы можете стать его частью.' };

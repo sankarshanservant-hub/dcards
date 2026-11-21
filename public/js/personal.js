@@ -112,7 +112,7 @@ export async function deleteImageNote(id) {
 
 /** После входа: обмены и колокольчик браузера — в аккаунт; личные данные — спросить и перенести. */
 export async function afterLogin() {
-  cache = null;
+  cache = null; storage.set('dc_via_invite', ''); // вошедшим — обычный подвал
   try { await api('/api/me/claim', { method: 'POST' }); } catch { /* не страшно */ }
   if (!hasLocal()) return;
   const v = local();

@@ -61,13 +61,17 @@ const same = (x, side, user, visitor) => (user && x[`${side}_user_id`] === user.
 /** Макет сторис: что именно увидят люди. Любое изменение — новый отпечаток и новые согласия. */
 function storyHash(x, frag = fragOf(x)) {
   const c = db.prepare('SELECT code, image_full, author FROM cards WHERE id = ?').get(x.card_id);
-  return crypto.createHash('sha256').update(JSON.stringify(['v2', c.code, c.image_full, c.author, x.a_name, frag.a, x.b_name, frag.b])).digest('hex').slice(0, 16);
+  // v3 (21.11.2026): вопрос и язык макета входят в отпечаток — согласие относится к конкретной картинке
+  return crypto.createHash('sha256').update(JSON.stringify(['v3', c.code, c.image_full, c.author, questionOf(x), frag.lang, x.a_name, frag.a, x.b_name, frag.b])).digest('hex').slice(0, 16);
 }
 /** Что из ответов попадёт в сторис: целиком или выбранный фрагмент (только подстрока самого ответа). */
-function fragOf(x) { let f = {}; try { f = JSON.parse(x.story_frag || '{}') || {}; } catch { /* */ } return { a: validFrag(x.a_text, f.a), b: validFrag(x.b_text, f.b) }; }
+function fragOf(x) { let f = {}; try { f = JSON.parse(x.story_frag || '{}') || {}; } catch { /* */ } return { a: validFrag(x.a_text, f.a), b: validFrag(x.b_text, f.b), lang: f.lang === 'en' ? 'en' : 'ru' }; }
 function validFrag(full, f) { const t = String(full || ''); const s = String(f || '').trim(); return s && s.length >= 3 && s.length <= 220 && t.includes(s) ? s : t; }
 
-function create(card, user, visitor, { text, name, question, clientKey, origin = 'fresh', parent = null, sourceEx = null }) {
+// Ссылка-приглашение может быть задана браузером заранее (21.11.2026): системное меню отправки открывается сразу по нажатию,
+// до ответа сервера. Это только адрес для получателя (случайный, не короче 22 символов); личная ссылка отправителя — серверная.
+const okInvite = (t) => typeof t === 'string' && /^[A-Za-z0-9_-]{22,40}$/.test(t);
+function create(card, user, visitor, { text, name, question, clientKey, inviteToken, origin = 'fresh', parent = null, sourceEx = null }) {
   const t = clean(text, 300); if (!t) return { error: 'text_required' };
   if (!user && !visitor) return { error: 'visitor_required' };
   const key = clientKey ? clean(clientKey, 64).replace(/[^A-Za-z0-9_-]/g, '') : null;
@@ -78,9 +82,14 @@ function create(card, user, visitor, { text, name, question, clientKey, origin =
   // кто прислал этот обмен раньше: если создатель — ответивший в другом обмене, отмечаем источник (для аналитики «дальше»)
   const src = sourceEx || (db.prepare(`SELECT id FROM exchanges WHERE b_answered_at IS NOT NULL AND ((b_user_id IS NOT NULL AND b_user_id = ?) OR (b_visitor IS NOT NULL AND b_visitor = ?)) ORDER BY b_answered_at DESC LIMIT 1`).get(user ? user.id : -1, visitor || '') || {}).id || null;
   const q = clean(question, 200); // пусто — стандартный вопрос
+  let invite = tok();
+  if (okInvite(inviteToken)) {
+    if (db.prepare('SELECT 1 FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(inviteToken, inviteToken, inviteToken, inviteToken)) return { error: 'conflict' };
+    invite = inviteToken;
+  }
   const info = db.prepare(`INSERT INTO exchanges (card_id, a_user_id, a_visitor, a_name, a_text, a_secret, a_door, invite_token, client_key, is_demo, origin, source_ex, conv_id, round_no, parent_id, target_user_id, target_visitor, question)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(card.id, user ? user.id : null, visitor || null, nameOf(user && user.id, clean(name, 40), ''), t, tok(), tok(), tok(), key, (card.is_demo || (user && user.is_demo)) ? 1 : 0,
+    .run(card.id, user ? user.id : null, visitor || null, nameOf(user && user.id, clean(name, 40), ''), t, tok(), tok(), invite, key, (card.is_demo || (user && user.is_demo)) ? 1 : 0,
       origin, src, parent ? parent.conv : null, parent ? parent.round : 1, parent ? parent.id : null, parent ? parent.targetUser : null, parent ? parent.targetVisitor : null, q && q !== DEFAULT_QUESTION ? q : null);
   const id = Number(info.lastInsertRowid);
   if (!parent) db.prepare('UPDATE exchanges SET conv_id = ? WHERE id = ?').run(id, id);
@@ -121,7 +130,7 @@ function view(x, role) {
     const h = storyHash(x);
     const st = (v) => (v === 'declined' ? 'declined' : v === `agreed:${h}` ? 'agreed' : null);
     const fr = fragOf(x);
-    out.story = { hash: h, frag: { mine: fr[me], other: fr[other] }, proposedBy: x.story_hash === h && x.story_proposed_by ? (x.story_proposed_by === me ? 'me' : 'other') : null,
+    out.story = { hash: h, frag: { mine: fr[me], other: fr[other] }, lang: fr.lang, proposedBy: x.story_hash === h && x.story_proposed_by ? (x.story_proposed_by === me ? 'me' : 'other') : null,
       me: st(x[`story_${me}`]), other: st(x[`story_${other}`]),
       // ссылка, по которой другой участник вернётся к этому макету (узнаёт только его)
       otherDoor: me === 'a' ? x.invite_token : x.a_door };
@@ -141,13 +150,13 @@ function sideOf(y, x, me) {
 }
 
 /** «Твоя очередь»: участник раунда отвечает своей картой тому же собеседнику — новый раунд того же разговора. */
-function reply(token, user, visitor, card, { text, name, question, clientKey }) {
+function reply(token, user, visitor, card, { text, name, question, clientKey, inviteToken }) {
   const { x, role } = resolve(token, user, visitor);
   if (!x) return { error: 'not_found' };
   if (!['a', 'b'].includes(role) || !x.b_answered_at) return { error: 'forbidden' };
   const other = role === 'a' ? 'b' : 'a';
   const r = create(card, user || (x[`${role}_user_id`] ? { id: x[`${role}_user_id`], is_demo: 0 } : null), visitor || x[`${role}_visitor`], {
-    text, name: name || x[`${role}_name`], question, clientKey, origin: 'reply', sourceEx: x.id,
+    text, name: name || x[`${role}_name`], question, clientKey, inviteToken, origin: 'reply', sourceEx: x.id,
     parent: { id: x.id, conv: x.conv_id || x.id, round: (db.prepare('SELECT MAX(round_no) AS n FROM exchanges WHERE conv_id = ?').get(x.conv_id || x.id).n || 1) + 1,
       targetUser: x[`${other}_user_id`] || null, targetVisitor: x[`${other}_user_id`] ? null : x[`${other}_visitor`] } });
   if (r.error || r.repeated) return r;
@@ -189,7 +198,7 @@ function story(token, user, visitor, { action, hash, frag }) {
   // предложение может выбрать фрагменты длинных ответов — это новый макет со своим отпечатком
   if (action === 'propose' && frag && typeof frag === 'object') {
     const f = { a: validFrag(x.a_text, frag.a), b: validFrag(x.b_text, frag.b) };
-    const nf = JSON.stringify({ a: f.a === x.a_text ? null : f.a, b: f.b === x.b_text ? null : f.b });
+    const nf = JSON.stringify({ a: f.a === x.a_text ? null : f.a, b: f.b === x.b_text ? null : f.b, lang: frag.lang === 'en' ? 'en' : 'ru' });
     if (nf !== (x.story_frag || JSON.stringify({ a: null, b: null }))) { db.prepare('UPDATE exchanges SET story_frag = ? WHERE id = ?').run(nf, x.id); x.story_frag = nf; }
     hash = storyHash(x);
   }

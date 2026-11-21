@@ -38,14 +38,19 @@ const nameOf = (userId, typed) => { if (userId) { const u = db.prepare('SELECT n
 const isOwner = (g, user, visitor) => (user && g.a_user_id === user.id) || (visitor && g.a_visitor === visitor);
 const memberOf = (g, user, visitor) => db.prepare('SELECT * FROM x_group_members WHERE group_id = ? AND ((user_id IS NOT NULL AND user_id = ?) OR (visitor IS NOT NULL AND visitor = ?)) LIMIT 1').get(g.id, user ? user.id : -1, visitor || '');
 
-function create(card, user, visitor, { text, name, question, clientKey }) {
+function create(card, user, visitor, { text, name, question, clientKey, inviteToken }) {
   const t = clean(text, 300); if (!t) return { error: 'text_required' };
   if (!user && !visitor) return { error: 'visitor_required' };
   const key = clientKey ? clean(clientKey, 64).replace(/[^A-Za-z0-9_-]/g, '') : null;
   if (key) { const ex = db.prepare('SELECT * FROM x_groups WHERE a_visitor IS ? AND client_key = ?').get(visitor || null, key); if (ex) return { ok: true, repeated: true, group: true, id: ex.id, secret: ex.a_secret, invite: ex.invite_token }; }
   const q = clean(question, 200);
+  let invite = tok();
+  if (typeof inviteToken === 'string' && /^[A-Za-z0-9_-]{22,40}$/.test(inviteToken)) {
+    if (db.prepare('SELECT 1 FROM x_groups WHERE invite_token = ? OR a_secret = ?').get(inviteToken, inviteToken) || db.prepare('SELECT 1 FROM exchanges WHERE invite_token = ? OR a_secret = ? OR b_secret = ? OR a_door = ?').get(inviteToken, inviteToken, inviteToken, inviteToken)) return { error: 'conflict' };
+    invite = inviteToken;
+  }
   const info = db.prepare('INSERT INTO x_groups (card_id, a_user_id, a_visitor, a_name, a_text, question, a_secret, invite_token, client_key, is_demo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(card.id, user ? user.id : null, visitor || null, nameOf(user && user.id, clean(name, 40)) || '', t, q && q !== DEFAULT_QUESTION ? q : null, tok(), tok(), key, (card.is_demo || (user && user.is_demo)) ? 1 : 0);
+    .run(card.id, user ? user.id : null, visitor || null, nameOf(user && user.id, clean(name, 40)) || '', t, q && q !== DEFAULT_QUESTION ? q : null, tok(), invite, key, (card.is_demo || (user && user.is_demo)) ? 1 : 0);
   const g = db.prepare('SELECT * FROM x_groups WHERE id = ?').get(Number(info.lastInsertRowid));
   return { ok: true, group: true, id: g.id, secret: g.a_secret, invite: g.invite_token };
 }

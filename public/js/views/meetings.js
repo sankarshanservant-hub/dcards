@@ -1,4 +1,5 @@
 // Встречи Dialogue Flow для посетителя: ближайшие встречи с фильтрами, страница даты, запись без аккаунта, отмена.
+import { ABOUT_FLOW } from '../content.js';
 import { lang } from '../i18n.js';
 import { esc, tt, u, api, errorText, fmtTz, toast, ruPlural, timeInCity, durationText } from '../util.js';
 import { session, loading, failed, demoPill, ic } from '../ui.js';
@@ -67,7 +68,7 @@ export async function search(ctx, country, city) {
       ${none ? '' : `<p class="sub">${esc(tt('Ближайшие встречи — сверху. Время указано по месту проведения.', 'Nearest meetings first. Times are local to the venue.'))}</p>`}</div>
     <details class="about-df card-ui flat accent-line"><summary><span class="grow">${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</span><span class="chev" aria-hidden="true">▾</span></summary>
       <div class="about-body">
-        <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet.'))}</p>
+        ${(lang === 'en' ? ABOUT_FLOW.en : ABOUT_FLOW.ru).map((p) => `<p>${p.map((l) => esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')).join('<br>')}</p>`).join('')}
         <h3>${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h3>
         <ol class="steps">
           <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>

@@ -417,4 +417,7 @@ addColumn('registrations', 'visitor_id', 'TEXT'); // пересланное из
 addColumn('submissions', 'client_key', 'TEXT');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS submissions_client_key ON submissions (artist_id, client_key) WHERE client_key IS NOT NULL');
 
+// язык интерфейса человека (21.11.2026): нейтральные push-уведомления приходят на нём
+addColumn('users', 'lang', 'TEXT');
+
 module.exports = db;

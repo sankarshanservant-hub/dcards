@@ -1362,3 +1362,82 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 /* 23.11: «Проведите встречу / в своём городе» — на телефоне перенос ровно между фразами, ширина по длинной строке */
 .btn.host-invite { display: inline-flex; flex-wrap: wrap; justify-content: center; column-gap: .3em; text-align: center; text-decoration: none; }
 @media (max-width: 560px) { .btn.host-invite { flex-direction: column; align-items: center; width: max-content; max-width: 100%; line-height: 1.25; padding-block: 10px; } .btn.host-invite span { white-space: nowrap; } }
+
+/* ---------- 21.11 (тест): главная ---------- */
+/* первый блок вместе с верхней панелью — видимая высота экрана; «Играть» появляется при прокрутке */
+.hero.home { min-height: calc(100vh - var(--head-h)); min-height: calc(100svh - var(--head-h)); display: grid; align-content: center; }
+.hero.home .wrap.home-wrap { padding-top: 22px; padding-bottom: 26px; }
+.home-title { padding-block: 10px 6px; }
+.home-title .greet { margin-top: 8px; }
+.home-all { padding: 12px 26px; min-width: 0; }
+.home-all:active { transform: none; }
+.card-play .btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.card-play .btn { gap: 8px; }
+.seg.x-who { display: grid; grid-template-columns: 1fr 1fr; }
+.x-cancelled { margin: 0; }
+/* 21.11 (тест): панель под картой — три центральных значка без круглой обводки, области нажатия прежние */
+.vb-nav .vb-mid .icon-btn, .vb-nav > span .icon-btn { border-color: transparent; background: transparent; color: var(--cream, #f1e6c8); box-shadow: none; }
+:root[data-theme="light"] .vb-nav > span .icon-btn { color: var(--text); }
+.vb-nav > span .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vb-nav > span .icon-btn.is-on { color: var(--accent); }
+/* «Отправить другу / с вопросом» — перенос по смыслу на узком экране */
+.card-acts .btn .l2::before { content: ' '; }
+@media (max-width: 430px) { .card-acts .btn .l1, .card-acts .btn .l2 { display: block; } .card-acts .btn .l2::before { content: ''; } }
+.foot-x { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; }
+.foot-x a { padding: 8px 10px; min-height: 40px; display: inline-flex; align-items: center; border-radius: 999px; text-decoration: none; }
+.foot-x a:focus-visible { outline: 3px solid var(--focus); }
+.x-signin { justify-self: center; font-size: .92rem; color: var(--text-2); }
+.st-lead { margin: 0; text-align: center; max-width: 420px; }
+/* значок раскрытия — за изображением, у левого верхнего угла, не перекрывает иллюстрацию */
+.live-card-btn .zoom-ic { right: auto; bottom: auto; left: -42px; top: 0; width: 34px; height: 34px; background: transparent; border: 1.5px solid var(--border-strong, #888); color: var(--text); box-shadow: none; }
+/* 21.11 (тест): порядок карт — компактный переключатель над сеткой, как «Карта / Вопросы», без крупной рамки */
+.seg.gal-order { display: inline-flex; margin: 6px 0 12px; padding: 3px; border-radius: 12px; border: 0; background: var(--surface-3); }
+.seg.gal-order button { min-height: 36px; padding: 6px 14px; border-radius: 9px; font-size: .88rem; }
+/* 21.11 (тест): на открытом экране игры основной текст инструкции — основным цветом (кремовый в тёмной теме, тёмный в светлой) */
+.solo-page .lead, .solo-page .imag-step > p, .live .lead, .group-play .lead { color: var(--text); }
+.game-lead { color: var(--accent-2, #8ab4ff); font-weight: 600; }
+:root[data-theme="light"] .game-lead { color: #2f55b8; }
+/* раскрытый режим: одна кнопка закрытия; переключатель, повторное раскрытие и «О карте» скрыты; элементы не прыгают */
+.viewer.is-full .vt-seg, .viewer.is-full [data-unfull], .viewer.is-full [data-full], .viewer.is-full .viewer-top [data-info] { display: none !important; }
+.viewer.is-full .viewer-top { background: transparent; }
+.viewer.is-full .vt-start { position: absolute; left: max(8px, env(safe-area-inset-left, 0px)); top: env(safe-area-inset-top, 0px); }
+/* 21.11 (тест): «История из трёх карт» */
+.s3-steps { display: flex; gap: 6px; justify-content: center; }
+.s3-steps button { width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid var(--border-strong, #888); background: transparent; color: var(--text); font-weight: 700; cursor: pointer; }
+.s3-steps button.on { background: var(--accent); color: #10142a; border-color: var(--accent); }
+.s3-steps button:disabled { opacity: .35; cursor: default; }
+.s3-text { width: 100%; min-height: 0; resize: none; overflow: hidden; line-height: 1.45; }
+.s3-final { display: grid; gap: 14px; }
+.s3-part { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: start; }
+.s3-part .live-card.s3-thumb { width: 96px; height: auto; }
+.s3-part p { margin: 2px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.eagle-hidden { display: grid; place-items: center; gap: 10px; width: min(300px, 74vw); aspect-ratio: 7 / 12; margin: 0 auto; border: 1.5px dashed var(--border-strong, #888); border-radius: 16px; color: var(--text); }
+.eagle-hidden svg { width: 72px; height: 72px; stroke: currentColor; fill: none; stroke-width: 1.4; }
+.eagle-answer { margin: 0; color: var(--text); font-weight: 600; }
+/* 21.11 (тест): ассоциации — меньше обводок, поле добавления на всю ширину, примеры по шагам */
+.branch { gap: 8px; }
+.branch > .assoc-root { margin-bottom: 6px; }
+.assoc-w { border: 0; padding: 3px 4px; }
+.assoc-w:hover { border: 0; background: var(--surface-3); }
+.assoc-root.on, .assoc-w.on { outline: none; background: var(--accent); color: #10142a; border-radius: 6px; }
+.assoc-add.wide { display: grid; gap: 6px; width: 100%; }
+.assoc-add.wide .row { gap: 6px; flex-wrap: nowrap; }
+.assoc-add.wide input { flex: 1 1 auto; min-width: 0; width: 100%; font-size: 16px; }
+.assoc-add-l { font-size: .9rem; color: var(--text-2); }
+.imag-ex summary { cursor: pointer; color: var(--text-2); font-size: .92rem; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.imag-ex summary::-webkit-details-marker { display: none; }
+.imag-ex summary::before { content: '▸'; transition: transform .15s ease; }
+.imag-ex[open] summary::before { transform: rotate(90deg); }
+.imag-ex-in { display: flex; gap: 12px; align-items: flex-start; margin-top: 8px; }
+.imag-ex-in p { margin: 0 0 4px; }
+.ex-thumb { border-radius: 6px; flex: none; height: auto; }
+.branches.ex { gap: 8px; }
+.img-text { font-size: 1.25rem; line-height: 1.4; margin: 0; color: var(--text); white-space: pre-wrap; }
+.small-pair { font-size: 1rem; justify-content: flex-start; }
+.img-src { display: flex; align-items: center; gap: 10px; }
+.img-src img { border-radius: 6px; }
+.img-item .img-src-s { display: grid; justify-items: center; gap: 2px; flex: none; }
+.img-item .img-src-s img { border-radius: 4px; }
+.img-text-s { font-weight: 600; }
+.about-intro p { margin: 0 0 12px; line-height: 1.55; }
+.about-closing { margin: 8px 0 0; }

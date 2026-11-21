@@ -1,7 +1,8 @@
-import { monthLabel, t } from '../i18n.js';
+import { t, lang } from '../i18n.js';
 import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { SLOGAN, TAGLINE } from '../share.js';
+import { ABOUT_CARDS, ABOUT_FLOW, ABOUT_CLOSING } from '../content.js';
 import { session, ic, tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
 const openFromQuery = (cards, openAt) => {
@@ -19,7 +20,7 @@ const openFromQuery = (cards, openAt) => {
 // По общей центральной оси: вопрос, три карты, «Все карты», две кнопки отправки. Ниже — два самостоятельных входа
 // и «Участвовать в проекте». Карточка направления целиком — ссылка; пиктограмма рядом с заголовком.
 const ENTRIES = [
-  ['/games', 'dice', 'Играть', 'Play', 'Игры с картами — одному или компанией.', 'Card games — on your own or with friends.'],
+  ['/games', 'cube', 'Играть', 'Play', 'Игры с картами — одному или компанией.', 'Card games — on your own or with friends.'],
   ['/meetings', 'chat', 'Найти встречу', 'Find a meeting', 'Приходите на Dialogue Flow, чтобы познакомиться и пообщаться с другими участниками.', 'Come to Dialogue Flow to meet and talk with other participants.'],
   ['/chats', 'chats', 'Общаться с участниками', 'Talk with participants', 'Чаты участников, фасилитаторов и кураторов проекта.', 'Chats for participants, facilitators and curators of the project.'],
 ];
@@ -38,7 +39,7 @@ export async function home(ctx) {
         <h2 class="home-q">${esc(tt('Что ты здесь видишь?', 'What do you see here?'))}</h2>
         <a class="btn home-ask" href="${u('/library?play=friend')}">${esc(tt('Спроси друга', 'Ask a friend'))}</a>
         <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
-        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards"><span class="cards2" aria-hidden="true"><i class="c-back"></i><i class="c-front"></i></span>${esc(tt('Все карты', 'All cards'))}</a>
+        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards">${esc(tt('Все карты', 'All cards'))}</a>
         <div class="home-send">
           <a class="btn home-out" href="${u('/library?play=postcard')}">${ic.mail || ic.cards}<span>${esc(tt('Отправить открытку', 'Send a postcard'))}</span></a>
         </div>
@@ -49,14 +50,6 @@ export async function home(ctx) {
       <h2 class="home-join-h" id="join">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</h2>
       <div class="roles">${JOIN.map(roleCard).join('')}</div>
     </section>`;
-  // «Все карты»: стопка на пиктограмме один раз раздвигается, переход — сразу (анимация только у пиктограммы)
-  const all = ctx.main.querySelector('#all-cards');
-  // задняя карта коротко выезжает из-под передней (как отклик кубика), затем сразу галерея; при уменьшении движения — сразу
-  if (all) all.addEventListener('click', (e) => {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || e.metaKey || e.ctrlKey) return;
-    e.preventDefault(); e.stopPropagation(); all.classList.remove('fan'); void all.offsetWidth; all.classList.add('fan');
-    setTimeout(() => { if (ctx.alive()) ctx.navigate('/library'); }, 230);
-  });
   // Три вертикальные иллюстрации в ровном ряду с небольшим перекрытием; при новом заходе — другие работы.
   try {
     const { cards } = await api('/api/cards');
@@ -86,10 +79,9 @@ export async function about(ctx) {
   try { assets = await api('/api/guides/project/assets'); } catch { /* без документа */ }
   if (!ctx.alive()) return;
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><h1>${esc(tt('Что такое Dialogue Cards?', 'What is Dialogue Cards?'))}</h1>
-      <p class="sub">${esc(SLOGAN())}</p></div>
+    <div class="page-head"><h1>${esc(tt('Что такое Dialogue Cards?', 'What are Dialogue Cards?'))}</h1></div>
     <div class="about-intro stack" style="gap:10px">
-      <p>${esc(tt('Dialogue Cards — иллюстрации, с которых легко начать разговор. У карты нет правильного значения: то, что ты в ней видишь, то она и означает.', 'Dialogue Cards are illustrations that make it easy to start a conversation. A card has no correct meaning: whatever you see in it is what it means.'))}</p>
+      ${paras(ABOUT_CARDS)}
       <p><b>${esc(tt('Обмен взглядами', 'Exchanging views'))}</b></p>
       <ol class="steps"><li>${esc(tt('Выбери карту.', 'Choose a card.'))}</li><li>${esc(tt('Напиши, что тебе в ней откликнулось.', 'Write what speaks to you in it.'))}</li>
         <li>${esc(tt('Отправь карту другу. Он увидит твой ответ, когда напишет свой.', 'Send the card to a friend. They will see your answer once they write theirs.'))}</li><li>${esc(tt('Посмотрите, что увидел каждый.', 'See what each of you saw.'))}</li></ol>
@@ -99,14 +91,19 @@ export async function about(ctx) {
       <div class="about-body"><p class="muted">${esc(tt('Текст готовят авторы проекта.', 'The project authors are preparing this text.'))}</p></div></details>`).join('')}</div>
     <div class="card-ui flat stack"><b>${esc(tt('Полный документ о проекте', 'The full project document'))}</b>
       ${assets.pdf ? `<a class="btn yellow" href="${u('/guides/project/guide.pdf')}" download style="justify-self:start">${esc(tt('Скачать документ (PDF)', 'Download the document (PDF)'))}</a>` : `<p class="muted" style="margin:0">${esc(tt('Полный документ проекта готовится.', 'The full project document is being prepared.'))}</p>`}</div>
+    <p class="about-closing">${esc(tt(ABOUT_CLOSING.ru, ABOUT_CLOSING.en))}</p>
+    <a class="btn yellow" href="${u('/start#join')}" style="justify-self:start">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
   </div>`;
 }
+
+// абзацы текста о проекте: строки абзаца — с новой строки; **Dialogue Cards** — выделение
+const paras = (T) => (lang === 'en' ? T.en : T.ru).map((p) => `<p>${p.map((l) => esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')).join('<br>')}</p>`).join('');
 
 // ---------- «Что такое Dialogue Flow?» — для тех, кто впервые идёт на встречу (21.11.2026; тексты — как в поиске встреч) ----------
 export function aboutFlow(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><p class="eyebrow">Dialogue Flow</p><h1>${esc(tt('Что такое Dialogue Flow?', 'What is Dialogue Flow?'))}</h1></div>
-    <p>${esc(tt('На Dialogue Flow можно познакомиться и поговорить о том, о чём редко заходит речь при первой встрече.', 'At Dialogue Flow you can meet people and talk about things that rarely come up when you first meet.'))}</p>
+    <div class="about-intro">${paras(ABOUT_FLOW)}</div>
     <h2 style="margin:0;font-size:1.2rem">${esc(tt('Как проходит встреча', 'How a meeting goes'))}</h2>
     <ol class="steps">
       <li>${esc(tt('Фасилитатор знакомит участников с форматом.', 'The facilitator introduces the format.'))}</li>
@@ -125,7 +122,7 @@ export function games(ctx) {
     <div class="page-head"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1></div>
     <div class="list">
       <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b></span></a>
-      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub2">${esc(tt('Для живой встречи · 2–20 человек', 'For a live meeting · 2–20 people'))}<br>${esc(tt('Каждый со своего телефона.', 'Everyone on their own phone.'))}</span></span></a>
+      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub2">${esc(tt('Для живой встречи · 2–20 участников', 'For a live meeting · 2–20 players'))}<br>${esc(tt('Каждый со своего телефона', 'Everyone on their own phone'))}</span></span></a>
     </div></div>`;
 }
 
@@ -139,12 +136,23 @@ export async function library(ctx) {
   let cards;
   try { ({ cards } = await api('/api/cards')); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const groups = [];
-  for (const [i, c] of cards.entries()) {
-    const label = monthLabel(c.publishedAt);
-    if (!groups.length || groups[groups.length - 1].label !== label) groups.push({ label, items: [] });
-    groups[groups.length - 1].items.push([c, i]);
-  }
+  // Порядок (21.11.2026): «Сначала новые» — по дате публикации в галерее (при равной дате — по номеру карты, порядок с сервера);
+  // «Вперемешку» — вся выборка, перемешанная один раз и запомненная на время сессии: после просмотра карты и возврата
+  // порядок и место в сетке те же. Заголовков по месяцам больше нет.
+  const byDate = cards.slice();
+  const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* */ } } };
+  let order = ss.get('dc_gal_order') === 'mix' ? 'mix' : 'new';
+  const mixed = () => {
+    const codes = byDate.map((c) => c.code); let saved = null; try { saved = JSON.parse(ss.get('dc_gal_mix') || 'null'); } catch { /* */ }
+    if (!Array.isArray(saved) || saved.length !== codes.length || !codes.every((c) => saved.includes(c))) {
+      saved = codes.slice(); for (let i = saved.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [saved[i], saved[j]] = [saved[j], saved[i]]; }
+      ss.set('dc_gal_mix', JSON.stringify(saved));
+    }
+    const by = new Map(byDate.map((c) => [c.code, c])); return saved.map((c) => by.get(c));
+  };
+  cards = order === 'mix' ? mixed() : byDate;
+  const hintText = () => (order === 'mix' ? tt(`${cards.length} карт · вперемешку · нажми на карту, чтобы рассмотреть её`, `${cards.length} cards · shuffled · tap a card to see it up close`)
+    : tt(`${cards.length} карт · новые сверху · нажми на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`));
   const X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   const pickHtml = () => !intent ? '' : `<div class="pick-mode" role="region" aria-label="${esc(intent === 'postcard' ? tt('Открытка', 'Postcard') : tt('Вопрос другу', 'Question to a friend'))}">
       ${intent === 'postcard' ? (ic.mail || ic.cards) : ic.people}<b>${esc(intent === 'postcard' ? tt('Открытка', 'Postcard') : tt('Вопрос другу', 'Question to a friend'))}</b>
@@ -153,11 +161,12 @@ export async function library(ctx) {
   ctx.main.innerHTML = `<div class="wrap page">
     <div id="pick">${pickHtml()}</div>
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
-      <p class="muted gal-hint" ${intent ? 'hidden' : ''}>${esc(tt(`${cards.length} карт · новые сверху · нажми на карту, чтобы рассмотреть её`, `${cards.length} cards · newest first · tap a card to see it up close`))}</p></div>
+      <p class="muted gal-hint" ${intent ? 'hidden' : ''}>${esc(hintText())}</p></div>
       <div class="play-rows" id="play"><div>${diceButtonHtml()}</div>
         <div class="play-two" ${intent ? 'hidden' : ''}><a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a>
         <a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div></div>
-    ${cards.length ? groups.map((g) => `<h2 class="month-title">${esc(g.label)}</h2><div class="grid">${g.items.map(([c, i]) => tileHtml(c, i)).join('')}</div>`).join('') : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
+    ${cards.length ? `<div class="seg gal-order" role="radiogroup" aria-label="${esc(tt('Порядок карт', 'Card order'))}"><button type="button" role="radio" data-order="new" aria-checked="${order === 'new'}">${esc(tt('Сначала новые', 'Newest first'))}</button><button type="button" role="radio" data-order="mix" aria-checked="${order === 'mix'}">${esc(tt('Вперемешку', 'Shuffled'))}</button></div>
+      <div class="grid" id="gal">${cards.map((c, i) => tileHtml(c, i)).join('')}</div>` : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
     <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
       <p class="muted small">${esc(tt('Предложить иллюстрацию, провести встречу, стать куратором', 'Suggest an illustration, host a meeting, become a curator'))}</p></div>
   </div>`;
@@ -177,7 +186,16 @@ export async function library(ctx) {
   });
   // тап и кубик подчиняются одному активному режиму: просмотр, открытка или вопрос другу
   const choose = (i) => (intent ? ctx.navigate((intent === 'postcard' ? '/postcard/' : '/play/') + cards[i].code + (intent === 'friend' && ctx.query.get('reply') ? '?reply=' + encodeURIComponent(ctx.query.get('reply')) : '')) : openAt(i));
-  ctx.main.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => choose(Number(b.dataset.i))));
+  const gal = ctx.main.querySelector('#gal');
+  if (gal) gal.addEventListener('click', (e) => { const b = e.target.closest('.tile'); if (b) choose(Number(b.dataset.i)); });
+  ctx.main.querySelectorAll('[data-order]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.order === order) return;
+    order = b.dataset.order; ss.set('dc_gal_order', order); if (order === 'mix') ss.set('dc_gal_mix', ''); // «Вперемешку» — каждый раз новое перемешивание
+    cards = order === 'mix' ? mixed() : byDate;
+    gal.innerHTML = cards.map((c, i) => tileHtml(c, i)).join('');
+    ctx.main.querySelectorAll('[data-order]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.order === order)));
+    const h = ctx.main.querySelector('.gal-hint'); if (h) h.textContent = hintText();
+  }));
   // Случайное открытие — только просмотр (или выбор в режиме): счётчик выборов не меняется.
   wireDice(ctx.main.querySelector('#rnd'), () => cards.length && choose(Math.floor(Math.random() * cards.length)), ctx.alive);
   openFromQuery(cards, openAt);
@@ -215,7 +233,7 @@ export async function cardPage(ctx, code) {
             <textarea name="text" maxlength="2000" required></textarea></label><div><button class="btn dark" type="submit">${esc(tt('Отправить', 'Post'))}</button></div></form>`
           : `<a class="btn dark" href="${u('/login?next=' + encodeURIComponent('/cards/' + card.code))}">${esc(tt('Войти, чтобы написать', 'Sign in to write'))}</a>`}
       </div></div></div>`;
-    ctx.main.querySelector('#art').addEventListener('click', () => openViewer({ cards: [card], index: 0, mode: 'admin' }));
+    ctx.main.querySelector('#art').addEventListener('click', () => openViewer({ cards: [card], index: 0, mode: 'admin', simple: true }));
     const f = ctx.main.querySelector('#cform');
     if (f) f.addEventListener('submit', async (e) => {
       e.preventDefault();

@@ -31,6 +31,8 @@ export const ic = {
   mail: P('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5 12 13l8.5-6.5"/>'),
   arrowLeft: P('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
   share: P('<path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M6.5 11H5v9h14v-9h-1.5"/>'),
+  // простой контурный куб — общие входы в игры (у «Случайной карты» свой подробный кубик)
+  cube: P('<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>'),
   chevronLeft: P('<path d="M15 5l-7 7 7 7"/>'),
   chevronRight: P('<path d="M9 5l7 7-7 7"/>'),
   close: P('<path d="M6 6l12 12M18 6L6 18"/>'),

@@ -21,7 +21,7 @@ export async function api(path, { method = 'GET', body, form } = {}) {
     res = await fetch(BASE + path, {
       method,
       // X-DC-Visitor — случайный идентификатор этого браузера: обмены, колокольчик и записи гостя (без личных данных)
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'X-DC-Visitor': visitorId() },
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'X-DC-Visitor': visitorId(), 'X-DC-Lang': document.documentElement.lang === 'en' ? 'en' : 'ru' },
       body: form || (body ? JSON.stringify(body) : undefined),
       credentials: 'same-origin',
     });

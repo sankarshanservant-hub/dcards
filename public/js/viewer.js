@@ -50,6 +50,8 @@ function cardUrl(code) {
  *   onChange?: (code) => void
  * }
  */
+// изображения карт как файлы для системного меню «Поделиться» (общий кэш на сессию)
+const cardFiles = new Map();
 export function openViewer(opts) {
   if (current) teardown();
   const opener = document.activeElement;
@@ -239,6 +241,7 @@ export function openViewer(opts) {
     const c = opts.cards[index];
     const counter = $('[data-counter]'); if (counter) counter.textContent = opts.cards.length > 1 ? `${index + 1} / ${opts.cards.length}` : '';
     syncNav();
+    if (opts.mode === 'library') prepFile(c);
     img.src = c.thumb; // уже в кэше — показываем сразу, затем подменяем на полное изображение
     img.alt = c.code;
     const full = new Image();
@@ -318,10 +321,6 @@ export function openViewer(opts) {
   const chev = (open) => `<span class="chev ${open ? 'open' : ''}" aria-hidden="true">▾</span>`;
   const countLine = (info) => (info && typeof info.selectedCount === 'number'
     ? `<p class="choose-count">${esc(info.selectedCount ? t('viewer.selectedCount', { n: info.selectedCount }) : t('viewer.selectedNone'))}</p>` : '');
-  // «Поделиться» (23.11.2026): ссылка на карту или «Сохранить как обои» — предпросмотр вертикальной картинки для телефона
-  const shareMenu = () => (ui.shareMenu ? `<div class="share-pop" role="group" aria-label="${esc(tt('Поделиться', 'Share'))}">
-      <button class="btn light sm" type="button" data-share-link>${esc(tt('Отправить ссылку на карту', 'Send a link to the card'))}</button>
-      <a class="btn light sm" href="${u('/wallpaper/' + opts.cards[index].code)}" data-xopen>${esc(tt('Сохранить как обои', 'Save as wallpaper'))}</a></div>` : '');
   const shareField = () => (ui.share ? `<label class="field small">${esc(tt('Скопируйте ссылку:', 'Copy the link:'))}<input type="text" readonly value="${esc(ui.share)}" data-share-url></label>` : '');
   const linkBtn = (attr, ru, en) => `<button class="link-btn" type="button" ${attr}>${esc(tt(ru, en))}</button>`;
   const questionsBtn = (primary) => `<button class="btn ${primary ? 'yellow wide' : 'light sm'}" type="button" data-questions>${icons.questions}<span>${esc(primary && opts.mode === 'collection' ? tt('Вопросы для собеседника', 'Questions for your partner') : tt('Вопросы', 'Questions'))}</span></button>`;
@@ -343,17 +342,17 @@ export function openViewer(opts) {
         ${talkBadge()}
         ${questionsBtn(true)}
         <div class="vb-row">${linkBtn('data-other', 'Выбрать другую', 'Choose another')}${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}</div>
-        ${shareMenu()}${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}`
+        ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}`
       : chosen ? `${navRow()}
         <div class="vb-row"><div class="chosen-pill">${icons.check}<span>${esc(t('viewer.chosen'))}</span></div>${linkBtn('data-talk', 'Открыть экран разговора', 'Open conversation view')}</div>
         ${questionsBtn(true)}
         <div class="vb-row">${linkBtn('data-cancel', t('viewer.cancel'), t('viewer.cancel'))}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
-        ${shareMenu()}${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}${countLine(info)}`
+        ${shareField()}${note ? `<p class="viewer-count">${esc(note)}</p>` : ''}${countLine(info)}`
       : `${navRow()}
         <button class="btn yellow wide" type="button" data-choose ${ui.saving ? 'disabled aria-busy="true"' : ''}>${esc(ui.saving ? tt('Сохраняем…', 'Saving…') : t(choice ? 'viewer.chooseInstead' : 'viewer.choose'))}</button>
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : choice ? `<p class="viewer-count">${esc(t('viewer.chooseInsteadHint'))}</p>` : ''}
         <div class="vb-row">${questionsBtn(false)}${linkBtn('data-copy', 'Поделиться картой', 'Share card')}${linkBtn('data-info', 'О карте', 'About the card')}</div>
-        ${shareMenu()}${shareField()}${countLine(info)}`;
+        ${shareField()}${countLine(info)}`;
     } else if (opts.mode === 'library') {
       if (mode.talk && info && !info.chosenByMe) { mode.talk = false; el.classList.remove('is-talk'); syncNav(); }
       if (mode.talk) {
@@ -378,10 +377,10 @@ export function openViewer(opts) {
             <button class="icon-btn sm plain" type="button" data-next aria-label="${esc(t('viewer.next'))}" title="${esc(t('viewer.next'))}">${icons.next}</button>
           </div>
           ${ui.fav ? favPanel(c.code) : ''}
-          ${shareMenu()}${shareField()}
-          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span>${esc(tt('Отправить другу с вопросом', 'Send to a friend with a question'))}</span></a>
+          ${shareField()}
+          <div class="card-acts"><a class="btn yellow" href="${u('/play/' + c.code)}" data-xopen>${icons.pair}<span><span class="l1">${esc(tt('Отправить другу', 'Send to a friend'))}</span><span class="l2">${esc(tt('с вопросом', 'with a question'))}</span></span></a>
             <a class="btn pc-outline" href="${u('/postcard/' + c.code)}" data-xopen>${icons.mail}<span>${esc(tt('Отправить как открытку', 'Send as a postcard'))}</span></a></div>
-          <div class="card-play"><a class="btn light" href="${u('/games')}" data-xopen>${esc(tt('Поиграем?', 'Shall we play?'))}</a></div>`;
+          <div class="card-play"><a class="btn light" href="${u('/games')}" data-xopen>${icons.cube}<span>${esc(tt('Играть', 'Play'))}</span></a></div>`;
       }
     }
     syncNav();
@@ -513,14 +512,26 @@ export function openViewer(opts) {
     layout();
   }
   // «Поделиться картой»: системное меню, где оно есть; иначе копирование. Отмена — без сообщений; не вышло — показываем ссылку.
+  // изображение текущей карты как файл — заранее, чтобы системное меню открылось сразу по нажатию
+  function prepFile(c) {
+    if (!navigator.canShare || cardFiles.has(c.code)) return; cardFiles.set(c.code, null);
+    fetch(c.full || c.thumb).then((r) => r.blob()).then((b) => { const ext = (b.type.split('/')[1] || 'webp').replace('jpeg', 'jpg'); cardFiles.set(c.code, new File([b], `dialogue-cards-${c.code}.${ext}`, { type: b.type || 'image/webp' })); }).catch(() => cardFiles.delete(c.code));
+  }
   async function copyLink() {
     // делимся самой картой с авторством — без личного текста; ссылка ведёт на эту карту в галерее
     const c0 = opts.cards[index]; const inf = detailsCache.get(c0.code);
     const url = `${location.origin}${u('/play/' + encodeURIComponent(c0.code))}`; // публичная ссылка карты: получатель начнёт свой обмен
+    // 21.11.2026: одно нажатие — сразу системное меню; изображение карты, если меню умеет принимать файлы (подготовлено заранее)
+    const text = `${SLOGAN()} ${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`;
     if (navigator.share) {
-      try { await navigator.share({ title: 'Dialogue Cards', text: `${SLOGAN()} ${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      const file = cardFiles.get(c0.code);
+      try {
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Dialogue Cards', text: `${text}\n${url}` });
+        else await navigator.share({ title: 'Dialogue Cards', text, url });
+        return;
+      } catch (e) { if (e && e.name === 'AbortError') return; }
     }
-    try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
+    try { await navigator.clipboard.writeText(url); toast(tt('Ссылка на карту скопирована', 'Card link copied')); }
     catch { ui.share = url; renderBottom(); const inp = bottom.querySelector('[data-share-url]'); if (inp) { inp.focus(); inp.select(); } }
   }
   const focusIn = (sel) => { const n = bottom && bottom.querySelector(sel); if (n) n.focus({ preventScroll: true }); };
@@ -602,8 +613,7 @@ export function openViewer(opts) {
       if (btn.hasAttribute('data-questions')) { openQ(opts.mode === 'collection' ? (qs.format || 'pair') : (ui.guideKey || qs.format)); return; }
       if (btn.hasAttribute('data-guide')) { ui.guide = !ui.guide; renderBottom(); focusIn('[data-guide]'); return; }
       if (btn.dataset.g) { ui.guideKey = btn.dataset.g; ui.err = ''; renderBottom(); focusIn(`[data-g="${ui.guideKey}"]`); return; }
-      if (btn.hasAttribute('data-copy')) { ui.shareMenu = !ui.shareMenu; renderBottom(); focusIn('[data-share-link]'); return; }
-      if (btn.hasAttribute('data-share-link')) { ui.shareMenu = false; copyLink(); return; }
+      if (btn.hasAttribute('data-copy')) { copyLink(); return; }
       if (btn.hasAttribute('data-info')) { toggleSheet(); return; }
       if (btn.hasAttribute('data-other')) { setTalk(false); focusIn('[data-choose], [data-guide]'); return; }
       if (btn.hasAttribute('data-talk')) { setTalk(true); focusIn('[data-questions]'); return; }
@@ -689,7 +699,8 @@ export function openViewer(opts) {
   }
 
   // ---------- кнопки и клавиатура ----------
-  $('[data-close]').addEventListener('click', () => closeViewer());
+  // в раскрытом режиме галереи крестик возвращает к обычному просмотру карты; в простом режиме — закрывает просмотр
+  $('[data-close]').addEventListener('click', () => (mode.full && !opts.simple ? setFull(false) : closeViewer()));
   if (!opts.simple) { $('[data-full]').addEventListener('click', () => setFull(true)); $('[data-unfull]').addEventListener('click', () => setFull(false)); }
   const topInfo = el.querySelector('.viewer-top [data-info]'); if (topInfo) topInfo.addEventListener('click', () => toggleSheet());
   el.addEventListener('click', (e) => { if (e.target.closest('[data-prev]')) go(-1); else if (e.target.closest('[data-next]')) go(1); });
@@ -747,6 +758,7 @@ export function refreshViewer() { if (current) current.refreshBottom(); }
 
 export const icons = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>',
+  cube: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>',
   mail: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5 12 13l8.5-6.5"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>',
   heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>',

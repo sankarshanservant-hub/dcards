@@ -183,7 +183,7 @@ export function participant(ctx, slug, col, first) {
     const fd = $('[data-found]'); if (fd) fd.onclick = () => { ui.found[`${st.id}:${st.round}`] = true; ui.showSign = false; draw(); window.scrollTo(0, 0); };
     const sg = $('[data-sign]'); if (sg) sg.onclick = () => { ui.showSign = true; draw(); };
     ctx.main.querySelectorAll('[data-list]').forEach((b) => b.onclick = () => { ui.list = b.dataset.list; draw(); });
-    const zm = $('[data-zoom]'); if (zm) zm.onclick = () => { const c = cardBy.get(st.me.card); if (c) openViewer({ cards: [c], index: 0, mode: 'admin' }); };
+    const zm = $('[data-zoom]'); if (zm) zm.onclick = () => { const c = cardBy.get(st.me.card); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); };
     const fb = $('#fb');
     if (fb) {
       const showFile = () => { const f = (fb.audio.files[0] || fb.video.files[0]); $('#fbfile').textContent = f ? f.name : ''; };

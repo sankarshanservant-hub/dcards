@@ -34,8 +34,8 @@ export async function choose(ctx) {
   const pre = ctx.query.get('collection');
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией', 'Play with friends'))}</h1>
-      <p class="game-lead">${esc(tt('2–20 участников', '2–20 players'))}</p>
-      <div class="game-how"><p>${esc(tt('Один участник открывает игру и создаёт QR-код. Остальные заходят по этому коду со своих телефонов.', 'One player opens the game and creates a QR code. The others join with this code from their own phones.'))}</p>
+      <p class="game-lead">${esc(tt('Для живой встречи · 2–20 участников', 'For a live meeting · 2–20 players'))}<br>${esc(tt('Каждый со своего телефона', 'Everyone on their own phone'))}</p>
+      <div class="game-how"><p>${esc(tt('Один участник открывает игру и создаёт QR-код. Остальные заходят по этому коду.', 'One player opens the game and creates a QR code. The others join with this code.'))}</p>
         <p>${esc(tt('Регистрация не нужна.', 'No sign-up needed.'))}</p></div></div>
     <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
     <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
@@ -256,7 +256,7 @@ export async function room(ctx, code) {
     const sg = $('[data-sign]'); if (sg) sg.onclick = () => { ui.showSign = true; draw(); };
     ctx.main.querySelectorAll('[data-list]').forEach((b) => b.onclick = () => { ui.list = b.dataset.list; draw(); });
     const sd = $('[data-sound]'); if (sd) sd.onclick = () => { unlockSound(); setTimeout(draw, 300); };
-    ctx.main.querySelectorAll('[data-zoom]').forEach((b) => b.onclick = () => { const c = cardsBy.get(b.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin' }); });
+    ctx.main.querySelectorAll('[data-zoom]').forEach((b) => b.onclick = () => { const c = cardsBy.get(b.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); });
     const gu = $('#gurl'); if (gu) gu.addEventListener('focus', () => gu.select());
     const en = $('[data-end]'); if (en) en.onclick = () => { if (confirm(tt('Завершить игру для всех?', 'End the game for everyone?'))) act('end'); };
     const lv = $('[data-leave]'); if (lv) lv.onclick = async () => { await api(`/api/group/${s.code}/leave`, { method: 'POST', body: { deviceId: dev } }).catch(() => {}); ctx.navigate('/group'); };
@@ -265,14 +265,43 @@ export async function room(ctx, code) {
 }
 
 // ---------- «Играть одному»: История из трёх карт ----------
-// Без регистрации, комнаты и QR. Три разные случайные карты открываются по очереди: первая помогает начать историю,
-// вторая меняет её ход, третья помогает закончить. Ход игры хранится в sessionStorage — перезагрузка его не сбрасывает.
-const SOLO_KEY = 'dc_solo_story';
+// Без регистрации, комнаты и QR (21.11.2026 — по тестированию). На каждом шаге: карта (стрелки и свайп листают галерею
+// внутри шага), вопрос и поле для своего фрагмента истории. Записи и карты хранятся в sessionStorage — переходы между
+// шагами, просмотр карты и перезагрузка их не теряют; к прежним шагам можно вернуться и поправить. В финале — три карты
+// и три фрагмента по порядку, «Поделиться» (картинка с картами и текстом + подпись и ссылка) и «Сыграть ещё».
+const SOLO_KEY = 'dc_solo_story3';
 const SOLO_STEPS = () => [
   tt('Первая карта помогает начать историю. Кто здесь? Где это происходит? С чего всё началось?', 'The first card helps start the story. Who is here? Where is it happening? How did it begin?'),
   tt('Вторая карта меняет ход истории. Что случилось неожиданно? Что изменилось?', 'The second card changes the course of the story. What happened unexpectedly? What changed?'),
   tt('Третья карта помогает закончить историю. Чем всё завершилось? С чем остался герой?', 'The third card helps end the story. How did it all end? What is the hero left with?'),
 ];
+function growArea(t) {
+  const fit = () => { t.style.height = 'auto'; const cs = getComputedStyle(t); const bd = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth); t.style.height = `${Math.ceil(t.scrollHeight + bd)}px`; };
+  t.addEventListener('input', fit); requestAnimationFrame(fit);
+}
+/** Картинка для отправки: три карты рядом и три фрагмента целиком (высота — по тексту). */
+async function storyImage(cs, texts) {
+  const W = 1080; const pad = 60; const gap = 24; const cw = Math.floor((W - pad * 2 - gap * 2) / 3); const ch = Math.round(cw * 1560 / 910);
+  const imgs = await Promise.all(cs.map((c) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = c.full || c.thumb; })));
+  try { await Promise.all([document.fonts.load('800 50px Rubik'), document.fonts.load('400 36px Onest')]); } catch { /* */ }
+  const m = document.createElement('canvas').getContext('2d'); m.font = '400 36px Onest, sans-serif';
+  const wrap = (s) => { const out = []; for (const para of String(s || '').split('\n')) { let cur = ''; for (const w of para.split(/\s+/).filter(Boolean)) { const t2 = cur ? `${cur} ${w}` : w; if (m.measureText(t2).width > W - pad * 2 - 60 && cur) { out.push(cur); cur = w; } else cur = t2; } out.push(cur); } return out; };
+  const blocks = texts.map((t2) => wrap(t2.trim() || '—'));
+  const H = pad + 70 + ch + 50 + blocks.reduce((s, b) => s + 60 + b.length * 48 + 20, 0) + 140;
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.fillStyle = '#060c1e'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#f1e6c8'; x.font = '800 50px Rubik, sans-serif'; x.textAlign = 'center'; x.fillText(tt('История из трёх карт', 'A story from three cards'), W / 2, pad + 46);
+  let y = pad + 70;
+  imgs.forEach((im, i) => { const cx = pad + i * (cw + gap); x.save(); x.beginPath(); (x.roundRect ? x.roundRect(cx, y, cw, ch, 18) : x.rect(cx, y, cw, ch)); x.clip(); if (im) x.drawImage(im, cx, y, cw, ch); x.restore(); });
+  y += ch + 50; x.textAlign = 'left';
+  blocks.forEach((b, i) => {
+    x.fillStyle = '#f6c23c'; x.font = '600 30px Onest, sans-serif'; x.fillText(String(i + 1), pad, y + 34);
+    x.fillStyle = '#f1e6c8'; x.font = '400 36px Onest, sans-serif'; let ty = y + 34; for (const l of b) { x.fillText(l, pad + 60, ty); ty += 48; }
+    y += 60 + b.length * 48 + 20 - 26;
+  });
+  x.textAlign = 'center'; x.fillStyle = 'rgba(241,230,200,.75)'; x.font = '400 30px Onest, sans-serif'; x.fillText(tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation'), W / 2, H - 70);
+  return c;
+}
 export async function solo(ctx) { // «История из трёх карт» (/group/solo/story)
   loading(ctx.main);
   let cards;
@@ -281,41 +310,78 @@ export async function solo(ctx) { // «История из трёх карт» (
   const byCode = new Map(cards.map((c) => [c.code, c]));
   let st = null;
   try { st = JSON.parse(sessionStorage.getItem(SOLO_KEY) || 'null'); } catch { st = null; }
-  if (!st || !Array.isArray(st.codes) || st.codes.some((c) => !byCode.has(c))) st = null;
+  if (!st || !Array.isArray(st.codes) || st.codes.some((c) => c && !byCode.has(c))) st = null;
   const save = () => { try { sessionStorage.setItem(SOLO_KEY, JSON.stringify(st)); } catch { /* без сохранения */ } };
   const deal = () => {
     const pool = cards.slice(); const codes = [];
     while (codes.length < 3 && pool.length) codes.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].code);
-    st = { codes, open: 0 }; save();
+    st = { codes, texts: ['', '', ''], step: 0, reached: 0 }; save();
   };
   if (!st) deal();
-  const img = (c, cls = 'live-card') => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="${cls}" src="${esc(c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
+  const img = (c, cls = 'live-card') => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="${cls}" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
+  let shareBlob = null;
   const draw = () => {
-    const opened = st.codes.slice(0, st.open).map((c) => byCode.get(c));
-    const last = opened[opened.length - 1];
     let html;
     if (cards.length < 3) html = `<p class="empty">${esc(tt('Для игры нужно хотя бы три карты в галерее.', 'The game needs at least three cards in the gallery.'))}</p>`;
-    else if (!st.open) {
-      html = `<p class="lead">${esc(tt('Вы откроете три разные карты, одну за другой, и сочините по ним историю — вслух, про себя или на бумаге.', 'You will open three different cards, one after another, and make up a story from them — out loud, silently or on paper.'))}</p>
-        <ol class="solo-steps">${SOLO_STEPS().map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
-        <button class="btn yellow big" type="button" data-next>${esc(tt('Открыть первую карту', 'Open the first card'))}</button>`;
+    else if (!st.step) {
+      html = `<p class="lead">${esc(tt('Ты откроешь три разные карты, одну за другой, и сочинишь по ним историю.', 'You will open three different cards, one after another, and make up a story from them.'))}</p>
+        <ol class="solo-steps">${SOLO_STEPS().map((t2) => `<li>${esc(t2)}</li>`).join('')}</ol>
+        <button class="btn yellow big" type="button" data-go="1">${esc(tt('Открыть первую карту', 'Open the first card'))}</button>`;
+    } else if (st.step <= 3) {
+      const k = st.step - 1; const c = byCode.get(st.codes[k]);
+      html = `<nav class="s3-steps" aria-label="${esc(tt('Шаги истории', 'Story steps'))}">${[1, 2, 3].map((n) => `<button type="button" class="${n === st.step ? 'on' : ''}" data-go="${n}" ${n > st.reached ? 'disabled' : ''} aria-current="${n === st.step ? 'step' : 'false'}">${n}</button>`).join('')}</nav>
+        <div class="imag-carousel"><button class="icon-btn" type="button" data-flip="-1" aria-label="${esc(tt('Другая карта: предыдущая', 'Another card: previous'))}">${ic.chevronLeft}</button>
+          <div class="imag-card" id="s3card">${img(c)}</div>
+          <button class="icon-btn" type="button" data-flip="1" aria-label="${esc(tt('Другая карта: следующая', 'Another card: next'))}">${ic.chevronRight}</button></div>
+        <p class="lead">${esc(SOLO_STEPS()[k])}</p>
+        <label class="sr-only" for="s3t">${esc(tt(`Фрагмент истории ${st.step}`, `Story part ${st.step}`))}</label>
+        <textarea id="s3t" class="s3-text" rows="2" maxlength="1200" placeholder="${esc(tt('Запиши свой фрагмент истории', 'Write your part of the story'))}">${esc(st.texts[k])}</textarea>
+        <button class="btn yellow big" type="button" data-go="${st.step + 1}">${esc(st.step === 1 ? tt('Открыть вторую карту', 'Open the second card') : st.step === 2 ? tt('Открыть третью карту', 'Open the third card') : tt('Посмотреть историю', 'See the story'))}</button>`;
     } else {
-      html = `<p class="eyebrow">${esc(tt(`Карта ${st.open} из 3`, `Card ${st.open} of 3`))}</p>
-        ${opened.length > 1 ? `<div class="g-strip">${opened.slice(0, -1).map((c) => img(c, '')).join('')}</div>` : ''}
-        ${img(last)}
-        <p class="lead">${esc(SOLO_STEPS()[st.open - 1])}</p>
-        ${st.open < 3 ? `<button class="btn yellow big" type="button" data-next>${esc(st.open === 1 ? tt('Открыть вторую карту', 'Open the second card') : tt('Открыть третью карту', 'Open the third card'))}</button>`
-          : `<div class="card-ui flat"><b>${esc(tt('История сложилась', 'The story is complete'))}</b><p class="small muted" style="margin:4px 0 0">${esc(tt('Можно рассказать её кому-нибудь — или сыграть ещё раз с другими картами.', 'You can tell it to someone — or play again with other cards.'))}</p></div>
-          <div class="row"><button class="btn yellow" type="button" data-again>${esc(tt('Сыграть ещё', 'Play again'))}</button><a class="btn light" href="${u('/library')}">${esc(tt('В галерею', 'To the gallery'))}</a><a class="btn light" href="${u('/')}">${esc(tt('На главную', 'Home'))}</a></div>`}`;
+      html = `<div class="s3-final">${st.codes.map((code, i) => `<div class="s3-part">${img(byCode.get(code), 'live-card s3-thumb')}<div><b>${i + 1}</b><p>${esc(st.texts[i] || '—')}</p><button class="link-btn small" type="button" data-go="${i + 1}">${esc(tt('Изменить', 'Edit'))}</button></div></div>`).join('')}</div>
+        <button class="btn yellow big send-btn" type="button" data-share>${esc(tt('Поделиться', 'Share'))}</button>
+        <p class="vb-note s3-hint" role="status"></p>
+        <button class="btn light" type="button" data-again>${esc(tt('Сыграть ещё', 'Play again'))}</button>`;
     }
     ctx.main.querySelector('#solo').innerHTML = html;
+    const ta = ctx.main.querySelector('#s3t');
+    if (ta) { growArea(ta); ta.addEventListener('input', () => { st.texts[st.step - 1] = ta.value; save(); }); }
+    const sc = ctx.main.querySelector('#s3card');
+    if (sc) { let x0 = null; let y0 = 0; sc.style.touchAction = 'pan-y';
+      sc.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; });
+      sc.addEventListener('pointerup', (e) => { if (x0 == null) return; const dx = e.clientX - x0; const dy = e.clientY - y0; x0 = null; if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) { sc.dataset.swiped = '1'; flip(dx < 0 ? 1 : -1); } });
+      sc.addEventListener('click', (e) => { if (sc.dataset.swiped) { e.stopPropagation(); e.preventDefault(); delete sc.dataset.swiped; } }, true); }
+    if (st.step === 4) { shareBlob = null; storyImage(st.codes.map((c) => byCode.get(c)), st.texts).then((cv) => cv.toBlob((b) => { shareBlob = b; }, 'image/png')); }
   };
+  // смена карты на текущем шаге — по порядку галереи, без повтора карт других шагов; текст фрагмента остаётся
+  const flip = (d) => {
+    const k = st.step - 1; const others = st.codes.filter((_, i) => i !== k); let i = cards.findIndex((c) => c.code === st.codes[k]);
+    for (let n = 0; n < cards.length; n++) { i = (i + d + cards.length) % cards.length; if (!others.includes(cards[i].code)) break; }
+    st.codes[k] = cards[i].code; save();
+    const box = ctx.main.querySelector('#s3card'); if (box) box.innerHTML = img(cards[i]);
+  };
+  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => `${i + 1}. ${t2.trim() || '—'}`).join('\n')}\n\n${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${location.origin}${u('/group/solo/story')}`;
   ctx.main.innerHTML = `<div class="live"><div class="live-in"><p class="eyebrow">${esc(tt('Играть одному', 'Play solo'))}</p><h1 style="margin:0">${esc(tt('История из трёх карт', 'A story from three cards'))}</h1><div class="live-in" id="solo" style="max-width:none"></div></div></div>`;
-  ctx.main.querySelector('#solo').addEventListener('click', (e) => {
-    if (e.target.closest('[data-next]')) { st.open = Math.min(3, st.open + 1); save(); draw(); window.scrollTo({ top: 0 }); }
-    else if (e.target.closest('[data-again]')) { deal(); st.open = 1; save(); draw(); window.scrollTo({ top: 0 }); }
+  ctx.main.querySelector('#solo').addEventListener('click', async (e) => {
+    const go = e.target.closest('[data-go]'); if (go && !go.disabled) { st.step = Number(go.dataset.go); st.reached = Math.max(st.reached || 0, Math.min(3, st.step)); save(); draw(); window.scrollTo({ top: 0 }); return; }
+    const fl = e.target.closest('[data-flip]'); if (fl) { flip(Number(fl.dataset.flip)); return; }
+    if (e.target.closest('[data-again]')) { if (!confirm(tt('Начать новую историю? Эта история не сохранится.', 'Start a new story? This one will not be kept.'))) return; deal(); st.step = 1; st.reached = 1; save(); draw(); window.scrollTo({ top: 0 }); return; }
+    if (e.target.closest('[data-share]')) {
+      const hint = ctx.main.querySelector('.s3-hint');
+      const blob = shareBlob || await new Promise((res) => storyImage(st.codes.map((c) => byCode.get(c)), st.texts).then((cv) => cv.toBlob(res, 'image/png')));
+      const file = new File([blob], 'dialogue-cards-story.png', { type: 'image/png' });
+      if (navigator.share) {
+        try { if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], text: shareText() }); else await navigator.share({ text: shareText() }); return; }
+        catch (x) { if (x && x.name === 'AbortError') return; }
+      }
+      // системной отправки нет — сохраняем картинку и копируем текст целиком
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+      let copied = false; try { await navigator.clipboard.writeText(shareText()); copied = true; } catch { /* */ }
+      if (hint) hint.textContent = copied ? tt('Картинка скачана, текст истории скопирован — вставь его в сообщение.', 'The image was downloaded and the story text copied — paste it into your message.') : tt('Картинка скачана.', 'The image was downloaded.');
+      return;
+    }
     const z = e.target.closest('[data-zoom]');
-    if (z) { const c = byCode.get(z.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin' }); }
+    if (z) { const c = byCode.get(z.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); }
   });
   draw();
 }

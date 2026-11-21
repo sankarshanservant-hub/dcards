@@ -5,8 +5,8 @@
 import { tt, toast, esc, u } from './util.js';
 
 // Подпись проекта (21.11.2026, окончательная): одна строка для интерфейса, сообщений и метаданных.
-export const TAGLINE = () => tt('Яркий повод для интересного разговора', 'A bright reason for an interesting conversation');
-export const SLOGAN = () => tt('Dialogue Cards — яркий повод для интересного разговора', 'Dialogue Cards — a bright reason for an interesting conversation');
+export const TAGLINE = () => tt('Повод для интересного разговора', 'A reason for an interesting conversation');
+export const SLOGAN = () => tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation');
 export const friendText = () => tt('Мне интересно, что ты увидишь в этой карте. Напиши пару слов о том, что тебе откликнулось, и увидишь мой ответ.',
   'I wonder what you will see in this card. Write a few words about what speaks to you, and you will see my answer.');
 export const storyText = () => tt('Хочешь поделиться нашими ответами в сторис? Открой эту ссылку и посмотри, как это будет выглядеть.',
