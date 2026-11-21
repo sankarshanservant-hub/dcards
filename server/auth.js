@@ -16,7 +16,9 @@ const TTL_MS = 30 * 24 * 3600 * 1000;
 const ROLES = ['artist', 'curator', 'facilitator', 'admin'];
 // Без вложенного перебора и с пределом длины: прежний шаблон на строке «a@....@» в 150 КБ занимал сервер на 12 с.
 const EMAIL_RE = /^(?=.{3,254}$)[^\s@]{1,64}@[^\s@.]+(?:\.[^\s@.]+)+$/;
-const CPATH = config.basePath || '/';
+const site = require('./site');
+// путь cookie — путь приложения на этом входе ('/' на dialogue.cards, '/dialogue-cards' на портале)
+const cpath = () => site.base() || '/';
 
 function loadSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
@@ -51,10 +53,10 @@ const displayName = (u) => (u ? (u.public_name || u.name) : '');
 
 function issue(res, req, userId) {
   const payload = `${userId}.${Date.now() + TTL_MS}`;
-  res.cookie(COOKIE, `${payload}.${sign(payload)}`, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: TTL_MS, path: CPATH });
+  res.cookie(COOKIE, `${payload}.${sign(payload)}`, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: TTL_MS, path: cpath() });
   stmt.touch.run(userId);
 }
-function clear(res) { res.clearCookie(COOKIE, { path: CPATH }); res.clearCookie(DEMO_COOKIE, { path: CPATH }); }
+function clear(res) { res.clearCookie(COOKIE, { path: cpath() }); res.clearCookie(DEMO_COOKIE, { path: cpath() }); }
 
 /** Загружает пользователя сессии в req.user (с ролями) — промежуточный обработчик для всех запросов. */
 function loadUser(req, res, next) {
@@ -141,11 +143,12 @@ function findOrCreateUser(email, name, publicName) {
 // ---------- вход общим аккаунтом сайта ----------
 /** Проверяет сессию сайта (API «me») и возвращает пользователя Dialogue Cards, связанного с этим аккаунтом. */
 async function siteLogin(siteSession) {
-  if (!config.siteAuthUrl) return { error: 'site_login_disabled' };
+  // только на входе через портал: на dialogue.cards о портале ничего нет
+  if (!config.siteAuthUrl || !site.portalNow()) return { error: 'site_login_disabled' };
   if (typeof siteSession !== 'string' || siteSession.length < 10 || siteSession.length > 400) return { error: 'bad_session' };
   let r;
   try {
-    const url = `${config.siteAuthUrl}?${new URLSearchParams({ api: 'me', session: siteSession, siteOrigin: config.publicUrl || '' })}`;
+    const url = `${config.siteAuthUrl}?${new URLSearchParams({ api: 'me', session: siteSession, siteOrigin: config.siteUrl || config.publicUrl || '' })}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     r = await res.json();
   } catch { return { error: 'site_unreachable' }; }
@@ -221,7 +224,7 @@ function grant(userId, role, by) { if (ROLES.includes(role)) stmt.grant.run(user
 function revoke(userId, role) { stmt.revoke.run(userId, role); }
 
 module.exports = {
-  CPATH, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
+  cpath, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
   loadUser, requireUser, requireRole, issue, clear, publicUser, displayName, rolesOf,
   siteLogin, requestCode, checkCode, consumeCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, ownerPasswordTooShort, demoUser, grant, revoke,
 };

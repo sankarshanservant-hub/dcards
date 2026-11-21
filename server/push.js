@@ -9,8 +9,9 @@ const db = require('./db');
 const community = require('./community');
 
 const config = require('./config');
+const site = require('./site');
 const DATA_DIR = config.dataDir;
-const SUBJECT = process.env.VAPID_SUBJECT || (process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') + config.basePath + '/' : 'https://harekrishna.info/dialogue-cards/');
+const SUBJECT = process.env.VAPID_SUBJECT || (config.publicUrl ? config.publicUrl + (config.siteUrl ? '' : config.basePath) + '/' : 'https://dialogue.cards/');
 const MODES = ['all', 'mentions', 'none'];
 const ROOM_TITLE = { general: 'Общий чат', curators: 'Чат кураторов', facilitators: 'Чат фасилитаторов' };
 
@@ -70,10 +71,10 @@ function subscribe(user, sub, ua = '') {
   const k = s.keys || {};
   if (!pushEndpointOk(endpoint) || !k.p256dh || !k.auth) return { error: 'bad_subscription' };
   // Уже известный адрес переходит к другому человеку только вместе с ключом этой подписки (тот же браузер).
-  const r = db.prepare(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, ua) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, last_error = NULL
+  const r = db.prepare(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, ua, app_url) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, app_url = excluded.app_url, last_error = NULL
     WHERE push_subscriptions.user_id = excluded.user_id OR push_subscriptions.auth = excluded.auth`)
-    .run(user.id, endpoint, String(k.p256dh).slice(0, 200), String(k.auth).slice(0, 100), String(ua).slice(0, 200));
+    .run(user.id, endpoint, String(k.p256dh).slice(0, 200), String(k.auth).slice(0, 100), String(ua).slice(0, 200), site.appUrl());
   if (!r.changes) return { error: 'bad_subscription' };
   return { ok: true };
 }
@@ -91,8 +92,13 @@ async function deliver(userId, payload) {
   const subs = db.prepare('SELECT * FROM push_subscriptions WHERE user_id = ?').all(userId);
   let sent = 0;
   for (const s of subs) {
+    // ссылка — от корня приложения («/team/…»); полный адрес — того входа, где оформлена подписка (dialogue.cards или портал).
+    // Подписки до 21.11.2026 — с портала (harekrishna.info/dialogue-cards/).
+    const rel = payload && typeof payload.url === 'string' && payload.url.startsWith('/') && !payload.url.startsWith('//');
+    const app = s.app_url || (config.siteUrl ? config.siteUrl + config.siteBasePath : (config.publicUrl ? config.publicUrl + config.basePath : config.basePath));
+    const body = rel ? { ...payload, url: app + payload.url } : payload;
     try {
-      await sender({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify(payload), { TTL: 86400, urgency: 'normal' });
+      await sender({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify(body), { TTL: 86400, urgency: 'normal' });
       db.prepare("UPDATE push_subscriptions SET last_ok_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), last_error = NULL WHERE id = ?").run(s.id);
       sent++;
     } catch (e) {
@@ -131,7 +137,6 @@ function recipients(messageId) {
   return out;
 }
 
-const B = config.basePath;
 /** После сохранения сообщения: уведомления в фоне. Повторно об одном сообщении не уведомляем (push_log). */
 function onMessage(messageId) {
   const m = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(messageId);
@@ -143,7 +148,7 @@ function onMessage(messageId) {
     if (!fresh) continue;
     const lead = why === 'all' ? '' : why === 'mention' ? 'Упомянул(а) вас: ' : 'Ответ: ';
     const body = lead + (community.excerpt(m.text, 120) || 'Изображение');
-    jobs.push(deliver(uid, { title: `${author} · ${ROOM_TITLE[m.room] || 'Чат'}`, body, url: `${B}/team/${m.room}?m=${m.id}`, tag: `dc-m${m.id}` }).then((n) => ({ uid, why, sent: n })));
+    jobs.push(deliver(uid, { title: `${author} · ${ROOM_TITLE[m.room] || 'Чат'}`, body, url: `/team/${m.room}?m=${m.id}`, tag: `dc-m${m.id}` }).then((n) => ({ uid, why, sent: n })));
   }
   return Promise.all(jobs);
 }
@@ -160,11 +165,11 @@ function onWorkDecision(decisionId) {
   if (!u || u.is_demo || w.is_demo) return Promise.resolve(0);
   const p = prefsOf(u.id); if (!p.enabled || !p.works) return Promise.resolve(0);
   if (!db.prepare('INSERT OR IGNORE INTO push_work_log (decision_id, user_id) VALUES (?, ?)').run(d.id, u.id).changes) return Promise.resolve(0);
-  return deliver(u.id, { title: 'Dialogue Cards · Мои работы', body: WORK_TEXT[d.action], url: `${B}/artist/works/${w.id}`, tag: `dc-w${w.id}-${d.id}` });
+  return deliver(u.id, { title: 'Dialogue Cards · Мои работы', body: WORK_TEXT[d.action], url: `/artist/works/${w.id}`, tag: `dc-w${w.id}-${d.id}` });
 }
 /** Проверочное уведомление — по нажатию самого человека. */
 function test(user) {
-  return deliver(user.id, { title: 'Dialogue Cards', body: 'Уведомления включены. Так будут приходить ответы и упоминания.', url: `${B}/me/notifications`, tag: 'dc-test' });
+  return deliver(user.id, { title: 'Dialogue Cards', body: 'Уведомления включены. Так будут приходить ответы и упоминания.', url: '/me/notifications', tag: 'dc-test' });
 }
 
 // Колокольчик приглашает вернуться push-уведомлением (нейтральный текст) — по общим настройкам человека.
@@ -172,9 +177,8 @@ require('./bell').onPush((uid, payload, kind) => {
   const u = db.prepare('SELECT is_demo FROM users WHERE id = ?').get(uid); if (!u || u.is_demo) return;
   const p = prefsOf(uid); if (!p.enabled) return;
   if (/^work_/.test(kind)) return; // о решениях по работам — onWorkDecision (своя настройка «Решения по моим работам»)
-  // ссылки колокольчика — от корня приложения («/x/…»); в уведомлении нужен полный путь с /dialogue-cards
-  const url = payload.url && payload.url.startsWith('/') && !(B && payload.url.startsWith(B + '/')) ? B + payload.url : payload.url;
-  deliver(uid, { ...payload, url }).catch(() => {});
+  // ссылки колокольчика — от корня приложения («/x/…»); полный адрес подставляет deliver (по адресу подписки)
+  deliver(uid, payload).catch(() => {});
 });
 
 module.exports = { vapid, pushEndpointOk, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };

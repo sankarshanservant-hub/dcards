@@ -93,7 +93,7 @@
     x.textAlign = 'center'; x.fillStyle = 'rgba(241,230,200,.7)'; x.font = '400 34px Onest, sans-serif';
     x.fillText(`${st.card.code}${st.author ? ' · художник: ' + st.author : ''}`, W / 2, 1700);
     x.fillStyle = '#f6c23c'; x.font = '800 44px Rubik, sans-serif'; x.fillText('D-Cards', W / 2, 1800);
-    x.fillStyle = 'rgba(241,230,200,.7)'; x.font = '400 32px Onest, sans-serif'; x.fillText('harekrishna.info/dialogue-cards', W / 2, 1852);
+    x.fillStyle = 'rgba(241,230,200,.7)'; x.font = '400 32px Onest, sans-serif'; x.fillText((location.host + location.pathname.replace(/\/[^/]*$/, '')).replace(/^www\./, ''), W / 2, 1852); // адрес приложения: dialogue.cards
     const url = c.toDataURL('image/png');
     document.getElementById('story').innerHTML = `<img class="story-prev" src="${url}" alt="Картинка для сторис"><a class="btn w" href="${url}" download="d-cards-${esc(st.card.code)}.png">Скачать картинку</a>`;
   }

@@ -31,10 +31,14 @@ module.exports = {
   // Отправка писем: SMTP_URL=smtps://user:pass@host:465 и MAIL_FROM="Dialogue Cards <noreply@…>".
   smtpUrl: process.env.SMTP_URL || '',
   mailFrom: process.env.MAIL_FROM || 'Dialogue Cards <noreply@localhost>',
-  // Вход общим аккаунтом сайта, на котором стоит приложение (harekrishna.info: Google, Яндекс, письмо).
+  // Вход общим аккаунтом сайта, на котором стоит приложение (harekrishna.info: Google, Яндекс, письмо) — только на входе через портал.
   // Сервер проверяет сессию сайта запросом «me» к его API. По умолчанию — PUBLIC_URL + '/api/seva'; SITE_AUTH_URL=off — выключить.
+  // Второй вход — через портал (server/site.js): SITE_URL=https://harekrishna.info, приложение там — на SITE_BASE_PATH.
+  // Тогда PUBLIC_URL — свой домен приложения (https://dialogue.cards, корень), а BASE_PATH не нужен.
+  siteUrl: (process.env.SITE_URL || '').replace(/\/$/, ''),
+  siteBasePath: ('/' + (process.env.SITE_BASE_PATH || 'dialogue-cards').replace(/^\/+|\/+$/g, '')).replace(/^\/$/, ''),
   siteAuthUrl: process.env.SITE_AUTH_URL === 'off' ? ''
-    : (process.env.SITE_AUTH_URL || (process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') + '/api/seva' : '')),
+    : (process.env.SITE_AUTH_URL || ((process.env.SITE_URL || process.env.PUBLIC_URL) ? (process.env.SITE_URL || process.env.PUBLIC_URL).replace(/\/$/, '') + '/api/seva' : '')),
   maxCollectionSize: 40,
   maxRounds: 20,
   termsVersion: 'draft-2026-11-11',

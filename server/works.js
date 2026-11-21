@@ -9,7 +9,7 @@ const { demoWhere } = require('./demo-scope');
 const db = require('./db');
 const config = require('./config');
 const cards = require('./cards');
-const mediaUrl = (kind, file) => `${config.basePath}/media/works/${kind}/${file}`;
+const mediaUrl = (kind, file) => `${require('./site').base()}/media/works/${kind}/${file}`;
 
 const PLACEHOLDER_CRITERIA = 5;
 const effStatus = (w) => (w.recommended_at && ['submitted', 'discussion'].includes(w.status) ? 'recommended' : w.status);

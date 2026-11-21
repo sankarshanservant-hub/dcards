@@ -419,5 +419,7 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS submissions_client_key ON submissions
 
 // язык интерфейса человека (21.11.2026): нейтральные push-уведомления приходят на нём
 addColumn('users', 'lang', 'TEXT');
+// адрес приложения, с которого оформлена подписка push (dialogue.cards или портал) — туда ведут уведомления (21.11.2026)
+addColumn('push_subscriptions', 'app_url', 'TEXT');
 
 module.exports = db;

@@ -7,12 +7,12 @@ const config = require('./config');
 
 const FULL_HEIGHT = 1600;
 const THUMB_WIDTH = 360;
-const B = config.basePath;
+const site = require('./site');
 
 for (const d of ['full', 'thumb', 'originals', 'works']) fs.mkdirSync(path.join(config.mediaDir, d), { recursive: true });
 
 const codeFor = (n) => `DC-${String(n).padStart(4, '0')}`;
-const mediaUrl = (kind, file) => `${B}/media/${kind}/${file}`;
+const mediaUrl = (kind, file) => `${site.base()}/media/${kind}/${file}`; // путь входа текущего запроса (server/site.js)
 
 function publicCard(row, { withDetails = false } = {}) {
   const c = {
