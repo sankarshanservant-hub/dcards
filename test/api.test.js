@@ -1363,3 +1363,74 @@ test('22.11: демо-сессия, выданная до выключения �
     assert.ok(!me2.json || !me2.json.user, 'без демо-режима старая демо-сессия не принимается');
   } finally { config.demoMode = was; }
 });
+
+test('22.11: игры компанией онлайн — ответы скрыты до раскрытия, ход по очереди, догадки, карта для соседа, «удивило»', async () => {
+  const D = (i) => `device-onl-${String(i).padStart(4, '0')}-abc`;
+  const act = (c, i, action, body = {}) => call('POST', `/api/group/${c}/act`, { deviceId: D(i), action, ...body });
+  const st = (c, i) => call('GET', `/api/group/${c}/state?device=${D(i)}`).then((r) => r.json);
+  const room = async (format, n) => {
+    const c = (await call('POST', '/api/group', { format, deviceId: D(1), name: 'Ведущий' })).json.code;
+    for (let i = 2; i <= n; i++) await call('POST', `/api/group/${c}/join`, { deviceId: D(i), name: 'Игрок' + i });
+    return c;
+  };
+  // «Что видишь ты?»: свой вопрос; чужих ответов не видно, пока не ответят все
+  let c = await room('see', 3);
+  assert.equal((await act(c, 2, 'start')).json.error, 'group_host_only', 'начинает только ведущий');
+  assert.equal((await act(c, 1, 'start', { question: 'Что бы ты здесь изменил?' })).status, 200);
+  let s = await st(c, 2); assert.equal(s.question, 'Что бы ты здесь изменил?'); assert.ok(s.card && s.card.code);
+  await act(c, 1, 'write', { text: 'Море' }); await act(c, 2, 'write', { text: 'Дом' });
+  s = await st(c, 3); assert.equal(s.phase, 'write'); assert.equal(s.answers, undefined, 'до раскрытия ответов нет'); assert.deepEqual(s.ready.length, 2);
+  assert.equal(JSON.stringify(s).includes('Море'), false, 'чужой ответ не уходит на телефон');
+  await act(c, 3, 'write', { text: 'Небо' });
+  s = await st(c, 3); assert.equal(s.phase, 'open'); assert.deepEqual(s.answers.map((a) => a.text).sort(), ['Дом', 'Море', 'Небо']);
+  await act(c, 1, 'again'); s = await st(c, 1); assert.equal(s.phase, 'write'); assert.equal(s.myText, null, 'новый раунд — новый ответ');
+  // «Чья это карта?»
+  c = await room('whose', 3);
+  await act(c, 1, 'start', { theme: 'Какая карта похожа на твоё утро?' });
+  const hands = {}; for (const i of [1, 2, 3]) { const x = await st(c, i); assert.equal(x.hand.length, 4); hands[i] = x.hand.map((k) => k.code); }
+  assert.equal(new Set([...hands[1], ...hands[2], ...hands[3]]).size, 12, 'у каждого свои карты');
+  assert.equal((await act(c, 1, 'pick', { code: hands[2][0], text: 'x' })).json.error, 'not_found', 'чужую карту не выбрать');
+  assert.equal((await act(c, 1, 'pick', { code: hands[1][0] })).status, 400, 'без «почему» — нельзя');
+  for (const i of [1, 2, 3]) await act(c, i, 'pick', { code: hands[i][0], text: 'потому что ' + i });
+  s = await st(c, 2); assert.equal(s.phase, 'guess'); assert.equal(s.slots.length, 3);
+  assert.ok(s.slots.every((x) => x.author === undefined && x.why === undefined), 'авторы скрыты');
+  const ids = Object.fromEntries(s.choices.map((m) => [m.name, m.id]));
+  const own2 = s.slots.find((x) => x.mine);
+  assert.equal((await act(c, 2, 'guess', { slot: own2.slot, who: ids['Ведущий'] })).status, 400, 'свою карту не угадывают');
+  for (const i of [1, 2, 3]) { const x = await st(c, i); for (const sl of x.slots.filter((y) => !y.mine)) await act(c, i, 'guess', { slot: sl.slot, who: ids['Ведущий'] }); }
+  s = await st(c, 3); assert.equal(s.phase, 'open', 'все отметили — раскрытие само');
+  assert.ok(s.slots.every((x) => x.author && x.why && x.guesses.length === 2));
+  assert.equal(JSON.stringify(s).includes('score'), false);
+  // «История по кругу»: ход по очереди, три карты на выбор, у других их нет
+  c = await room('chain', 2);
+  await act(c, 1, 'start');
+  let a = await st(c, 1); const b = await st(c, 2);
+  assert.ok(a.myTurn && a.offer.length === 3 && !b.myTurn && b.offer === undefined && b.turnName === 'Ведущий');
+  assert.equal((await act(c, 2, 'add', { code: a.offer[0].code, text: 'Жил-был' })).status, 400, 'не в свой ход — нельзя');
+  await act(c, 1, 'add', { code: a.offer[0].code, text: 'Жил-был корабль.' });
+  a = await st(c, 2); assert.ok(a.myTurn); await act(c, 2, 'add', { code: a.offer[1].code, text: 'Он искал берег.' });
+  assert.equal((await act(c, 2, 'finish')).json.error, 'group_host_only');
+  await act(c, 1, 'finish'); s = await st(c, 2); assert.equal(s.phase, 'done'); assert.deepEqual(s.story.map((x) => x.text), ['Жил-был корабль.', 'Он искал берег.']);
+  // «Карта для соседа»: каждый готовит для другого; ответы — потом, видны всем
+  c = await room('gift', 3);
+  await act(c, 1, 'start');
+  const gal = (await st(c, 1)).gallery; const tg = {};
+  for (const i of [1, 2, 3]) { const x = await st(c, i); tg[i] = x.target; assert.ok(x.target && x.target !== (i === 1 ? 'Ведущий' : 'Игрок' + i), 'не себе'); await act(c, i, 'pick', { code: gal[i].code, text: 'Вопрос от ' + i }); }
+  s = await st(c, 2); assert.equal(s.phase, 'answer'); assert.ok(s.forMe && s.forMe.question.startsWith('Вопрос от') && s.forMe.answer === null);
+  assert.equal(s.feed, undefined);
+  for (const i of [1, 2, 3]) await act(c, i, 'answer', { text: 'Ответ ' + i });
+  s = await st(c, 1); assert.equal(s.phase, 'open'); assert.equal(s.feed.length, 3); assert.ok(s.feed.every((x) => x.answer && x.question && x.card));
+  // «Мост между картами»: две карты, «удивило» — только чужому ответу, без подсчёта лучшего
+  c = await room('bridge', 2);
+  await act(c, 1, 'start'); s = await st(c, 1); assert.equal(s.cards.length, 2); assert.notEqual(s.cards[0].code, s.cards[1].code);
+  await act(c, 1, 'write', { text: 'Глубина' });
+  assert.equal((await act(c, 1, 'reveal', {})).status, 200, 'ведущий открывает, не дожидаясь всех');
+  s = await st(c, 2); assert.equal(s.phase, 'open');
+  const aid = s.answers[0].id;
+  assert.equal((await act(c, 1, 'heart', { to: aid })).status, 400, 'себе — нельзя');
+  await act(c, 2, 'heart', { to: aid }); s = await st(c, 1); assert.deepEqual(s.answers[0].hearts, ['Игрок2']);
+  await act(c, 2, 'heart', { to: aid }); s = await st(c, 1); assert.deepEqual(s.answers[0].hearts, [], 'повтор снимает отметку');
+  // ушёл последний, кого ждали, — игра идёт дальше
+  c = await room('see', 2); await act(c, 1, 'start'); await act(c, 1, 'write', { text: 'a' });
+  await call('POST', `/api/group/${c}/leave`, { deviceId: D(2) }); assert.equal((await st(c, 1)).phase, 'open');
+});

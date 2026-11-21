@@ -6,6 +6,7 @@ import { openViewer } from '../viewer.js';
 import { subscribe, signHtml, unlockSound, soundsReady, play, clock, left, mmss, bellsFor, keepAwake } from '../live-common.js';
 import { QUESTION_FORMATS } from '../content.js';
 import * as personal from '../personal.js';
+import { ONLINE_KEYS, room as onlineRoom } from './online.js';
 
 export const GROUP_FORMATS = [
   { key: 'one', ru: 'Одна карта на всех', en: 'One card for everyone', dru: 'Все смотрят на одну карту и по кругу говорят, что заметили и о чём она напоминает. Самый простой формат.', den: 'Everyone looks at one card and takes turns saying what they notice and what it reminds them of. The simplest format.' },
@@ -64,6 +65,7 @@ export async function room(ctx, code) {
     return failed(ctx.main, e, ctx.rerender);
   }
   if (!ctx.alive()) return;
+  if (ONLINE_KEYS.includes(s.format)) return onlineRoom(ctx, code, s); // онлайн-игры — свои экраны
   const ui = { preview: null, slot: null, busy: false, text: '', found: {}, showSign: false, list: null, open: {}, change: false, step: null };
   let tick = null; const fired = new Set(); let lastRecall = s.recallAt || null;
   const f = F(s.format);

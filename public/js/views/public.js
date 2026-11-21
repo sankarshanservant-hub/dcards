@@ -77,6 +77,7 @@ export function games(ctx) {
     <div class="list">
       <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b></span></a>
       <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub2">${esc(tt('Для живой встречи · 2–20 участников', 'For a live meeting · 2–20 players'))}<br>${esc(tt('Каждый со своего телефона', 'Everyone on their own phone'))}</span></span></a>
+      <a class="item" href="${u('/group/online')}"><span class="ic">${ic.globe}</span><span class="grow"><b>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</b><span class="game-sub2">${esc(tt('На расстоянии · 2–20 участников', 'At a distance · 2–20 players'))}<br>${esc(tt('Приглашение по ссылке, каждый со своего телефона', 'Invite by link, everyone on their own phone'))}</span></span></a>
     </div></div>`;
 }
 

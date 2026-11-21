@@ -58,6 +58,19 @@ export async function sendInvite(url) {
   else await copyInvite(url);
   return kind;
 }
+/** Приглашение в комнату онлайн-игры (22.11.2026): то же одно нажатие, текст — про игру. */
+export const roomMessage = (url, game) => `${tt(`Давай сыграем в «${game}» в Dialogue Cards. Заходи со своего телефона:`, `Let’s play “${game}” on Dialogue Cards. Join from your phone:`)}\n${url}\n\n${INVITE_SIGN()}`;
+export async function sendRoomInvite(url, game) {
+  const full = roomMessage(url, game);
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (navigator.share && touch) { try { await navigator.share({ text: full }); return 'sys'; } catch { return null; } }
+  const kind = await chooser(); if (!kind) return null;
+  if (kind === 'tg') window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(full.replace(`\n${url}`, ''))}`, '_blank', 'noopener');
+  else if (kind === 'wa') window.open(`https://wa.me/?text=${encodeURIComponent(full)}`, '_blank', 'noopener');
+  else if (kind === 'sys' && navigator.share) { try { await navigator.share({ text: full }); } catch { return null; } }
+  else { try { await navigator.clipboard.writeText(full); toast(tt('Приглашение скопировано', 'Invitation copied')); } catch { prompt(tt('Скопируйте приглашение:', 'Copy the invitation:'), full); } }
+  return kind;
+}
 export async function copyInvite(url) {
   const full = inviteMessage(url);
   try { await navigator.clipboard.writeText(full); toast(tt('Приглашение скопировано', 'Invitation copied')); return true; }

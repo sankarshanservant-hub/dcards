@@ -7,6 +7,7 @@ import * as tool from './views/meeting-tool.js';
 import * as notif from './views/notify.js';
 import * as livePanel from './views/live-panel.js';
 import * as grp from './views/group.js';
+import * as onl from './views/online.js';
 import { syncPush } from './push.js';
 import * as meet from './views/meetings.js';
 import * as acc from './views/account.js';
@@ -70,6 +71,7 @@ const routes = [
   [/^\/facilitator\/m\/new\/?$/, fac.meetingEditor],
   [/^\/facilitator\/m\/(\d+)\/?$/, fac.meetingEditor],
   [/^\/group\/?$/, grp.choose],
+  [/^\/group\/online\/?$/, onl.choose],
   [/^\/group\/solo\/?$/, solo.hub],
   [/^\/group\/solo\/story\/?$/, grp.solo],
   [/^\/group\/solo\/connect\/?$/, solo.connect],
@@ -97,10 +99,11 @@ if (!storage.get('dc_seen')) { if (/^\/x\//.test(appPath())) storage.set('dc_via
 // Если пришли извне, «Назад» ведёт к родительскому экрану (К играм, К чатам…), если он есть. Главная и встреча — без полосы.
 const depth = () => (history.state && history.state.depth) || 0;
 const PARENTS = [
-  [/^\/g\//, '/group', 'К играм', 'To games'],
+  [/^\/g\//, '/games', 'К играм', 'To games'],
   [/^\/group\/solo\/./, '/group/solo', 'Играть одному', 'Play solo'],
   [/^\/group\/solo\/?$/, '/games', 'К играм', 'To games'],
   [/^\/group\/?$/, '/games', 'К играм', 'To games'],
+  [/^\/group\/online\/?$/, '/games', 'К играм', 'To games'],
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
   [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],

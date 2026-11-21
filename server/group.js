@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS group_picks (
   PRIMARY KEY (room_id, step, member_id)
 );`);
 
-const FORMATS = ['one', 'own', 'guess', 'friend', 'story', 'question', 'pairs'];
+const FORMATS = ['one', 'own', 'guess', 'friend', 'story', 'question', 'pairs', 'see', 'whose', 'chain', 'gift', 'bridge'];
 const MAX = 20;
 const TTL = 12 * 3600e3;
 const bus = new EventEmitter(); bus.setMaxListeners(0);
@@ -75,6 +75,10 @@ function randomCard(showDemo, avoid = [], r = null) {
 function count(r, key, code, memberId = null) {
   talk.record(`g:${r.id}:${key}`, code, { source: `group:${r.format}`, demo: !!r.is_demo });
 }
+const cardOutTop = (c) => { if (!c) return null; const k = db.prepare('SELECT * FROM cards WHERE code = ?').get(c); return k ? publicCard(k) : null; };
+// онлайн-игры (на расстоянии) — отдельный модуль с тем же устройством комнаты
+const online = require('./online')({ db, R, dataOf, save, setRoom, pool, randomCard, cardOut: cardOutTop, publicCard, count, shuffle, derange });
+
 function create({ format, deviceId, name, showDemo, codes }) {
   if (!FORMATS.includes(format)) return { error: 'group_bad_format' };
   const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
@@ -103,6 +107,7 @@ function join(code, deviceId, name) {
 function leave(code, deviceId) {
   const r = room(code); if (!r) return { ok: true };
   const m = R.member.get(r.id, deviceId); if (m) db.prepare('UPDATE group_members SET left_at = ? WHERE id = ?').run(now(), m.id);
+  if (online.ONLINE.includes(r.format) && r.status === 'play') online.advance(r); // ушёл последний, кого ждали, — игра идёт дальше
   return { ok: true, id: r.id };
 }
 
@@ -246,6 +251,7 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
   const d = dataOf(r);
   const hostOnly = () => (host ? null : { error: 'group_host_only' });
   if (r.format === 'pairs' && action !== 'end') return pairsAct(r, me, host, action, body);
+  if (online.ONLINE.includes(r.format) && action !== 'end') return online.act(r, me, host, action, body, showDemo);
   switch (action) {
     case 'start': {
       if (hostOnly()) return hostOnly();
@@ -347,6 +353,7 @@ function state(code, deviceId, showDemo) {
     members: members.map((m) => ({ id: m.id, name: m.name })), me: me && !me.left_at ? { id: me.id, name: me.name } : null, phase: d.phase || null };
   if (r.status !== 'play') return out;
   if (r.format === 'pairs') return pairsState(r, me && !me.left_at ? me : null, out);
+  if (online.ONLINE.includes(r.format)) return online.state(r, me && !me.left_at ? me : null, out, showDemo);
   const picks = R.picks.all(r.id, r.step);
   const mine = me ? picks.find((p) => p.member_id === me.id) : null;
   if (r.format === 'one') out.card = cardOut(d.card);
@@ -378,4 +385,4 @@ function state(code, deviceId, showDemo) {
   return out;
 }
 
-module.exports = { FORMATS, bus, touch, version, create, room, join, leave, act, state };
+module.exports = { ONLINE: online.ONLINE, FORMATS, bus, touch, version, create, room, join, leave, act, state };
