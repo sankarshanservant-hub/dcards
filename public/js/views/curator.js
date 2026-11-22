@@ -75,9 +75,9 @@ export async function review(ctx, id) {
         <label class="check"><input type="radio" name="rt" value="new"> <span><b>${esc(tt('Существенно новая карта', 'A substantially new card'))}</b> — ${esc(tt('новый номер и своё обсуждение, прежняя карта остаётся', 'new number and its own discussion; the old card stays'))}</span></label></fieldset>` : ''}
       <div id="crit-wrap" hidden><b>${esc(tt('Причины — критерии (обязательно хотя бы один)', 'Reasons — criteria (at least one is required)'))}</b>
         <div class="crit">${q.criteria.map((c) => `<label><input type="checkbox" name="crit" value="${c.number}"><span class="num">${c.number}</span><span>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временный текст', 'placeholder'))}</span>` : ''}</span></label>`).join('')}</div></div>
-      <label class="field">${esc(tt('Комментарий для художника', 'Comment for the artist'))} <span class="hint" id="chint">${esc(tt('по желанию', 'optional'))}</span><textarea name="comment" maxlength="2000"></textarea></label>
+      <label class="field">${esc(tt('Комментарий для автора', 'Comment for the author'))} <span class="hint" id="chint">${esc(tt('по желанию', 'optional'))}</span><textarea name="comment" maxlength="2000"></textarea></label>
       <p class="form-error" id="err" role="alert"></p>
-      <p class="small muted" id="dhint" style="margin:0">${esc(tt('Рекомендация уходит администратору: работа появится в галерее после его решения. Возврат и отклонение — сразу, художник увидит причины.', 'A recommendation goes to the administrator: the work appears in the gallery after their decision. Return and decline apply at once; the artist sees the reasons.'))}</p>
+      <p class="small muted" id="dhint" style="margin:0">${esc(tt('Рекомендация уходит администратору: работа появится в галерее после его решения. Возврат и отклонение — сразу, автор увидит причины.', 'A recommendation goes to the administrator: the work appears in the gallery after their decision. Return and decline apply at once; the author sees the reasons.'))}</p>
       <button class="btn yellow" type="submit" id="dsubmit">${esc(tt('Рекомендовать к публикации', 'Recommend for publication'))}</button>
     </form>
     <div class="card-ui flat stack" id="disc"><h3>${esc(tt('Обсуждение с коллегами', 'Discussion with colleagues'))}</h3>
@@ -122,7 +122,7 @@ export async function review(ctx, id) {
     const replacementType = df.rt ? (df.querySelector('input[name=rt]:checked') || {}).value : undefined;
     try {
       const r = await api(`/api/curation/works/${id}/decide`, { method: 'POST', body: { action, criteria, comment: df.comment.value, replacementType } });
-      toast(action === 'approve' ? tt('Рекомендовано — работа ушла администратору', 'Recommended — the work went to the administrator') : tt('Решение сохранено, художник увидит причины', 'Decision saved; the artist will see the reasons'));
+      toast(action === 'approve' ? tt('Рекомендовано — работа ушла администратору', 'Recommended — the work went to the administrator') : tt('Решение сохранено, автор увидит причины', 'Decision saved; the author will see the reasons'));
       ctx.rerender();
     } catch (x) { ctx.main.querySelector('#err').textContent = errorText(x); }
   });

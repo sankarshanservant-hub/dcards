@@ -15,14 +15,14 @@ const when = (iso) => fmtDate(iso, { day: 'numeric', month: 'short', hour: '2-di
 // значок раскрытия: только две головки стрелок по диагонали (вверх-вправо и вниз-влево), без стержней
 const ZOOM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 19H5v-5"/></svg>';
 const cardBtn = (c, cls = '') => `<button type="button" class="live-card-btn ${cls}" data-zoom aria-label="${esc(tt('Рассмотреть карту на весь экран', 'View the card full screen'))} ${esc(c.code)}"><img class="live-card" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"><span class="zoom-ic" aria-hidden="true">${ZOOM}</span></button>`;
-// сведения о карте (художник, номер) — не главная информация: компактно, за значком ⓘ
+// сведения о карте (автор, номер) — не главная информация: компактно, за значком ⓘ
 // вопрос другу (20.11.2026): стандартный — на языке интерфейса, изменённый — как написал отправитель
 // 23.11.2026: вопрос по умолчанию — как на главной («Что ты здесь видишь?»); «Что тебе откликается…» остаётся среди вопросов «Для себя»
 const DEFAULT_Q = 'Что ты здесь видишь?';
 const defaultQ = () => tt(DEFAULT_Q, 'What do you see here?');
 const questionText = (q) => (!q || q === DEFAULT_Q ? defaultQ() : q);
 const withInfo = (c, cls) => `<div class="card-with-info">${cardBtn(c, cls)}${authorLine(c)}</div>`;
-const authorLine = (c) => `<details class="card-info"><summary aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}"><span aria-hidden="true">i</span></summary><p class="small muted">${c.author ? `${esc(tt('Художник', 'Artist'))}: ${esc(c.author)} · ` : ''}${esc(c.code)}</p></details>`;
+const authorLine = (c) => `<details class="card-info"><summary aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}"><span aria-hidden="true">i</span></summary><p class="small muted">${c.author ? `${esc(tt('Автор', 'Author'))}: ${esc(c.author)} · ` : ''}${esc(c.code)}</p></details>`;
 const cardShareUrl = (c) => shareLink('/play/' + c.code); // публичная ссылка карты: каждый начинает свой обмен
 const playUrl = (c) => shareLink('/play/' + c.code);
 

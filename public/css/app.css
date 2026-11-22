@@ -1577,3 +1577,10 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .on-crew { display: grid; gap: 8px; }
 .x-reply { flex-direction: column; gap: 2px; text-align: center; }
 .x-reply .small { font-weight: 400; color: var(--text-2); }
+/* невысокий экран компьютера (≈800 px): первый экран целиком — чуть меньше отступы и карты (22.11.2026) */
+@media (min-width: 900px) and (max-height: 860px) {
+  .hero.home .wrap.home-wrap { padding-block: 20px 24px; gap: 16px; }
+  .hero.home .home-axis { gap: 10px; }
+  .hero.home .trio img, .hero.home .trio .slot { width: clamp(96px, 20vh, 160px); }
+  .hero.home .home-axis .trio { min-height: calc(clamp(96px, 20vh, 160px) * 12 / 7 + 22px); }
+}

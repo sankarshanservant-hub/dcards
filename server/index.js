@@ -80,7 +80,7 @@ const upload = multer({
   limits: { fileSize: 60 * 1024 * 1024, files: 20 },
   fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp|tiff)$/.test(file.mimetype)),
 });
-// Работы художников: только JPEG или PNG (условие проекта); неподходящий файл — понятная ошибка, а не молчаливый пропуск.
+// Работы авторов: только JPEG или PNG (условие проекта); неподходящий файл — понятная ошибка, а не молчаливый пропуск.
 const artistUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 60 * 1024 * 1024, files: 20 },
@@ -295,8 +295,8 @@ r.get('/api/registrations/:token/ics', (req, res) => {
 });
 r.post('/api/registrations/:token/cancel', (req, res) => { const r0 = meetings.cancelByToken(String(req.params.token)); if (r0.ok && !r0.already) safe(() => events.registrationCancelled(String(req.params.token))); out(res, r0); });
 
-// ---------- художник ----------
-// Роль художника выдаётся автоматически при первой подаче работ (правила выдачи ролей ещё уточняются).
+// ---------- автор ----------
+// Роль автора выдаётся автоматически при первой подаче работ (правила выдачи ролей ещё уточняются).
 r.get('/api/artist/works', auth.requireUser, (req, res) => res.json({ works: works.myWorks(req.user.id), cards: works.myCards(req.user.id), criteria: works.criteriaList() }));
 r.post('/api/artist/works', auth.requireUser, artistUpload.array('images', 20), wrap(async (req, res) => {
   const notes = [].concat(req.body.notes || []);

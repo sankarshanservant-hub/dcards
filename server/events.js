@@ -88,7 +88,7 @@ function applicationDecided(kind, userId, approve) {
     dedupe: `app:${kind}:${userId}:${Date.now()}` });
 }
 
-// ---------- работы художников ----------
+// ---------- работы авторов ----------
 const queueCount = (demo) => db.prepare(`SELECT COUNT(*) AS n FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NULL AND is_demo = ?`).get(demo ? 1 : 0).n;
 /** Новая работа или версия на проверке — кураторам одной обновляемой записью «в общей очереди N работ». */
 function worksQueued(demo, actorId) {

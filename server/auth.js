@@ -70,7 +70,7 @@ function loadUser(req, res, next) {
       if (parts[2].length === expected.length && crypto.timingSafeEqual(Buffer.from(parts[2]), Buffer.from(expected)) && Number(parts[1]) > Date.now()) {
         const u = stmt.user.get(Number(parts[0]));
         // демо-сессия, выданная, пока демо было включено, без демо-режима не действует (22.11.2026): иначе новый
-        // посетитель этого браузера видит общий тестовый аккаунт («Мира (демо-художник)») и его имя в формах
+        // посетитель этого браузера видит общий тестовый аккаунт («Мира (демо-автор)») и его имя в формах
         if (u && u.is_demo && !config.demoMode) clear(res);
         else if (u) { req.user = u; req.roles = rolesOf(u.id); }
       }
@@ -206,7 +206,7 @@ function ownerUser() {
 
 // ---------- демо-пользователи (тестовый переключатель ролей) ----------
 const DEMO_USERS = [
-  { key: 'artist', name: 'Мира (демо-художник)', roles: ['artist'] },
+  { key: 'artist', name: 'Мира (демо-автор)', roles: ['artist'] },
   { key: 'curator', name: 'Олег (демо-куратор)', roles: ['curator'] },
   { key: 'curator2', name: 'Анна (демо-куратор)', roles: ['curator'] },
   { key: 'facilitator', name: 'Лея (демо-фасилитатор)', roles: ['facilitator'] },

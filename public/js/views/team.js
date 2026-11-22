@@ -230,17 +230,17 @@ export async function chat(ctx, room) {
 
 export async function print(ctx) {
   if (!session.user) return needLogin(ctx.main, '');
-  if (!hasRole('curator', 'artist')) return noRole(ctx.main, tt('куратор или художник', 'curator or artist'));
+  if (!hasRole('curator', 'artist')) return noRole(ctx.main, tt('куратор или автор', 'curator or author'));
   loading(ctx.main);
   let d;
   try { d = await api('/api/print'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const PERM = { not_set: [tt('Разрешение автора не получено', 'No permission from the artist yet'), ''], allowed: [tt('Автор разрешил печать', 'Artist allows printing'), 'mint'], denied: [tt('Автор не разрешил печать', 'Artist does not allow printing'), 'red'] };
+  const PERM = { not_set: [tt('Разрешение автора не получено', 'No permission from the author yet'), ''], allowed: [tt('Автор разрешил печать', 'Author allows printing'), 'mint'], denied: [tt('Автор не разрешил печать', 'Author does not allow printing'), 'red'] };
   ctx.main.innerHTML = `<section class="hero"><div class="wrap" style="padding-block:30px;grid-template-columns:1fr"><div>
       <p class="eyebrow">${esc(tt('Печатное направление · будущий этап', 'Print direction · future stage'))}</p><h1>${esc(tt('Печатная колода', 'Printed deck'))}</h1>
       <p class="lead">${esc(tt('Печатная колода — 40 карт. Статистика выборов на встречах помогает отбору. Доступ к файлам для печати планируется только одобренным фасилитаторам и только с разрешения автора каждой карты.', 'The printed deck is 40 cards. Choice statistics from meetings help with selection. Access to print files is planned only for approved facilitators and only with each artist’s permission.'))}</p></div></div></section>
     <div class="wrap page stack">
-      <div class="notice"><b>${esc(tt('Статус:', 'Status:'))}</b> ${esc(tt('выдача оригиналов выключена до согласования прав с авторами. Продажи и цена колоды — будущий этап, магазин не подключается.', 'distribution of originals is off until rights are agreed with the artists. Sales and deck price are a future stage; no shop is connected.'))}</div>
+      <div class="notice"><b>${esc(tt('Статус:', 'Status:'))}</b> ${esc(tt('выдача оригиналов выключена до согласования прав с авторами. Продажи и цена колоды — будущий этап, магазин не подключается.', 'distribution of originals is off until rights are agreed with the authors. Sales and deck price are a future stage; no shop is connected.'))}</div>
       <h2>${esc(tt('Карты по числу выборов на встречах', 'Cards by number of choices at meetings'))}</h2>
       <div class="list">${d.cards.map((c, i) => `<div class="item"><span class="thumb"><img src="${esc(c.thumb)}" alt="" loading="lazy"></span>
         <span class="body"><b>${i + 1}. ${esc(c.code)}</b><span class="small">${esc(c.author || '—')} · ${esc(tt('выбрали', 'chosen'))}: ${c.selections}</span></span>

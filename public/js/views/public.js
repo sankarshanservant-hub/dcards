@@ -26,7 +26,7 @@ const ENTRIES = [
 ];
 const JOIN = [
   ['/facilitator/about', 'people', 'Провести встречу', 'Host a meeting', 'Узнайте, как стать фасилитатором и провести Dialogue Flow в своём городе.', 'Find out how to become a facilitator and host Dialogue Flow in your city.'],
-  ['/artist/submit', 'picPlus', 'Предложить иллюстрацию', 'Suggest an illustration', 'Есть работа, с которой может начаться разговор? Покажите её кураторам.', 'Have a work that could start a conversation? Show it to the curators.'],
+  ['/artist/about', 'picPlus', 'Предложить иллюстрацию', 'Suggest an illustration', 'Есть работа, с которой может начаться разговор? Покажите её кураторам.', 'Have a work that could start a conversation? Show it to the curators.'],
   ['/curator/apply', 'picCheck', 'Стать куратором', 'Become a curator', 'Помогайте отбирать иллюстрации для коллекции Dialogue Cards.', 'Help choose illustrations for the Dialogue Cards collection.'],
 ];
 const roleCard = ([href, icon, ru, en, dru, den]) => `<a class="role" href="${u(href)}"><span class="role-head"><span class="ic">${ic[icon]}</span><b>${esc(tt(ru, en))}</b></span><p>${esc(tt(dru, den))}</p></a>`;
@@ -170,7 +170,7 @@ export async function cardPage(ctx, code) {
         <a href="${u('/library')}" class="small">← ${esc(tt('Галерея', 'Gallery'))}</a>
         <h1>${esc(card.code)} ${card.isDemo ? '<span class="pill demo">демо</span>' : ''}</h1>
         <div class="card-ui flat"><dl class="sheet-list" style="margin:0">
-          <div><dt>${esc(tt('Автор', 'Artist'))}</dt><dd>${esc(card.author || tt('будет указан', 'to be added'))}</dd></div>
+          <div><dt>${esc(tt('Автор', 'Author'))}</dt><dd>${esc(card.author || tt('будет указан', 'to be added'))}</dd></div>
           <div><dt>${esc(tt('В галерее с', 'In the gallery since'))}</dt><dd>${esc(fmtDate(card.publishedAt))}</dd></div>
           <div><dt>${esc(tt('Выбрали для разговора', 'Chosen for a conversation'))}</dt><dd>${esc(tt(`${card.selectedCount} ${ruPlural(card.selectedCount, 'раз', 'раза', 'раз')}`, `${card.selectedCount} ${card.selectedCount === 1 ? 'time' : 'times'}`))}</dd></div>
         </dl></div>
@@ -206,7 +206,7 @@ export async function cardPage(ctx, code) {
 // Прежние адреса /about и /about/flow ведут сюда же.
 export async function start(ctx) {
   const more = [
-    ['/artist/submit', ic.picPlus, 'Предложить иллюстрацию', 'Suggest an illustration', 'Отправьте свою работу кураторам', 'Send your work to the curators'],
+    ['/artist/about', ic.picPlus, 'Предложить иллюстрацию', 'Suggest an illustration', 'Отправьте свою работу кураторам', 'Send your work to the curators'],
     ['/facilitator/about', ic.people, 'Провести встречу', 'Host a meeting', 'Узнайте, как проводить встречи Dialogue Flow', 'Find out how to host Dialogue Flow meetings'],
     ['/curator/apply', ic.picCheck, 'Стать куратором', 'Become a curator', 'Подайте заявку, чтобы помогать отбирать работы для галереи', 'Apply to help choose works for the gallery'],
   ];
@@ -254,7 +254,7 @@ export function facilitatorAbout(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Проводите встречи Dialogue Flow в своём городе', 'Host Dialogue Flow meetings in your city'))}</h1></div>
     <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого диалога. Участники выбирают карты и беседуют в парах: карта помогает начать разговор, а дальше он идёт сам.', 'Bring people together for a living dialogue. Participants choose cards and talk in pairs: the card helps start the conversation, and then it flows on its own.'))}</p>
-    <p class="callout">${esc(tt('Предварительная подготовка не требуется.', 'No prior training is needed.'))}</p>
+    <p class="callout">${esc(tt('Опыт проведения встреч не нужен.', 'No experience of hosting meetings is needed.'))}</p>
     <section class="become card-ui stack" aria-labelledby="bf">
       <h2 id="bf" style="margin:0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
       <p class="muted" style="margin:0">${esc(tt('Фасилитатор — человек, который проводит встречу и помогает участникам начать диалог.', 'A facilitator is the person who hosts the meeting and helps participants start a dialogue.'))}</p>
@@ -276,7 +276,7 @@ export async function curatorApply(ctx) {
     <div class="page-head"><h1>${esc(tt('Стать куратором', 'Become a curator'))}</h1></div>
     <p class="lead" style="margin:0">${esc(tt('Кураторы помогают отбирать иллюстрации для коллекции Dialogue Cards.', 'Curators help choose illustrations for the Dialogue Cards collection.'))}</p>
     <ul class="icon-lines">
-      <li>${ic.picCheck}<span>${esc(tt('Куратор рекомендует работу к публикации или возвращает её художнику и объясняет причину. Окончательно работу публикует администратор.', 'A curator recommends a work for publication or returns it to the artist and explains why. The administrator makes the final publishing decision.'))}</span></li>
+      <li>${ic.picCheck}<span>${esc(tt('Куратор рекомендует работу к публикации или возвращает её автору и объясняет причину. Окончательно работу публикует администратор.', 'A curator recommends a work for publication or returns it to the author and explains why. The administrator makes the final publishing decision.'))}</span></li>
       <li>${ic.chat}<span>${esc(tt('Спорные работы можно обсудить с коллегами в чате кураторов.', 'Difficult works can be discussed with colleagues in the curators’ chat.'))}</span></li>
     </ul>`;
   let body;

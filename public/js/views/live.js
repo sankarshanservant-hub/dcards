@@ -116,7 +116,7 @@ export function participant(ctx, slug, col, first) {
   function finalScreen(s) {
     const sent = ui.fbSent || s.feedbackSent;
     const links = [['/team/general', ic.chat, 'Общий чат сообщества', 'Community chat', 'Остаться на связи, поделиться впечатлениями', 'Stay in touch, share impressions'],
-      ['/artist/submit', ic.picPlus, 'Создать свою карту', 'Create your own card', 'Попробуйте себя как иллюстратор', 'Try yourself as an illustrator'],
+      ['/artist/about', ic.picPlus, 'Создать свою карту', 'Create your own card', 'Попробуйте себя как иллюстратор', 'Try yourself as an illustrator'],
       ['/facilitator/about', ic.people, 'Проводить такие встречи', 'Host meetings like this', 'В своём городе', 'In your city'],
       ['/meetings', ic.calendar, 'Найти следующую встречу', 'Find the next meeting', '', '']];
     return frame(`<p class="eyebrow">Dialogue Flow</p><h1>${esc(tt('Спасибо за встречу!', 'Thank you for the meeting!'))}</h1>

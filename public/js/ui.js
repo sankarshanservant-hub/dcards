@@ -50,7 +50,7 @@ export const ic = {
 };
 
 export const ROLE_LABEL = {
-  artist: () => tt('Художник', 'Artist'), curator: () => tt('Куратор', 'Curator'),
+  artist: () => tt('Автор', 'Author'), curator: () => tt('Куратор', 'Curator'),
   facilitator: () => tt('Фасилитатор', 'Facilitator'), admin: () => tt('Администратор', 'Administrator'),
 };
 export const rolesText = (roles) => (roles && roles.length ? roles.map((r) => ROLE_LABEL[r]()).join(' · ') : tt('Участник', 'Member'));

@@ -1,6 +1,6 @@
-// Работы художников и кураторская проверка.
+// Работы авторов и кураторская проверка.
 // Статусы работы: submitted (на рассмотрении), discussion (вынесена на обсуждение кураторов), needs_changes (возвращена
-// на доработку), rejected (отклонена), published (опубликована), withdrawn (отозвана художником).
+// на доработку), rejected (отклонена), published (опубликована), withdrawn (отозвана автором).
 // Каждое действие пишется в историю (decisions). Отказ и возврат требуют выбрать хотя бы один критерий.
 // С 17.11.2026 куратор не публикует сам: «Рекомендовать к публикации» ставит работу в очередь администратора
 // (recommended_at; статус для показа — recommended). В галерею работа попадает только по решению администратора.
@@ -90,7 +90,7 @@ function workOut(w, { full = false } = {}) {
   return out;
 }
 
-// ---------- художник ----------
+// ---------- автор ----------
 /** Отправка: одна или несколько работ, у каждой — свой статус. */
 async function submit(artist, files, { termsAccepted, termsVersion, notes = [], clientKey = '' }) {
   if (!termsAccepted || termsVersion !== config.termsVersion) return { error: 'terms_required' };
@@ -172,7 +172,7 @@ function myCards(artistId) {
     pendingReplacement: !!db.prepare(`SELECT 1 FROM works WHERE target_card_id = ? AND status IN ('submitted','discussion','needs_changes')`).get(c.id),
   }));
 }
-/** Художник сам убирает свою карту (без одобрения куратора). Обсуждение карты перестаёт быть публичным. */
+/** Автор сам убирает свою карту (без одобрения куратора). Обсуждение карты перестаёт быть публичным. */
 function withdrawCard(artist, code) {
   const c = db.prepare('SELECT * FROM cards WHERE code = ?').get(code);
   if (!c || c.artist_id !== artist.id) return { error: 'not_your_card' };
@@ -314,7 +314,7 @@ function vote(curator, workId, value, comment = '') {
 const curators = () => db.prepare(`SELECT DISTINCT u.id, COALESCE(NULLIF(u.public_name,''), u.name) AS name, u.is_demo FROM users u
   JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'curator' ORDER BY name`).all();
 
-/** Доступ к изображениям работ на рассмотрении: художнику-автору, кураторам и администраторам. */
+/** Доступ к изображениям работ на рассмотрении: автору, кураторам и администраторам. */
 function workMediaAllowed(file, user, roles) {
   if (!user) return false;
   const row = db.prepare('SELECT w.artist_id, w.is_demo FROM work_versions v JOIN works w ON w.id = v.work_id WHERE v.image_full = ? OR v.image_thumb = ?').get(file, file);

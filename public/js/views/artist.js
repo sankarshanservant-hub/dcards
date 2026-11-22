@@ -1,5 +1,6 @@
-// Кабинет художника: подача работ (согласие → файлы), статусы каждой работы, причины решения, исправление в ту же заявку,
+// Кабинет автора: подача работ (согласие → файлы), статусы каждой работы, причины решения, исправление в ту же заявку,
 // новая версия опубликованной карты, снятие своей карты.
+import { lang } from '../i18n.js';
 import { esc, tt, u, api, upload, errorText, toast, fmtDate } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill, timeline, stepsBar, ic } from '../ui.js';
@@ -24,7 +25,7 @@ function workCard(w) {
 }
 
 export async function cabinet(ctx) {
-  if (!session.user) return needLogin(ctx.main, tt('Кабинет художника доступен после входа по email.', 'Sign in with email to open the artist space.'));
+  if (!session.user) return needLogin(ctx.main, tt('Кабинет автора доступен после входа по email.', 'Sign in with email to open the author space.'));
   loading(ctx.main);
   let data;
   try { data = await api('/api/artist/works'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
@@ -37,7 +38,7 @@ export async function cabinet(ctx) {
   const showAll = ctx.query.get('all') === '1';
   const group = (title, list, open = true) => (list.length ? `<section class="stack" style="gap:8px"><h2 style="margin:10px 0 0">${esc(title)} <span class="muted" style="font-size:1rem">· ${list.length}</span></h2>${list.map(workCard).join('')}</section>` : '');
   ctx.main.innerHTML = `<div class="wrap page stack">
-    <div class="page-head"><h1>${esc(tt('Мои работы', 'My works'))}</h1><p class="sub">${esc(session.user.publicName)} · ${esc(tt('кабинет художника', 'artist space'))}</p></div>
+    <div class="page-head"><h1>${esc(tt('Мои работы', 'My works'))}</h1><p class="sub">${esc(session.user.publicName)} · ${esc(tt('кабинет автора', 'author space'))}</p></div>
     <div class="row"><a class="btn yellow" href="${u('/artist/submit')}">${ic.plus} ${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a>
       <span class="small muted" style="max-width:34em">${esc(tt('При возврате на доработку вы увидите причину.', 'If a work is returned for changes, you will see the reason.'))}</span></div>
     <span id="works"></span>
@@ -108,7 +109,7 @@ export function submit(ctx) {
   let accepted = false; try { accepted = localStorage.getItem(TERMS_KEY) === session.config.termsVersion; } catch { /* */ }
   const send = { state: 'idle', progress: 0, error: '', key: null }; // idle | uploading | processing | error
   let gAssets = null; api('/api/guides/artist/assets').then((x) => { gAssets = x; if (step === 2 && !result) draw(); }).catch(() => {});
-  const TITLES = [tt('Условия использования работы', 'Terms of use of the work'), tt('Руководство для автора', 'Guide for the artist'), tt('Загрузите изображение', 'Upload the image'), tt('Отправка', 'Sending')];
+  const TITLES = [tt('Условия использования работы', 'Terms of use of the work'), tt('Руководство для автора', 'Guide for the author'), tt('Загрузите изображение', 'Upload the image'), tt('Отправка', 'Sending')];
   const urls = new Map(); const urlOf = (f) => { if (!urls.has(f)) urls.set(f, URL.createObjectURL(f)); return urls.get(f); };
   const head = () => `<div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 4`, `Step ${step} of 4`))}</span></div>${stepsBar(step, 4)}<h1>${esc(TITLES[step - 1])}</h1>`;
   const thumbs = (rm) => `<div class="cells" id="prev">${files.map((f, i) => `<div class="cell"><div class="tile" style="cursor:default"><img src="${urlOf(f)}" alt=""></div><small>${esc(f.name)}</small>${rm ? `<button class="mini-btn r" type="button" data-rm="${i}" aria-label="${esc(tt('Убрать', 'Remove'))} ${esc(f.name)}">${ic.x}</button>` : ''}</div>`).join('')}</div>`;
@@ -140,7 +141,7 @@ export function submit(ctx) {
             <li>${esc(tt('JPEG или PNG, до 60 МБ, до 20 файлов за одну отправку.', 'JPEG or PNG, up to 60 MB, up to 20 files per submission.'))}</li>
             <li>${esc(tt('Вертикальное изображение, соотношение сторон 7:12.', 'A vertical image with a 7:12 aspect ratio.'))}</li>
             <li>${esc(tt('Формат печатной карты — 70 × 120 мм.', 'The printed card is 70 × 120 mm.'))}</li></ul>
-          <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The artist name under the cards comes from your profile. You can change it there.'))}</p>
+          <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The author name under the cards comes from your profile. You can change it there.'))}</p>
           <label class="check"><input type="checkbox" id="gok" ${guideOk ? 'checked' : ''}> <span>${esc(tt('Я ознакомился(ась) с кратким руководством', 'I have read the short guide'))}</span></label></section>
         <section class="card-ui flat stack" aria-labelledby="g-full"><h2 id="g-full" style="margin:0">${esc(tt('Полное руководство', 'Full guide'))}</h2>
           ${gAssets && gAssets.pdf ? `<p style="margin:0"><a class="btn sm light" href="${u('/guides/artist/guide.pdf')}" target="_blank" rel="noopener">${esc(tt('Открыть полное руководство (PDF)', 'Open the full guide (PDF)'))}</a></p>` : `<p class="small muted" style="margin:0">${esc(tt('Появится здесь, когда владелец проекта его передаст.', 'It will appear here once the project owner provides it.'))}</p>`}</section>
@@ -158,7 +159,7 @@ export function submit(ctx) {
       body = `${head()}
         <p style="margin:0">${esc(tt('Отправьте работу и дождитесь решения.', 'Send your work and wait for the decision.'))}</p>
         ${thumbs(false)}
-        <p class="small muted" style="margin:0">${esc(tt('Автор в карточке:', 'Artist name on cards:'))} <b>${esc(session.user.publicName)}</b></p>
+        <p class="small muted" style="margin:0">${esc(tt('Автор в карточке:', 'Author name on cards:'))} <b>${esc(session.user.publicName)}</b></p>
         ${busy ? `<div class="upl" role="status" aria-live="polite"><div class="upl-bar"><i style="width:${send.state === 'processing' ? 100 : pct}%"></i></div>
           <span class="small">${esc(send.state === 'uploading' ? tt(`Загрузка файлов: ${pct}%`, `Uploading files: ${pct}%`) : tt('Файлы получены, сервер готовит изображения…', 'Files received, the server is preparing the images…'))}</span></div>` : ''}
         ${send.state === 'error' ? `<div class="notice small" role="alert"><b>${esc(tt('Не отправлено.', 'Not sent.'))}</b> ${esc(send.error)} ${esc(tt('Файлы на месте — можно повторить: вторая подача не создастся.', 'Your files are still here — you can retry: no duplicate submission will be created.'))}</div>` : ''}
@@ -258,4 +259,28 @@ export function historyRow(h) {
     <span class="small">${esc(h.actor)} · ${esc(tt('версия', 'version'))} ${h.versionN} · ${esc(fmtDate(h.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${h.toUser ? ' → ' + esc(h.toUser) : ''}</span>
     ${h.criteria.length ? `<ul class="reasons">${h.criteria.map(critHtml).join('')}</ul>` : ''}
     ${h.comment ? `<span class="small">${esc(h.comment)}</span>` : ''}</span></div>`;
+}
+
+// ---------- вводная страница автора (22.11.2026): открыта всем, перед входом и подачей работы ----------
+// Окончательный текст страницы автор проекта пришлёт отдельно. Пока — только то, что уже согласовано и есть в приложении:
+// путь работы (условия → руководство → загрузка → решение кураторов и администратора). Место для текста — AUTHOR_INTRO.
+// Материалы для страницы (нужны от владельца): вступление от автора проекта; кому подходит (кого ждём); требования к работе
+// (формат, размер, права, собственная работа); как проходит отбор и сроки; что получает автор (подпись, статистика выборов);
+// 2–4 примера опубликованных карт с согласия их авторов; контакт для вопросов.
+const AUTHOR_INTRO = null; // { ru: ['абзац', …], en: [...] } — вставить, когда текст будет готов
+export function about(ctx) {
+  const intro = AUTHOR_INTRO ? (lang === 'en' ? AUTHOR_INTRO.en : AUTHOR_INTRO.ru).map((p) => `<p>${esc(p)}</p>`).join('') : '';
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">
+    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Стать автором карты', 'Become a card author'))}</h1></div>
+    <p class="lead" style="margin:0">${esc(tt('Есть работа, с которой может начаться разговор? Покажите её кураторам.', 'Have a work that could start a conversation? Show it to the curators.'))}</p>
+    ${intro}
+    <h2>${esc(tt('Как это устроено', 'How it works'))}</h2>
+    <ol class="steps">
+      <li>${esc(tt('Вы знакомитесь с условиями использования работы и руководством для автора.', 'You read the terms of use of the work and the guide for authors.'))}</li>
+      <li>${esc(tt('Загружаете иллюстрацию — после входа по email.', 'You upload the illustration — after signing in with email.'))}</li>
+      <li>${esc(tt('Кураторы рассматривают работу: рекомендуют к публикации или возвращают с объяснением. Окончательно публикует администратор.', 'Curators review the work: they recommend it for publication or return it with an explanation. The administrator publishes it.'))}</li>
+      <li>${esc(tt('Статус каждой работы виден в кабинете автора.', 'The status of each work is shown in the author space.'))}</li>
+    </ol>
+    <div class="row"><a class="btn yellow" href="${u('/artist/submit')}">${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a></div>
+  </div>`;
 }

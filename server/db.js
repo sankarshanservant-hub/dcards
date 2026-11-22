@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS card_offers (
   PRIMARY KEY (collection_id, card_id, visitor_id)
 );
 
--- ---------- работы художников и кураторская проверка ----------
+-- ---------- работы авторов и кураторская проверка ----------
 CREATE TABLE IF NOT EXISTS submissions (       -- одна отправка (может содержать несколько работ)
   id                INTEGER PRIMARY KEY,
   artist_id         INTEGER NOT NULL REFERENCES users(id),
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS work_versions (
   created_at     TEXT NOT NULL DEFAULT ${NOW},
   UNIQUE (work_id, n)
 );
-CREATE TABLE IF NOT EXISTS decisions (         -- история работы: каждое действие куратора и художника
+CREATE TABLE IF NOT EXISTS decisions (         -- история работы: каждое действие куратора и автора
   id               INTEGER PRIMARY KEY,
   work_id          INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
   version_n        INTEGER NOT NULL,

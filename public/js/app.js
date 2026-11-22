@@ -57,6 +57,7 @@ const routes = [
   [/^\/login\/?$/, acc.login],
   [/^\/me\/?$/, acc.profile],
   [/^\/artist\/?$/, artist.cabinet],
+  [/^\/artist\/about\/?$/, artist.about],
   [/^\/artist\/submit\/?$/, artist.submit],
   [/^\/artist\/works\/(\d+)\/?$/, artist.work],
   [/^\/curator\/?$/, cur.queue],
@@ -315,12 +316,12 @@ function openMenu() {
   // Рабочие кабинеты — только те, что доступны этому человеку. Администратор входит через обычный вход; в демо его кнопка — на экране «Демо-роли».
   const cabinets = [];
   if (s) {
-    if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет художника', 'Artist space'));
+    if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет автора', 'Author space'));
     if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space'));
     if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space'));
     if (s.roles.includes('admin')) cabinets.push(mi('/admin', ic.shield, 'Кабинет администратора', 'Admin space', '', '', true));
   }
-  const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Художник', 'Artist'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
+  const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Автор', 'Author'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
   el.innerHTML = `<div class="panel" aria-label="${esc(tt('Меню', 'Menu'))}">
     <div class="head">
       ${s ? `<span class="ava">${avatar(s.publicName)}</span><div class="who"><b>${esc(s.publicName)}</b><span>${esc(rolesText(s.roles))}${s.isDemo ? ' · ' + esc(tt('демо', 'demo')) : ''}</span></div>`

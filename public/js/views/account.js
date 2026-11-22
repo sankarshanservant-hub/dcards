@@ -3,7 +3,7 @@ import { lang } from '../i18n.js';
 import { esc, tt, u, api, errorText, toast } from '../util.js';
 import { session, refreshSession, rolesText, needLogin, stepsBar, ic, siteSession, siteProfileName, loginWithSite } from '../ui.js';
 
-const DEMO_ROLES = [['guest', 'Участник', 'Participant', 'Галерея и встречи', 'Gallery and meetings'], ['facilitator', 'Фасилитатор', 'Facilitator', 'Подборка, QR, встречи', 'Selection, QR, meetings'], ['artist', 'Художник', 'Artist', 'Работы и возвраты', 'Works and returns'], ['curator', 'Куратор', 'Curator', 'Работы на рассмотрении', 'Works under review'], ['admin', 'Администратор', 'Admin', 'Люди, заявки, встречи', 'People, applications, meetings']];
+const DEMO_ROLES = [['guest', 'Участник', 'Participant', 'Галерея и встречи', 'Gallery and meetings'], ['facilitator', 'Фасилитатор', 'Facilitator', 'Подборка, QR, встречи', 'Selection, QR, meetings'], ['artist', 'Автор', 'Author', 'Работы и возвраты', 'Works and returns'], ['curator', 'Куратор', 'Curator', 'Работы на рассмотрении', 'Works under review'], ['admin', 'Администратор', 'Admin', 'Люди, заявки, встречи', 'People, applications, meetings']];
 const demoBtn = ([k, ru, en, dru, den], i) => `<button class="btn ${i === 0 ? 'yellow' : 'light'}" type="button" data-demo="${k}"><b>${esc(tt(ru, en))}</b><span class="small">${esc(tt(dru, den))}</span></button>`;
 
 /** Отдельный экран выбора демо-ролей (все роли, включая тестовую кнопку администратора). */
@@ -118,7 +118,7 @@ export function profile(ctx) {
   const has = (...r) => s.roles.includes('admin') || r.some((x) => s.roles.includes(x));
   // «Мои кабинеты»: только доступные; администрирование — только администратору.
   const links = [
-    ...(has('artist') ? [['/artist', ic.brush, tt('Кабинет художника', 'Artist space')]] : []),
+    ...(has('artist') ? [['/artist', ic.brush, tt('Кабинет автора', 'Author space')]] : []),
     ...(has('facilitator') ? [['/facilitator', ic.qr, tt('Кабинет фасилитатора', 'Facilitator space')]] : []),
     ...(has('curator') ? [['/curator', ic.check, tt('Кабинет куратора', 'Curator space')]] : []),
     ...(s.roles.includes('admin') ? [['/admin', ic.shield, tt('Кабинет администратора', 'Admin space')]] : []),
