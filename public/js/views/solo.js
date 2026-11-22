@@ -2,10 +2,9 @@
 // Выборы, замены и раскрытия карт здесь не увеличивают «Выбрали для разговора»: на сервер ничего не отправляется.
 // Очков, таймеров, рейтингов и автоматической оценки ответов нет — игрок отвечает про себя.
 import { lang } from '../i18n.js';
-import { esc, tt, u, api } from '../util.js';
+import { esc, tt, u, api, shareLink, storage, toast, errorText } from '../util.js';
 import { ic, loading, failed, session } from '../ui.js';
 import { openViewer } from '../viewer.js';
-import { EAGLE_BANK } from '../content.js';
 import * as personal from '../personal.js';
 
 export const SOLO_GAMES = [
@@ -33,7 +32,7 @@ async function loadCards(ctx) {
 }
 const pickOther = (cards, avoid) => { const pool = cards.filter((c) => !avoid.includes(c.code)); const from = pool.length ? pool : cards; return from[Math.floor(Math.random() * from.length)]; };
 const cardImg = (c, cls = 'live-card') => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img class="${cls}" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"></button>`;
-const frame = (g, inner) => `<div class="wrap page narrow stack solo-page"><p class="eyebrow" style="margin:0"><a href="${u('/group/solo')}">${esc(tt('Играть одному', 'Play solo'))}</a></p><h1 style="margin:0">${esc(T(g))}</h1>${inner}</div>`;
+const frame = (g, inner) => `<div class="wrap page narrow stack solo-page"><p class="eyebrow" style="margin:0">${esc(tt('Играть одному', 'Play solo'))}</p><h1 style="margin:0">${esc(T(g))}</h1>${inner}</div>`;
 function zoomer(ctx, cards) { ctx.main.addEventListener('click', (e) => { const z = e.target.closest('[data-zoom]'); if (z) { const c = cards.find((x) => x.code === z.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); } }); }
 const keep = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
 const restore = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch { return null; } };
@@ -68,47 +67,147 @@ export async function connect(ctx) {
   zoomer(ctx, cards); draw();
 }
 
-// ---------- «Глаз-алмаз» ----------
-// Вопросы (21.11.2026). Основной источник — банк проверенных вопросов к конкретным картам (EAGLE_BANK в content.js):
-// когда в нём есть записи, в игре выпадают только эти карты, а вопрос берётся из набора показанной карты, с ответом.
-// Пока банк пуст, используются общие вопросы о цвете, свете и размере — без вопросов про углы и края,
-// которые на многих картах пустые. Содержание вопросов по картам не сочиняем: банк наполняют авторы.
-const EAGLE = () => [
-  tt('Какого цвета была самая маленькая деталь, которую ты запомнил?', 'What colour was the smallest detail you remember?'),
-  tt('Какой цвет на карте был самым ярким?', 'What was the brightest colour on the card?'),
-  tt('Где на карте было самое светлое место?', 'Where was the lightest spot on the card?'),
-  tt('Какая деталь была самой крупной?', 'What was the largest detail?'),
-  tt('Сколько разных цветов ты можешь вспомнить?', 'How many different colours can you recall?'),
-];
+// ---------- «Глаз-алмаз» (22.11.2026: согласованная механика и банк автора) ----------
+// Карта без вопроса → «Запомнил» → карта скрыта, вопрос → ответ обязательно записывается → «Проверить»:
+// карта, вопрос, свой ответ и правильный ответ из банка — сравнение самостоятельное, без оценки.
+// Банк — на сервере (server/data/eagle-bank.txt): три пары к каждой карте, по коду DC-XXXX. Раунд хранит снимок вопроса и ответа,
+// поэтому переживает обновление банка. «Предложить другу» — то же задание другу (/e/<ссылка>).
+const EAGLE_KEY = 'dc_solo_eagle2';
+const EAGLE_RU_ONLY = () => (lang === 'en' ? `<p class="small muted" style="margin:0">${esc('The questions are in Russian for now.')}</p>` : '');
+export const eagleInvite = (url) => `${tt('Проверим нашу наблюдательность?', 'Shall we test how observant we are?')}\n${tt('Рассмотри карту, запомни детали и ответь на вопрос. Потом сравним наши ответы.', 'Look at the card, remember the details and answer the question. Then we’ll compare our answers.')}\n${url}`;
+const newToken = () => { const a = new Uint8Array(18); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const hiddenCard = () => `<div class="eagle-hidden" role="img" aria-label="${esc(tt('Карта скрыта', 'The card is hidden'))}">${ic.lock || ''}<span>${esc(tt('Карта скрыта', 'The card is hidden'))}</span></div>`;
+const answerForm = (id, label) => `<form class="stack eagle-form" data-eform><label class="field" for="${id}">${esc(label)}</label><textarea id="${id}" rows="3" maxlength="300" required></textarea>
+  <button class="btn yellow" type="submit" disabled data-check>${esc(tt('Проверить', 'Check'))}</button></form>`;
+/** Кнопка «Проверить» доступна, только когда в поле есть текст (пробелы не считаются). */
+function guardCheck(root) {
+  const f = root.querySelector('[data-eform]'); if (!f) return;
+  const t = f.querySelector('textarea'); const b = f.querySelector('[data-check]');
+  const upd = () => { b.disabled = !t.value.trim(); }; t.addEventListener('input', upd); upd();
+}
+const answersHtml = (list) => `<ul class="eagle-answers">${list.map((x) => `<li><span class="small muted">${esc(x.name)}${x.me ? ` · ${esc(tt('вы', 'you'))}` : ''}</span><p>${esc(x.text)}</p></li>`).join('')}</ul>`;
+
 export async function eagle(ctx) {
   loading(ctx.main);
-  let cards; try { cards = await loadCards(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  let cards; let bank;
+  try { [cards, bank] = await Promise.all([loadCards(ctx), api('/api/eagle/bank')]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  // с банком — только карты с проверенными вопросами
-  const banked = cards.filter((c) => Array.isArray(EAGLE_BANK[c.code]) && EAGLE_BANK[c.code].length);
-  if (banked.length) cards = banked;
-  const qsOf = (code) => (banked.length ? EAGLE_BANK[code].map((x) => ({ q: lang === 'en' ? x.q.en : x.q.ru, a: lang === 'en' ? x.a.en : x.a.ru })) : EAGLE().map((q) => ({ q, a: '' })));
-  let st = restore('dc_solo_eagle');
-  const by = (c) => cards.find((x) => x.code === c);
-  if (!st || !by(st.code)) st = { code: pickOther(cards, []).code, phase: 'look', q: Math.floor(Math.random() * 50), seen: [] };
-  const draw = () => {
-    keep('dc_solo_eagle', st);
-    const c = by(st.code); const set = qsOf(st.code); const item = set[st.q % set.length]; const q = item.q;
-    let inner;
-    if (st.phase === 'look') inner = `<p class="lead" style="margin:0">${esc(tt('Рассмотри карту. Когда она скроется, ответь на вопрос и проверь свою наблюдательность.', 'Look at the card. When it disappears, answer the question and test how observant you are.'))}</p>${cardImg(c)}<div class="row"><button class="btn yellow" type="button" data-remember>${esc(tt('Запомнил', 'Got it'))}</button></div>`;
-    else if (st.phase === 'ask') inner = `<div class="eagle-hidden" role="img" aria-label="${esc(tt('Карта скрыта', 'The card is hidden'))}">${ic.lock || ''}<span>${esc(tt('Карта скрыта', 'The card is hidden'))}</span></div>
-      <p class="lead" style="margin:0" aria-live="polite"><b>${esc(q)}</b></p><p class="vb-note" style="margin:0">${esc(tt('Ответь про себя — потом сверься с картой.', 'Answer to yourself — then check against the card.'))}</p>
-      <div class="row"><button class="btn yellow" type="button" data-check>${esc(tt('Проверить', 'Check'))}</button></div>`;
-    else inner = `<p class="lead" style="margin:0"><b>${esc(q)}</b></p>${item.a ? `<p class="eagle-answer">${esc(tt('Ответ', 'Answer'))}: ${esc(item.a)}</p>` : ''}${cardImg(c)}
-      <div class="row"><button class="btn yellow" type="button" data-next>${esc(tt('Другая карта', 'Another card'))}</button></div>`;
-    ctx.main.innerHTML = frame(G('eagle'), inner);
+  cards = cards.filter((c) => Array.isArray(bank.items[c.code]) && bank.items[c.code].length);
+  if (!cards.length) { ctx.main.innerHTML = frame(G('eagle'), `<p class="empty">${esc(tt('Заданий пока нет.', 'No tasks yet.'))}</p>`); return; }
+  const by = (code) => cards.find((x) => x.code === code);
+  const pickTask = (seen = []) => {
+    const c = pickOther(cards, seen); const list = bank.items[c.code]; const it = list[Math.floor(Math.random() * list.length)];
+    return { v: 2, code: c.code, qid: it.id, ver: it.v, q: it.q, a: it.a, phase: 'look', answer: '', seen: [...seen, c.code].slice(-20), sent: null };
   };
-  ctx.main.addEventListener('click', (e) => {
-    if (e.target.closest('[data-remember]')) { st.phase = 'ask'; draw(); ctx.main.querySelector('[data-check]').focus(); }
-    else if (e.target.closest('[data-check]')) { st.phase = 'check'; draw(); ctx.main.querySelector('[data-next]').focus(); }
-    else if (e.target.closest('[data-next]')) { st.seen = [...st.seen, st.code].slice(-20); st.code = pickOther(cards, st.seen).code; st.q = Math.floor(Math.random() * 50); st.phase = 'look'; draw(); window.scrollTo(0, 0); }
+  let st = restore(EAGLE_KEY);
+  // начатый раунд сохраняется со своим вопросом и ответом, даже если банк с тех пор обновили; карта должна оставаться в галерее
+  if (!st || st.v !== 2 || !by(st.code) || !st.q) st = pickTask([]);
+  const name0 = () => storage.get('dc_live_name') || (session.user && (session.user.publicName || session.user.name)) || '';
+  const draw = () => {
+    keep(EAGLE_KEY, st);
+    const c = by(st.code);
+    let inner;
+    if (st.phase === 'look') inner = `<p class="lead" style="margin:0">${esc(tt('Рассмотри карту и запомни детали. Когда нажмёшь «Запомнил», карта скроется и появится вопрос.', 'Look at the card and remember the details. When you tap “Got it”, the card disappears and a question appears.'))}</p>${cardImg(c)}<div class="row"><button class="btn yellow" type="button" data-remember>${esc(tt('Запомнил', 'Got it'))}</button></div>`;
+    else if (st.phase === 'ask') inner = `${hiddenCard()}<p class="lead" style="margin:0" aria-live="polite"><b>${esc(st.q)}</b></p>${EAGLE_RU_ONLY()}${answerForm('eans', tt('Твой ответ', 'Your answer'))}`;
+    else inner = `<p class="lead" style="margin:0"><b>${esc(st.q)}</b></p>
+      ${answersHtml([{ name: tt('Твой ответ', 'Your answer'), text: st.answer }])}
+      <p class="eagle-answer">${esc(tt('Правильный ответ', 'Correct answer'))}: ${esc(st.a)}</p>${cardImg(c)}
+      <p class="small muted" style="margin:0">${esc(tt('Сравни сам: совпало ли то, что ты запомнил?', 'Compare for yourself: does what you remembered match?'))}</p>
+      <div class="card-ui flat stack eagle-send"><b>${esc(tt('Предложить другу', 'Suggest to a friend'))}</b><span class="small muted">${esc(tt('Друг получит эту карту и этот вопрос. Он не увидит вопрос и твой ответ, пока не рассмотрит карту и не ответит сам.', 'Your friend gets this card and this question. They will not see the question or your answer until they have looked at the card and answered themselves.'))}</span>
+        <label class="field" for="ename">${esc(tt('Твоё имя — его увидит друг', 'Your name — your friend will see it'))}</label><input id="ename" maxlength="40" value="${esc(name0())}" autocomplete="given-name">
+        <button class="btn light" type="button" data-send>${ic.share}<span>${esc(tt('Предложить другу', 'Suggest to a friend'))}</span></button>
+        ${st.sent ? `<a class="small" href="${u('/e/' + st.sent)}">${esc(tt('Открыть результат друга', 'Open your friend’s result'))}</a>` : ''}</div>
+      <div class="row wrap"><button class="btn yellow" type="button" data-next>${esc(tt('Другое задание', 'Another task'))}</button><a class="btn on-calm" href="${u('/group/solo')}">${esc(tt('Выбрать другую игру', 'Choose another game'))}</a></div>`;
+    ctx.main.innerHTML = frame(G('eagle'), inner);
+    guardCheck(ctx.main);
+  };
+  ctx.main.addEventListener('submit', (e) => {
+    if (!e.target.closest('[data-eform]')) return; e.preventDefault();
+    const v = ctx.main.querySelector('#eans').value.trim(); if (!v || st.phase !== 'ask') return;
+    st.answer = v; st.phase = 'check'; draw(); window.scrollTo(0, 0); const n = ctx.main.querySelector('[data-next]'); if (n) n.focus({ preventScroll: true });
+  });
+  ctx.main.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-remember]')) { st.phase = 'ask'; draw(); ctx.main.querySelector('#eans').focus(); }
+    else if (e.target.closest('[data-next]')) { st = pickTask(st.seen); draw(); window.scrollTo(0, 0); }
+    else if (e.target.closest('[data-send]')) {
+      const b = e.target.closest('[data-send]'); const nm = ctx.main.querySelector('#ename').value.trim();
+      if (!nm) { toast(tt('Напишите имя — его увидит друг.', 'Enter your name — your friend will see it.')); ctx.main.querySelector('#ename').focus(); return; }
+      storage.set('dc_live_name', nm);
+      const tok = st.pendingTok || newToken(); st.pendingTok = tok; keep(EAGLE_KEY, st);
+      const url = shareLink('/e/' + tok); b.disabled = true;
+      // запрос уходит сразу, меню отправки открывается в том же нажатии
+      const saved = api('/api/eagle/x', { method: 'POST', body: { token: tok, qid: st.qid, ver: st.ver, name: nm, answer: st.answer } });
+      const sent = sendText(eagleInvite(url));
+      try { await saved; st.sent = tok; st.pendingTok = null; } catch (x) { toast(errorText(x)); }
+      await sent; b.disabled = false; draw();
+    }
   });
   zoomer(ctx, cards); draw();
+}
+/** Отправка текста: на телефоне — системное меню; на компьютере — копирование. */
+async function sendText(text) {
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) { try { await navigator.share({ text }); return true; } catch { return false; } }
+  try { await navigator.clipboard.writeText(text); toast(tt('Приглашение скопировано', 'Invitation copied')); } catch { prompt(tt('Скопируйте приглашение:', 'Copy the invitation:'), text); }
+  return true;
+}
+
+/** Задание от друга (/e/<ссылка>): рассмотреть карту → «Запомнил» → вопрос → ответ → результат с обоими ответами. */
+export async function eagleX(ctx, token) {
+  const key = 'dc_eagle_' + token;
+  const local = (() => { try { return JSON.parse(localStorage.getItem(key) || 'null') || {}; } catch { return {}; } })();
+  const remember = (v) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* */ } };
+  loading(ctx.main);
+  let d;
+  const load = async (look) => { d = await api(`/api/eagle/x/${encodeURIComponent(token)}${look ? '?look=1' : ''}`); };
+  try { await load(local.phase === 'ask'); } catch (e) {
+    if (e.status === 404) { ctx.main.innerHTML = frame(G('eagle'), `<p class="empty">${esc(tt('Задание не найдено. Проверьте ссылку.', 'Task not found. Check the link.'))}</p><a class="btn" href="${u('/group/solo/eagle')}">${esc(tt('Сыграть самому', 'Play yourself'))}</a>`); return; }
+    return failed(ctx.main, e, ctx.rerender);
+  }
+  if (!ctx.alive()) return;
+  const c = d.card;
+  const draw = () => {
+    let inner = '';
+    if (d.mine) {
+      inner = `<p class="lead" style="margin:0">${esc(tt('Твоё задание другу', 'Your task for a friend'))}</p>${c ? cardImg(c) : ''}<p class="lead" style="margin:0"><b>${esc(d.question)}</b></p>
+        <p class="eagle-answer">${esc(tt('Правильный ответ', 'Correct answer'))}: ${esc(d.answer)}</p>${answersHtml(d.answers)}
+        ${d.replies ? '' : `<p class="small muted" style="margin:0">${esc(tt('Друг ещё не ответил. Когда ответит, здесь появится его ответ.', 'Your friend has not answered yet. Their answer will appear here.'))}</p>
+          <button class="btn light" type="button" data-resend>${ic.share}<span>${esc(tt('Отправить ссылку ещё раз', 'Send the link again'))}</span></button>`}
+        <div class="row"><a class="btn yellow" href="${u('/group/solo/eagle')}">${esc(tt('Новое задание', 'A new task'))}</a></div>`;
+    } else if (d.phase === 'look') {
+      inner = `<p class="lead" style="margin:0">${esc(tt(`${d.fromName} предлагает проверить наблюдательность. Рассмотри карту и запомни детали — потом появится вопрос.`, `${d.fromName} invites you to test how observant you are. Look at the card and remember the details — then a question appears.`))}</p>
+        ${c ? cardImg(c) : ''}<div class="row"><button class="btn yellow" type="button" data-remember>${esc(tt('Запомнил', 'Got it'))}</button></div>`;
+    } else if (d.phase === 'ask') {
+      inner = `${hiddenCard()}<p class="lead" style="margin:0" aria-live="polite"><b>${esc(d.question)}</b></p>${EAGLE_RU_ONLY()}
+        <form class="stack eagle-form" data-eform><label class="field" for="ename">${esc(tt('Твоё имя', 'Your name'))}</label><input id="ename" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name">
+        <label class="field" for="eans">${esc(tt('Твой ответ', 'Your answer'))}</label><textarea id="eans" rows="3" maxlength="300" required>${esc(local.draft || '')}</textarea>
+        <button class="btn yellow" type="submit" disabled data-check>${esc(tt('Проверить', 'Check'))}</button></form>`;
+    } else {
+      inner = `${c ? cardImg(c) : ''}<p class="lead" style="margin:0"><b>${esc(d.question)}</b></p>
+        <p class="eagle-answer">${esc(tt('Правильный ответ', 'Correct answer'))}: ${esc(d.answer)}</p>${answersHtml(d.answers)}
+        <p class="small muted" style="margin:0">${esc(tt('Сравните сами — оценок здесь нет.', 'Compare for yourselves — there are no scores here.'))}</p>
+        <div class="row"><a class="btn yellow" href="${u('/group/solo/eagle')}">${esc(tt('Предложить своё задание', 'Send your own task'))}</a></div>`;
+    }
+    ctx.main.innerHTML = frame(G('eagle'), inner);
+    const f = ctx.main.querySelector('[data-eform]');
+    if (f) {
+      const t = f.querySelector('#eans'); const n = f.querySelector('#ename'); const b = f.querySelector('[data-check]');
+      const upd = () => { b.disabled = !t.value.trim() || !n.value.trim(); local.draft = t.value; remember(local); };
+      t.addEventListener('input', upd); n.addEventListener('input', upd); upd();
+    }
+  };
+  ctx.main.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-remember]')) { local.phase = 'ask'; remember(local); try { await load(true); } catch (x) { toast(errorText(x)); return; } draw(); const t = ctx.main.querySelector('#eans'); if (t) t.focus(); }
+    if (e.target.closest('[data-resend]')) sendText(eagleInvite(shareLink('/e/' + token)));
+  });
+  ctx.main.addEventListener('submit', async (e) => {
+    if (!e.target.closest('[data-eform]')) return; e.preventDefault();
+    const name = ctx.main.querySelector('#ename').value.trim(); const answer = ctx.main.querySelector('#eans').value.trim();
+    if (!name || !answer) return;
+    const b = ctx.main.querySelector('[data-check]'); b.disabled = true; storage.set('dc_live_name', name);
+    try { d = await api(`/api/eagle/x/${encodeURIComponent(token)}/answer`, { method: 'POST', body: { name, answer } }); local.phase = 'result'; local.draft = ''; remember(local); draw(); window.scrollTo(0, 0); }
+    catch (x) { b.disabled = false; toast(errorText(x)); }
+  });
+  zoomer(ctx, c ? [c] : []); draw();
 }
 
 // ---------- «Придумай ассоциации» ----------
@@ -177,7 +276,7 @@ export async function imagine(ctx) {
           ${example(5, `<p>${esc(tt('Глубина + парус → корабль под водой с парусами из света', 'Depth + sail → a ship under water with sails of light'))}</p>`)}
           <div class="row"><button class="btn yellow" type="button" data-saveimg ${st.note.trim() ? '' : 'disabled'}>${esc(tt('Сохранить образ', 'Save the image'))}</button>
             <span class="imag-saved" role="status">${st.saved && st.saved === st.note.trim() ? `${esc(tt('Образ сохранён', 'Image saved'))} · <a href="${u('/me/images')}">${esc(tt('Мои образы', 'My images'))}</a>` : ''}</span></div>
-          <div class="row"><button class="btn light" type="button" data-otherpair>${esc(tt('Другая пара', 'Another pair'))}</button><button class="btn light" type="button" data-restart>${esc(tt('Новая карта', 'New card'))}</button></div></section>`;
+          <div class="row wrap"><button class="btn light" type="button" data-otherpair>${esc(tt('Другая пара', 'Another pair'))}</button><button class="btn light" type="button" data-restart>${esc(tt('Новая карта', 'New card'))}</button><a class="btn on-calm" href="${u('/group/solo')}">${esc(tt('Выбрать другую игру', 'Choose another game'))}</a></div></section>`;
       }
     }
     ctx.main.innerHTML = frame(G('imagine'), `

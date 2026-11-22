@@ -59,7 +59,7 @@ export async function sendInvite(url) {
   return kind;
 }
 /** Приглашение в комнату онлайн-игры (22.11.2026): то же одно нажатие, текст — про игру. */
-export const roomMessage = (url, game) => `${tt(`Давай сыграем в «${game}» в Dialogue Cards. Заходи со своего телефона:`, `Let’s play “${game}” on Dialogue Cards. Join from your phone:`)}\n${url}\n\n${INVITE_SIGN()}`;
+export const roomMessage = (url, pitch) => `${pitch}\n${url}`;
 export async function sendRoomInvite(url, game) {
   const full = roomMessage(url, game);
   const touch = matchMedia('(pointer: coarse)').matches;

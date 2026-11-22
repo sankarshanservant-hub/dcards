@@ -112,7 +112,7 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 // На сервере (NODE_ENV=production) без SMTP он выключен: иначе войти можно было бы под чужим адресом.
 const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
-  demoMode: config.demoMode, mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl && req.site.portal, translationConnected: false,
+  demoMode: config.demoMode, ownerLogin: auth.ownerLoginOpen(), mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl && req.site.portal, translationConnected: false,
   termsVersion: config.termsVersion, basePath: req.site.base, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
 }));
 r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
@@ -154,6 +154,7 @@ r.post('/api/auth/site', wrap(async (req, res) => {
   res.json({ user: auth.publicUser(x.user) });
 }));
 r.post('/api/auth/owner', (req, res) => {
+  if (!auth.ownerLoginOpen()) return bad(res, 'owner_login_closed', 403);
   const c = auth.checkOwnerPassword(req, req.body && req.body.password);
   if (!c.ok) return bad(res, c.error, c.error === 'too_many_attempts' ? 429 : 401);
   const u = auth.ownerUser();
@@ -654,7 +655,7 @@ r.post('/api/live/feedback/:id', (req, res, next) => {
 // ---------- игры компанией (без фасилитатора): комната по QR/коду ----------
 const group = require('./group');
 const groupDone = (res, x, status = 200) => { if (x && x.ok && x.id) group.touch(x.id); out(res, x, status); };
-r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; out(res, group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null) }), 201); });
+r.post('/api/group', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; const x = group.create({ format: b.format, deviceId: d, name: b.name, showDemo: req.showDemo, codes: Array.isArray(b.codes) ? b.codes : (b.collection && req.user ? personal.collectionCodes(req.user.id, b.collection) : null), from: typeof b.from === 'string' ? b.from : null }); if (x.fromId) group.touch(x.fromId); out(res, x, 201); });
 r.get('/api/group/:code/state', (req, res) => {
   const d = liveDevice(req, res); if (!d) return;
   const st = group.state(req.params.code, d, req.showDemo);
@@ -897,6 +898,37 @@ admin.post('/cards/:code/restore', (req, res) => {
 });
 // ---------- обмен с другом «Что ты здесь видишь?» (exchanges.js) ----------
 const pubCard = (code) => db.prepare("SELECT * FROM cards WHERE code = ? AND status = 'published'").get(String(code || ''));
+// ---------- «Глаз-алмаз»: банк вопросов и обмен «Предложить другу» (22.11.2026) ----------
+const eagle = require('./eagle');
+r.get('/api/eagle/bank', (req, res) => {
+  const codes = db.prepare("SELECT code, is_demo FROM cards WHERE status = 'published'").all().filter((c) => !c.is_demo || req.showDemo).map((c) => c.code);
+  res.set('Cache-Control', 'no-store').json(eagle.forCards(codes));
+});
+r.post('/api/eagle/x', (req, res) => { if (!req.visitor && !req.user) return bad(res, 'bad_visitor'); out(res, eagle.create(req.user, req.visitor, req.body || {}, !!req.showDemo && !!(req.user && req.user.is_demo)), 201); });
+r.get('/api/eagle/x/:t', (req, res) => {
+  const v = eagle.view(String(req.params.t), req.user, req.visitor, { look: req.query.look === '1' });
+  if (!v) return bad(res, 'not_found', 404);
+  const c = pubCard(v.code);
+  res.set('Cache-Control', 'no-store').json({ ...v, card: c ? cards.publicCard(c) : null });
+});
+r.post('/api/eagle/x/:t/answer', (req, res) => {
+  const r0 = eagle.reply(String(req.params.t), req.user, req.visitor, req.body || {});
+  if (r0.error) return out(res, r0);
+  if (!r0.repeated) safe(() => bell.add(r0.x.from_user ? { userId: r0.x.from_user } : { visitorId: r0.x.from_visitor }, { kind: 'eagle_answered', title: 'Друг ответил в «Глаз-алмазе»', body: r0.name, url: `/e/${r0.x.secret}`, dedupe: `e:${r0.x.id}:${req.visitor}`, isDemo: !!r0.x.is_demo }));
+  const v = eagle.view(String(req.params.t), req.user, req.visitor);
+  const c = pubCard(v.code); res.json({ ok: true, repeated: !!r0.repeated, ...v, card: c ? cards.publicCard(c) : null });
+});
+r.get('/og/eagle.jpg', wrap(async (req, res) => {
+  const file = path.join(ogDir, 'eagle-back.jpg');
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(ogDir, { recursive: true });
+    const back = await sharp(path.join(__dirname, '..', 'public', 'img', 'card-back.webp')).resize({ height: 600, fit: 'inside' }).jpeg({ quality: 86 }).toBuffer();
+    const meta = await sharp(back).metadata();
+    await sharp({ create: { width: 1200, height: 630, channels: 3, background: '#060c1e' } }).composite([{ input: back, left: Math.round((1200 - meta.width) / 2), top: Math.round((630 - meta.height) / 2) }]).jpeg({ quality: 85 }).toFile(file);
+  }
+  res.set('Cache-Control', 'public, max-age=86400').type('jpeg').sendFile(file);
+}));
+
 r.post('/api/exchanges', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
@@ -975,6 +1007,8 @@ const cachedIndex = new Map(); // путь входа → index.html
 // Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.
 const OG_DESC = 'Dialogue Cards — повод для интересного разговора';
 function ogFor(req) {
+  // «Глаз-алмаз»: в превью вопрос скрыт, картинка — рубашка карты
+  if (/^\/e\/[A-Za-z0-9_-]{22,40}\/?$/.test(req.path)) return { title: 'Проверим нашу наблюдательность?', desc: 'Рассмотри карту, запомни детали и ответь на вопрос. Потом сравним наши ответы.', image: `${baseUrl(req)}${req.site.base}/og/eagle.jpg`, url: `${baseUrl(req)}${req.site.base}${req.path}` };
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
   let code = m && m[3];
   let title = 'Что ты здесь видишь?';
@@ -1006,7 +1040,7 @@ r.get('*', (req, res) => {
   const html = cachedIndex.get(base);
   const og = ogFor(req);
   if (og) {
-    const tags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Dialogue Cards"><meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
+    const tags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Dialogue Cards"><meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(og.desc || OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
     // приглашение и личные ссылки — не для поисковиков
     return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(html.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => `<title>${escAttr(og.title)} · Dialogue Cards</title>`)); // функции: «$» в тексте вопроса — обычный символ
   }

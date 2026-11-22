@@ -200,16 +200,20 @@ export function openViewer(opts) {
       z.x = 0; apply(true); return;
     }
     if (g.moved || e.type === 'pointercancel') return;
-    // касание: двойное — увеличить/уменьшить; одиночное — на весь экран (в полноэкранном — спрятать/показать кнопки)
+    // касание (22.11.2026): в полноэкранном просмотре двойное нажатие закрывает его и возвращает к прежнему виду
+    // (обычная карта — окно с вопросами и действиями; просмотр из игры — сама игра, её поля и шаг не трогаем).
+    // Увеличение — разведением пальцев; перемещение увеличенного изображения — одним пальцем (это не касание).
+    // Одиночное: в обычном окне — на весь экран; в полноэкранном — спрятать/показать кнопки (после паузы, чтобы отличить от двойного).
     const now = Date.now();
     if (now - lastTap < 300) {
       clearTimeout(tapTimer); lastTap = 0;
+      if (mode.full || opts.simple) { if (z.s > 1.01) zoomTo(1, 0, 0, false); if (opts.simple) closeViewer(); else setFull(false); return; }
       const [px, py] = rel(e);
       zoomTo(z.s > 1.01 ? 1 : 2.5, px, py, true);
     } else {
       lastTap = now;
       const act = () => { if (z.s > 1.01) return; if (!mode.full) setFull(true); else el.classList.toggle('chrome-hidden'); };
-      if (FEEL()) act(); else tapTimer = setTimeout(act, 280);  // новое: сразу, без ожидания второго касания
+      if (FEEL() && !mode.full && !opts.simple) { act(); lastTap = 0; } else tapTimer = setTimeout(act, 300);
     }
   };
   // бросок карты: куда «долетит» по скорости — туда и листаем; карта уходит, продолжая движение пальца, новая входит с той же скоростью

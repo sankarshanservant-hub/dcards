@@ -1525,3 +1525,55 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .on-room :is(.on-story, .on-feed, .on-slots) .live-card-btn { width: 96px; }
 .on-room :is(.on-story, .on-feed, .on-slots) .live-card-btn .live-card { width: 96px; height: auto; }
 .on-room .on-cardbox.sm .live-card-btn .live-card { width: 120px; height: auto; }
+/* «Глаз-алмаз» (22.11.2026): ответы и отправка другу */
+.eagle-answers { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.eagle-answers li { padding: 10px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.eagle-answers p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.eagle-send .btn { justify-content: center; gap: 8px; }
+.eagle-send .btn svg { width: 18px; height: 18px; }
+.eagle-form textarea { width: 100%; }
+/* главная (22.11.2026): «Открой любую карту»; «Спроси друга» (заливка) и «Играть» (обводка) в одной строке; спокойная «Все карты» */
+.home-hint { margin: -4px 0 0; color: var(--text-2); font-size: .95rem; }
+.home-acts { display: flex; justify-content: center; gap: 12px; width: 100%; max-width: 460px; }
+.home-acts .btn { flex: 1 1 0; min-width: 0; min-height: 52px; justify-content: center; gap: 8px; margin: 0; font-size: 1.05rem; font-weight: 700; text-decoration: none; }
+.btn.home-ask { background: var(--accent); color: var(--on-accent); border: 1.5px solid var(--accent); padding: 12px 18px; }
+.btn.home-ask:hover { background: var(--accent); filter: brightness(1.05); }
+:root[data-theme="light"] .btn.home-ask { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn.home-play { background: transparent; color: var(--text); border: 1.5px solid var(--accent); padding: 12px 18px; }
+:root[data-theme="light"] .btn.home-play { border: 2px solid #c99400; }
+.btn.home-play svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; flex: none; }
+.home-axis .home-all { margin: 2px 0 0; background: transparent; color: var(--text); border: 1px solid var(--border-strong); font-weight: 600; min-height: 46px; }
+.home-axis .home-all:hover { background: var(--surface-2, var(--surface)); }
+/* галерея (22.11.2026): «Случайная карта» и общая «Играть» на одном уровне */
+.play-rows.gal-acts { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+.gal-acts > .btn { min-height: 48px; }
+.gal-play { gap: 8px; border: 1.5px solid var(--accent); background: transparent; color: var(--text); text-decoration: none; }
+.gal-play svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.gal-play[hidden] { display: none; }
+/* «Отправить другу / с вопросом» — всегда две целые строки, без переносов внутри (22.11.2026) */
+.card-acts .btn .l1, .card-acts .btn .l2 { display: block; white-space: nowrap; }
+.card-acts .btn .l2::before { content: none; }
+.card-acts .btn[data-xopen] > span { min-width: 0; }
+/* сканер QR (22.11.2026) */
+.head-with-tool { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.head-with-tool h1 { margin: 0; }
+.qr-scan-btn svg { width: 24px; height: 24px; }
+.qr-pop { position: fixed; inset: 0; z-index: 200; background: rgba(4, 8, 20, .82); display: grid; place-items: center; padding: 16px; }
+.qr-pop-in { position: relative; width: min(420px, 100%); background: var(--surface); color: var(--text); border-radius: 20px; padding: 18px; display: grid; gap: 12px; box-shadow: var(--shadow); }
+.qr-x { position: absolute; top: 8px; right: 8px; z-index: 2; }
+.qr-view { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: #000; margin-top: 30px; }
+.qr-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qr-frame { position: absolute; inset: 18%; border: 3px solid var(--accent); border-radius: 16px; box-shadow: 0 0 0 999px rgba(0,0,0,.25); }
+.qr-msg { margin: 0; text-align: center; }
+.qr-msg.bad { color: var(--danger, #ff8a7a); }
+.qr-form { display: grid; gap: 6px; }
+.qr-form[hidden], .qr-pop [hidden] { display: none; }
+.qr-form input { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; }
+/* завершение игр (22.11.2026): равнозначные спокойные кнопки, предложение продолжить */
+.on-next { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 520px) { .on-next { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); } }
+.btn.on-calm { justify-content: center; text-align: center; background: var(--surface-2, var(--surface)); color: var(--text); border: 1px solid var(--border-strong); font-weight: 600; min-height: 50px; text-decoration: none; white-space: normal; }
+.on-offer { display: grid; gap: 10px; border: 1.5px solid var(--accent); }
+.on-crew { display: grid; gap: 8px; }
+.x-reply { flex-direction: column; gap: 2px; text-align: center; }
+.x-reply .small { font-weight: 400; color: var(--text-2); }

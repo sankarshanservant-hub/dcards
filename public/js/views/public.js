@@ -3,6 +3,7 @@ import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js
 import { openViewer } from '../viewer.js';
 import { SLOGAN, TAGLINE } from '../share.js';
 import { ABOUT_CARDS, ABOUT_FLOW, ABOUT_CLOSING } from '../content.js';
+import { scanButton, wireScan } from '../qr-scan.js';
 import { session, ic, tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
 const openFromQuery = (cards, openAt) => {
@@ -20,7 +21,6 @@ const openFromQuery = (cards, openAt) => {
 // По общей центральной оси: вопрос, три карты, «Все карты», две кнопки отправки. Ниже — два самостоятельных входа
 // и «Участвовать в проекте». Карточка направления целиком — ссылка; пиктограмма рядом с заголовком.
 const ENTRIES = [
-  ['/games', 'cube', 'Играть', 'Play', 'Игры с картами — одному или компанией.', 'Card games — on your own or with friends.'],
   ['/meetings', 'chat', 'Найти встречу', 'Find a meeting', 'Приходите на Dialogue Flow, чтобы познакомиться и пообщаться с другими участниками.', 'Come to Dialogue Flow to meet and talk with other participants.'],
   ['/chats', 'chats', 'Общаться с участниками', 'Talk with participants', 'Чаты участников, фасилитаторов и кураторов проекта.', 'Chats for participants, facilitators and curators of the project.'],
 ];
@@ -37,12 +37,10 @@ export async function home(ctx) {
         <p class="greet">${esc(TAGLINE())}</p></div>
       <div class="home-axis">
         <h2 class="home-q">${esc(tt('Что ты здесь видишь?', 'What do you see here?'))}</h2>
-        <a class="btn home-ask" href="${u('/library?play=friend')}">${esc(tt('Спроси друга', 'Ask a friend'))}</a>
         <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
-        <a class="btn yellow home-all" href="${u('/library')}" id="all-cards">${esc(tt('Все карты', 'All cards'))}</a>
-        <div class="home-send">
-          <a class="btn home-out" href="${u('/library?play=postcard')}">${ic.mail || ic.cards}<span>${esc(tt('Отправить открытку', 'Send a postcard'))}</span></a>
-        </div>
+        <p class="home-hint">${esc(tt('Открой любую карту', 'Open any card'))}</p>
+        <div class="home-acts"><a class="btn yellow home-ask" href="${u('/library?play=friend')}">${esc(tt('Спроси друга', 'Ask a friend'))}</a><a class="btn home-play" href="${u('/games')}">${ic.cube}<span>${esc(tt('Играть', 'Play'))}</span></a></div>
+        <a class="btn home-all" href="${u('/library')}" id="all-cards">${esc(tt('Все карты', 'All cards'))}</a>
       </div>
     </div></section>
     <section class="wrap band">
@@ -73,12 +71,13 @@ const paras = (T) => (lang === 'en' ? T.en : T.ru).map((p) => `<p>${p.map((l) =>
 // ---------- «Поиграем?» из открытой карты: игры для себя или для компании (20.11.2026) ----------
 export function games(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1></div>
+    <div class="page-head head-with-tool"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1>${scanButton(ic.qr)}</div>
     <div class="list">
       <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b></span></a>
-      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией', 'Play with friends'))}</b><span class="game-sub2">${esc(tt('Для живой встречи · 2–20 участников', 'For a live meeting · 2–20 players'))}<br>${esc(tt('Каждый со своего телефона', 'Everyone on their own phone'))}</span></span></a>
-      <a class="item" href="${u('/group/online')}"><span class="ic">${ic.globe}</span><span class="grow"><b>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</b><span class="game-sub2">${esc(tt('На расстоянии · 2–20 участников', 'At a distance · 2–20 players'))}<br>${esc(tt('Приглашение по ссылке, каждый со своего телефона', 'Invite by link, everyone on their own phone'))}</span></span></a>
+      <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией на встрече', 'Play together at a meeting'))}</b><span class="game-sub2">${esc(tt('2–20 участников · каждый со своего телефона', '2–20 players · everyone on their own phone'))}</span></span></a>
+      <a class="item" href="${u('/group/online')}"><span class="ic">${ic.globe}</span><span class="grow"><b>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</b><span class="game-sub2">${esc(tt('На расстоянии · друзья подключаются по ссылке', 'At a distance · friends join by link'))}</span></span></a>
     </div></div>`;
+  wireScan(ctx.main, ctx.navigate);
 }
 
 // ---------- библиотека ----------
@@ -112,14 +111,12 @@ export async function library(ctx) {
   const pickHtml = () => !intent ? '' : `<div class="pick-mode" role="region" aria-label="${esc(intent === 'postcard' ? tt('Открытка', 'Postcard') : tt('Вопрос другу', 'Question to a friend'))}">
       ${intent === 'postcard' ? (ic.mail || ic.cards) : ic.people}<b>${esc(intent === 'postcard' ? tt('Открытка', 'Postcard') : tt('Вопрос другу', 'Question to a friend'))}</b>
       <button class="pick-x" type="button" data-pick-close aria-label="${esc(intent === 'postcard' ? tt('Закрыть выбор карты для открытки', 'Close card choice for the postcard') : tt('Закрыть выбор карты для друга', 'Close card choice for a friend'))}">${X}</button>
-      <p>${esc(intent === 'postcard' ? tt('Выбери любую карту для открытки', 'Choose any card for the postcard') : tt('Выбери карту, которую хочешь отправить', 'Choose the card you want to send'))}</p></div>`;
+      <p>${esc(intent === 'postcard' ? tt('Выбери любую карту для открытки', 'Choose any card for the postcard') : tt('Выбери карту и напиши свою версию. Друг увидит её, когда ответит сам.', 'Choose a card and write your own take. Your friend will see it once they have answered.'))}</p></div>`;
   ctx.main.innerHTML = `<div class="wrap page">
     <div id="pick">${pickHtml()}</div>
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted gal-hint" ${intent ? 'hidden' : ''}>${esc(hintText())}</p></div>
-      <div class="play-rows" id="play"><div>${diceButtonHtml()}</div>
-        <div class="play-two" ${intent ? 'hidden' : ''}><a class="btn light sm" href="${u('/group/solo')}">${ic.user} ${esc(tt('Играть одному', 'Play solo'))}</a>
-        <a class="btn light sm" href="${u('/group')}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a></div></div></div>
+      <div class="play-rows gal-acts" id="play">${diceButtonHtml()}<a class="btn light gal-play" href="${u('/games')}" ${intent ? 'hidden' : ''}>${ic.cube}<span>${esc(tt('Играть', 'Play'))}</span></a></div></div>
     ${cards.length ? `<div class="seg gal-order" role="radiogroup" aria-label="${esc(tt('Порядок карт', 'Card order'))}"><button type="button" role="radio" data-order="new" aria-checked="${order === 'new'}">${esc(tt('Сначала новые', 'Newest first'))}</button><button type="button" role="radio" data-order="mix" aria-checked="${order === 'mix'}">${esc(tt('Вперемешку', 'Shuffled'))}</button></div>
       <div class="grid" id="gal">${cards.map((c, i) => tileHtml(c, i)).join('')}</div>` : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
     <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>

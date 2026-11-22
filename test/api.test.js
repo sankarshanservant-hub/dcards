@@ -1434,3 +1434,62 @@ test('22.11: игры компанией онлайн — ответы скры�
   c = await room('see', 2); await act(c, 1, 'start'); await act(c, 1, 'write', { text: 'a' });
   await call('POST', `/api/group/${c}/leave`, { deviceId: D(2) }); assert.equal((await st(c, 1)).phase, 'open');
 });
+
+test('22.11: «Глаз-алмаз» — банк 40 карт × 3 пары дословно; задание другу: вопрос скрыт до «Запомнил», ответ обязателен, оба ответа после', async () => {
+  const eagle = require('../server/eagle');
+  const fsx = require('fs'); const txt = fsx.readFileSync(require('path').join(__dirname, '..', 'server', 'data', 'eagle-bank.txt'), 'utf8');
+  const bank = eagle.parse(txt);
+  assert.equal(bank.size, 40, '40 карт');
+  const codes = [...bank.keys()]; assert.deepEqual(codes, Array.from({ length: 40 }, (_, i) => `DC-${String(i + 1).padStart(4, '0')}`));
+  let pairs = 0; for (const [, l] of bank) { assert.equal(l.length, 3); pairs += l.length; }
+  assert.equal(pairs, 120, '120 пар');
+  assert.equal(bank.get('DC-0001')[0].q, 'Что несёт в руке человек у правого края пешеходного перехода?');
+  assert.equal(bank.get('DC-0040')[2].a, 'Белая ткань.');
+  assert.equal(new Set([...bank.values()].flat().map((x) => x.id)).size, 120, 'стабильные идентификаторы без повторов');
+  assert.throws(() => eagle.parse('DC-0001\nа | б\n'), /has 1 pairs/, 'неполный набор не загружается');
+  assert.throws(() => eagle.parse('DC-0001\nа | б\nв | г\nд | е\nDC-0001\nа | б\nв | г\nд | е\n'), /duplicate/);
+  // банк только для опубликованных карт
+  const b = (await call('GET', '/api/eagle/bank')).json;
+  assert.ok(Object.keys(b.items).length >= 1 && Object.keys(b.items).every((c) => /^DC-00(0[1-9]|[1-3]\d|40)$/.test(c)));
+  const code = Object.keys(b.items)[0]; const it = b.items[code][1];
+  const VA = 'e'.repeat(32); const VB = 'f'.repeat(32); const tok = 'eagleTokenAAAAAAAAAAAAAA1';
+  assert.equal((await call('POST', '/api/eagle/x', { token: tok, qid: it.id, ver: it.v, name: 'Майя', answer: '   ' }, { visitor: VA })).json.error, 'answer_required', 'пустой ответ не отправляется');
+  assert.equal((await call('POST', '/api/eagle/x', { token: tok, qid: it.id, ver: 'old', name: 'Майя', answer: 'Зонт' }, { visitor: VA })).json.error, 'eagle_task_changed', 'устаревшая версия вопроса');
+  assert.equal((await call('POST', '/api/eagle/x', { token: tok, qid: it.id, ver: it.v, name: 'Майя', answer: 'Зонт' }, { visitor: VA })).status, 201);
+  assert.equal((await call('POST', '/api/eagle/x', { token: tok, qid: it.id, ver: it.v, name: 'Майя', answer: 'Зонт' }, { visitor: VA })).json.repeated, true, 'повтор — та же ссылка');
+  let v = (await call('GET', `/api/eagle/x/${tok}`, null, { visitor: VB })).json;
+  assert.equal(v.phase, 'look'); assert.equal(v.question, undefined); assert.equal(v.answers, undefined); assert.equal(JSON.stringify(v).includes('Зонт'), false, 'чужой ответ скрыт'); assert.equal(v.card.code, code);
+  v = (await call('GET', `/api/eagle/x/${tok}?look=1`, null, { visitor: VB })).json;
+  assert.equal(v.phase, 'ask'); assert.equal(v.question, it.q); assert.equal(v.answer, undefined, 'правильный ответ — только после своего');
+  assert.equal((await call('POST', `/api/eagle/x/${tok}/answer`, { name: 'Аня', answer: ' ' }, { visitor: VB })).json.error, 'answer_required');
+  v = (await call('POST', `/api/eagle/x/${tok}/answer`, { name: 'Аня', answer: 'Чемодан' }, { visitor: VB })).json;
+  assert.equal(v.phase, 'result'); assert.equal(v.answer, it.a); assert.deepEqual(v.answers.map((x) => x.name), ['Майя', 'Аня']);
+  v = (await call('POST', `/api/eagle/x/${tok}/answer`, { name: 'Аня', answer: 'Другое' }, { visitor: VB })).json;
+  assert.equal(v.repeated, true); assert.equal(v.answers[1].text, 'Чемодан', 'повторная отправка не меняет ответ');
+  v = (await call('GET', `/api/eagle/x/${tok}`, null, { visitor: VA })).json;
+  assert.equal(v.mine, true); assert.equal(v.replies, 1); assert.equal(v.answers[1].text, 'Чемодан', 'отправитель видит ответ друга');
+  const bl = (await call('GET', '/api/bell', null, { visitor: VA })).json;
+  assert.ok((bl.items || bl.notifications || []).some((n) => /Глаз-алмаз/.test(n.title)), 'гостю-отправителю — уведомление');
+  // банк обновили: отправленное задание остаётся прежним (снимок)
+  eagle._setBank(txt.replace(it.q, it.q + ' (новая версия)'));
+  v = (await call('GET', `/api/eagle/x/${tok}`, null, { visitor: VB })).json; assert.equal(v.question, it.q);
+  eagle._setBank(txt);
+  // превью: вопрос скрыт, рубашка карты
+  const page = await fetch(base + '/e/' + tok).then((r) => r.text());
+  assert.ok(page.includes('Проверим нашу наблюдательность?') && page.includes('/og/eagle.jpg') && !page.includes(it.q));
+});
+
+test('22.11: вход владельца по паролю закрывается, как только у настоящего аккаунта есть роль администратора', async () => {
+  const cfg0 = (await call('GET', '/api/config')).json;
+  const auth = require('../server/auth');
+  if (!auth.ownerLoginOpen()) { assert.equal(cfg0.ownerLogin, false); return; }
+  const o = await call('POST', '/api/auth/owner', { password: 'test-password' });
+  assert.equal(o.status, 200, 'пока администратора нет — аварийный вход открыт');
+  const a = await emailLogin('admin-real@example.org', 'Админ');
+  assert.equal((await call('POST', `/api/admin/users/${a.user.id}/roles`, { role: 'admin', grant: true }, { cookie: o.cookie })).status, 200);
+  assert.equal((await call('GET', '/api/config')).json.ownerLogin, false, 'в интерфейсе входа по паролю больше нет');
+  const again = await call('POST', '/api/auth/owner', { password: 'test-password' });
+  assert.equal(again.status, 403); assert.equal(again.json.error, 'owner_login_closed');
+  // снять роль, чтобы не влиять на другие проверки
+  await call('POST', `/api/admin/users/${a.user.id}/roles`, { role: 'admin', grant: false }, { cookie: a.cookie });
+});

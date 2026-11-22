@@ -2,7 +2,7 @@
 // остальные заходят со своих телефонов. Разговор — в любом созвоне или переписке; очков и победителей нет.
 // Комната, вход и обновления — те же, что у игр компанией (/api/group, /g/<код>); экраны игр — здесь.
 import { lang } from '../i18n.js';
-import { esc, tt, u, shareLink, api, errorText, toast, visitorId, storage } from '../util.js';
+import { morph, listen, esc, tt, u, shareLink, api, errorText, toast, visitorId, storage } from '../util.js';
 import { ic, loading, failed } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { subscribe } from '../live-common.js';
@@ -27,6 +27,30 @@ export const ONLINE_GAMES = [
     den: 'Two cards open side by side. Each person writes what connects them: a word, an image or a short story. The answers open together, and you can mark the one that surprised you.' },
 ];
 export const ONLINE_KEYS = ONLINE_GAMES.map((g) => g.key);
+// Приглашение — по игре (22.11.2026)
+const PITCH = {
+  see: ['Давайте сыграем в «Что видишь ты?». Посмотрим на одну карту и сравним, что каждый в ней увидел.', 'Let’s play “What do you see?”. We’ll look at one card and compare what each of us saw in it.'],
+  whose: ['Давайте сыграем в «Чья это карта?». Каждый тайно выберет карту, а остальные попробуют угадать, чья она.', 'Let’s play “Whose card is it?”. Everyone secretly picks a card, and the others try to guess whose it is.'],
+  chain: ['Давайте сыграем в «Историю по кругу». По очереди сочиним общую историю по картам.', 'Let’s play “A story in turns”. We’ll take turns writing a shared story from the cards.'],
+  gift: ['Давайте сыграем в «Карту для соседа». Каждый выберет карту и вопрос для другого участника.', 'Let’s play “A card for your neighbour”. Everyone picks a card and a question for another player.'],
+  bridge: ['Давайте сыграем в «Мост между картами». Посмотрим на две карты и поищем, что их связывает.', 'Let’s play “A bridge between cards”. We’ll look at two cards and look for what connects them.'],
+};
+export const pitchOf = (key) => { const p = PITCH[key]; return p ? tt(p[0], p[1]) : ''; };
+/** Предложение продолжить: участник сам решает, присоединиться ли (22.11.2026). */
+export function offerHtml(s, titleOf) {
+  const n = s && s.next; if (!n || n.joined) return '';
+  return `<div class="card-ui on-offer" role="region" aria-label="${esc(tt('Предложение продолжить', 'Suggestion to continue'))}"><b>${esc(tt(`${n.byName} предлагает продолжить: «${titleOf(n.format)}»`, `${n.byName} suggests continuing: “${titleOf(n.format)}”`))}</b>
+    <div class="row wrap"><button class="btn yellow" type="button" data-offer-join="${esc(n.code)}">${esc(tt('Присоединиться', 'Join'))}</button><button class="btn light" type="button" data-offer-no>${esc(tt('Не сейчас', 'Not now'))}</button></div></div>`;
+}
+export function wireOffer(root, s, navigate, hide) {
+  root.querySelectorAll('[data-offer-join]').forEach((b) => b.onclick = async () => {
+    b.disabled = true;
+    try { await api(`/api/group/${b.dataset.offerJoin}/join`, { method: 'POST', body: { deviceId: visitorId(), name: (s.me && s.me.name) || storage.get('dc_live_name') || '' } }); navigate('/g/' + b.dataset.offerJoin); }
+    catch (x) { b.disabled = false; toast(errorText(x)); }
+  });
+  root.querySelectorAll('[data-offer-no]').forEach((b) => b.onclick = hide);
+}
+export const gameTitle = (k) => { const g = ONLINE_GAMES.find((x) => x.key === k); return g ? title(g) : k; };
 const G = (k) => ONLINE_GAMES.find((g) => g.key === k) || ONLINE_GAMES[0];
 const title = (g) => (lang === 'en' ? g.en : g.ru);
 const desc = (g) => (lang === 'en' ? g.den : g.dru);
@@ -34,30 +58,57 @@ const desc = (g) => (lang === 'en' ? g.den : g.dru);
 const THEMES = () => [tt('Какая карта похожа на твоё утро?', 'Which card is like your morning?'), tt('Какая карта — про то, что тебя сейчас радует?', 'Which card is about what makes you happy right now?'),
   tt('Какая карта похожа на место, где тебе спокойно?', 'Which card is like a place where you feel calm?'), tt('Какая карта — про то, о чём ты давно думаешь?', 'Which card is about something you have been thinking about for a while?')];
 
-// ---------- выбор игры ----------
+// ---------- выбор игры (22.11.2026: сначала игра, затем имя и создание комнаты) ----------
 export async function choose(ctx) {
-  const name = storage.get('dc_live_name') || '';
   let cols = []; try { cols = (await personal.load()).collections.filter((c) => c.codes.length >= 2); } catch { /* только галерея */ }
   if (!ctx.alive()) return;
+  const picked = ONLINE_GAMES.find((g) => g.key === ctx.query.get('g'));
+  const from = ctx.query.get('from'); // «Продолжить этой компанией»: код прежней комнаты
+  if (!picked) {
+    ctx.main.innerHTML = `<div class="wrap page narrow stack">
+      <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</h1>
+        <p class="game-lead">${esc(tt('На расстоянии · друзья подключаются по ссылке', 'At a distance · friends join by link'))}</p>
+        <div class="game-how"><p>${esc(tt('Выберите игру, затем создайте комнату и отправьте приглашение. Говорить можно в любом созвоне или переписке — ответы видны прямо в игре. Регистрация не нужна.', 'Choose a game, then create a room and send an invitation. Talk on any call or chat — the answers are shown right in the game. No sign-up needed.'))}</p></div></div>
+      ${from ? await crewBox(from) : ''}
+      <div class="list">${ONLINE_GAMES.map((g) => `<a class="item group-format" href="${u('/group/online?g=' + g.key + (from ? '&from=' + encodeURIComponent(from) : ''))}"><span class="body"><b>${esc(title(g))}</b><span class="small">${esc(desc(g))}</span>${g.min ? `<span class="small muted">${esc(tt('Нужно хотя бы двое', 'At least two players'))}</span>` : ''}</span><span aria-hidden="true">→</span></a>`).join('')}</div>
+    </div>`;
+    return;
+  }
+  const name = storage.get('dc_live_name') || '';
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</h1>
-      <p class="game-lead">${esc(tt('На расстоянии · каждый со своего телефона', 'At a distance · everyone on their own phone'))}</p>
-      <div class="game-how"><p>${esc(tt('Вы создаёте комнату и отправляете приглашение. Друзья открывают ссылку и подключаются. Говорить можно в любом созвоне или переписке — ответы видны прямо в игре.', 'You create a room and send an invitation. Friends open the link and join. Talk on any call or chat — the answers are shown right in the game.'))}</p>
-        <p>${esc(tt('Регистрация не нужна.', 'No sign-up needed.'))}</p></div></div>
-    <label class="field" for="oname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="oname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="oname-h">
-    <p class="small muted" id="oname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
-    ${cols.length ? `<label class="field" for="osrc">${esc(tt('Какие карты', 'Which cards'))}</label><select id="osrc"><option value="">${esc(tt('Вся галерея', 'The whole gallery'))}</option>${cols.map((c) => `<option value="${esc(String(c.id))}">${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)} · ${c.codes.length}</option>`).join('')}</select>` : ''}
-    <p class="form-error" id="oerr" role="alert"></p>
-    <div class="list">${ONLINE_GAMES.map((g) => `<button class="item group-format" type="button" data-g="${g.key}"><span class="body"><b>${esc(title(g))}</b><span class="small">${esc(desc(g))}</span>${g.min ? `<span class="small muted">${esc(tt('Нужно хотя бы двое', 'At least two players'))}</span>` : ''}</span><span aria-hidden="true">→</span></button>`).join('')}</div>
-  </div>`;
-  ctx.main.querySelectorAll('[data-g]').forEach((b) => b.addEventListener('click', async () => {
+    <div class="page-head"><p class="eyebrow">${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</p><h1>${esc(title(picked))}</h1><p class="lead">${esc(desc(picked))}</p></div>
+    ${from ? await crewBox(from) : ''}
+    <form class="stack" id="ocreate">
+      <label class="field" for="oname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="oname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="oname-h">
+      <p class="small muted" id="oname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
+      ${cols.length ? `<label class="field" for="osrc">${esc(tt('Какие карты', 'Which cards'))}</label><select id="osrc"><option value="">${esc(tt('Вся галерея', 'The whole gallery'))}</option>${cols.map((c) => `<option value="${esc(String(c.id))}">${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)} · ${c.codes.length}</option>`).join('')}</select>` : ''}
+      <p class="form-error" id="oerr" role="alert"></p>
+      <button class="btn yellow big" type="submit">${esc(from ? tt('Предложить участникам', 'Suggest to the players') : tt('Создать комнату', 'Create a room'))}</button>
+      ${from ? `<p class="small muted" style="margin:0">${esc(tt('Участники прежней комнаты увидят предложение и сами решат, присоединиться ли.', 'Players in the previous room will see the suggestion and decide for themselves whether to join.'))}</p>` : ''}
+      <a class="small" href="${u('/group/online' + (from ? '?from=' + encodeURIComponent(from) : ''))}">${esc(tt('Выбрать другую игру', 'Choose another game'))}</a>
+    </form></div>`;
+  ctx.main.querySelector('#ocreate').addEventListener('submit', async (e) => {
+    e.preventDefault(); const b = e.target.querySelector('[type=submit]');
     const n = ctx.main.querySelector('#oname').value.trim();
     if (!n) { ctx.main.querySelector('#oerr').textContent = tt('Напишите имя — его увидят друзья.', 'Enter your name — your friends will see it.'); ctx.main.querySelector('#oname').focus(); return; }
     storage.set('dc_live_name', n); b.disabled = true;
     const src = ctx.main.querySelector('#osrc'); const col = src && src.value ? cols.find((c) => String(c.id) === src.value) : null;
-    try { const r = await api('/api/group', { method: 'POST', body: { format: b.dataset.g, deviceId: visitorId(), name: n, codes: col ? col.codes : undefined } }); ctx.navigate('/g/' + r.code); }
-    catch (x) { b.disabled = false; ctx.main.querySelector('#oerr').textContent = errorText(x); }
-  }));
+    try {
+      const r = await api('/api/group', { method: 'POST', body: { format: picked.key, deviceId: visitorId(), name: n, codes: col ? col.codes : undefined, from: from || undefined } });
+      if (from && r.offerError) toast(errorText({ code: r.offerError }));
+      ctx.navigate('/g/' + r.code);
+    } catch (x) { b.disabled = false; ctx.main.querySelector('#oerr').textContent = errorText(x); }
+  });
+}
+/** Состав прежней комнаты для «Продолжить этой компанией». */
+export async function crewBox(code) {
+  try {
+    const s = await api(`/api/group/${encodeURIComponent(code)}/state?device=${encodeURIComponent(visitorId())}`);
+    if (!s.me) return '';
+    const others = s.members.filter((m) => !s.me || m.id !== s.me.id);
+    return `<div class="card-ui flat on-crew"><b>${esc(tt('Эта компания', 'This group'))}</b><ul class="on-people">${s.members.map((m) => `<li><span>${esc(m.name)}${s.me && m.id === s.me.id ? ` (${esc(tt('вы', 'you'))})` : ''}</span></li>`).join('')}</ul>
+      ${others.length ? '' : `<p class="small muted" style="margin:0">${esc(tt('В прежней комнате больше никого нет — предложение некому показать. Можно собрать новую компанию.', 'Nobody else is left in the previous room — there is no one to show the suggestion to. You can gather a new group.'))}</p>`}</div>`;
+  } catch { return `<p class="small muted">${esc(tt('Прежняя комната недоступна — предложение не доставить. Создайте комнату и отправьте приглашение.', 'The previous room is not available — the suggestion cannot be delivered. Create a room and send an invitation.'))}</p>`; }
 }
 
 // ---------- комната ----------
@@ -191,14 +242,15 @@ export async function room(ctx, code, first) {
 
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
-      <div class="list"><a class="item" href="${u('/group/online')}"><span class="body"><b>${esc(tt('Сыграть ещё', 'Play again'))}</b></span><span>→</span></a><a class="item" href="${u('/library')}"><span class="body"><b>${esc(tt('Галерея карт', 'Card gallery'))}</b></span><span>→</span></a><a class="item" href="${u('/')}"><span class="body"><b>${esc(tt('На главную', 'Home'))}</b></span><span>→</span></a></div>`;
+      ${offerHtml(ui.offerHidden ? null : s, gameTitle)}
+      ${s.me ? `<div class="on-next"><a class="btn on-calm" href="${u('/group/online?from=' + s.code)}">${esc(tt('Продолжить этой компанией', 'Continue with this group'))}</a><a class="btn on-calm" href="${u('/group/online')}">${esc(tt('Собрать новую компанию', 'Gather a new group'))}</a></div>` : `<div class="on-next"><a class="btn on-calm" href="${u('/group/online')}">${esc(tt('Собрать новую компанию', 'Gather a new group'))}</a></div>`}`;
     const h = `<h1 class="on-title">${esc(title(g))}</h1>`;
     if (!s.me) return `${h}<p class="lead">${esc(desc(g))}</p><form class="form" id="oj"><label class="field" for="ojn">${esc(tt('Ваше имя', 'Your name'))}</label><input id="ojn" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"><p class="small muted" style="margin:0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p><p class="form-error" id="ojerr" role="alert"></p><button class="btn yellow wide big" type="submit">${esc(tt('Войти в игру', 'Join the game'))}</button></form>${people()}`;
     if (s.status === 'lobby') return `${h}<p class="lead">${esc(desc(g))}</p>${s.host ? inviteBox(true) : ''}${people()}
       <p class="small muted" style="margin:0">${esc(tt('Говорить можно в любом созвоне или переписке. Можно сказать «пас» — объяснять не нужно.', 'Talk on any call or chat. You can say “pass” — no explanation needed.'))}</p>
       ${roundOpts()}<div class="row">${startBtn(false)}</div>${waitHost(tt('Ждём начала', 'Waiting to start'))}`;
     const game = { see, bridge, whose, chain, gift }[s.format];
-    return h + game() + people();
+    return h + offerHtml(ui.offerHidden ? null : s, gameTitle) + game() + people();
   }
 
   function draw() {
@@ -214,13 +266,14 @@ export async function room(ctx, code, first) {
     if (html === lastHtml) return;
     // обновление комнаты не сбивает набор текста: фокус и курсор возвращаются на место
     const a = document.activeElement; const fk = a && a.dataset && a.dataset.draft; const sel = fk ? [a.selectionStart, a.selectionEnd] : null;
-    root.innerHTML = html; lastHtml = html; wire();
+    morph(root, html); lastHtml = html; wire();
     if (fk) { const t = root.querySelector(`[data-draft="${fk}"]`); if (t) { t.focus({ preventScroll: true }); try { t.setSelectionRange(sel[0], sel[1]); } catch { /* */ } } }
   }
   const $ = (q) => root.querySelector(q);
   function wire() {
-    root.querySelectorAll('[data-draft]').forEach((t) => t.addEventListener('input', () => { ui.draft[t.dataset.draft] = t.value; }));
-    root.querySelectorAll('[data-invite]').forEach((b) => b.onclick = () => sendRoomInvite(url, title(g)));
+    wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); });
+    root.querySelectorAll('[data-draft]').forEach((t) => listen(t, 'input', () => { ui.draft[t.dataset.draft] = t.value; }));
+    root.querySelectorAll('[data-invite]').forEach((b) => b.onclick = () => sendRoomInvite(url, pitchOf(g.key)));
     root.querySelectorAll('[data-round]').forEach((b) => b.onclick = () => act(b.dataset.round, roundBody()));
     root.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => act(b.dataset.act));
     root.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { ui.draft.theme = THEMES()[Number(b.dataset.theme)]; lastHtml = ''; draw(); });
@@ -234,7 +287,7 @@ export async function room(ctx, code, first) {
     root.querySelectorAll('[data-guess]').forEach((b) => b.onclick = () => act('guess', { slot: Number(b.dataset.guess), who: Number(b.dataset.who) }));
     root.querySelectorAll('[data-heart]').forEach((b) => b.onclick = () => act('heart', { to: Number(b.dataset.heart) }));
     root.querySelectorAll('[data-zoom]').forEach((b) => b.onclick = () => { const c = cards.get(b.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); });
-    root.querySelectorAll('[data-form]').forEach((f) => f.addEventListener('submit', async (e) => {
+    root.querySelectorAll('[data-form]').forEach((f) => listen(f, 'submit', async (e) => {
       e.preventDefault(); const kind = f.dataset.form; const t = f.querySelector('textarea'); const text = (t ? t.value : '').trim();
       if (!text) { toast(kind === 'gift' ? tt('Напишите вопрос к карте.', 'Write a question for the card.') : kind === 'pick' ? tt('Напишите одной строкой, почему эта карта.', 'Write in one line why this card.') : tt('Напишите ответ.', 'Write your answer.')); if (t) t.focus(); return; }
       const map = { write: ['write', {}], pick: ['pick', { code: ui.sel.p }], add: ['add', { code: ui.sel.c }], gift: ['pick', { code: ui.sel.g }], answer: ['answer', {}] };
@@ -244,7 +297,7 @@ export async function room(ctx, code, first) {
     const save = $('[data-save]'); if (save) save.onclick = async () => { save.disabled = true; try { const blob = await storyImage(s.story || []); await saveImage(blob, 'dialogue-cards-story.png'); } catch { toast(tt('Не получилось сделать картинку', 'Could not make the image')); } save.disabled = false; };
     const end = $('[data-end]'); if (end) end.onclick = () => { if (confirm(tt('Завершить игру для всех?', 'End the game for everyone?'))) act('end'); };
     const lv = $('[data-leave]'); if (lv) lv.onclick = async () => { try { await api(`/api/group/${s.code}/leave`, { method: 'POST', body: { deviceId: dev } }); } catch { /* */ } ctx.navigate('/group/online'); };
-    const oj = $('#oj'); if (oj) oj.addEventListener('submit', async (e) => {
+    const oj = $('#oj'); if (oj) listen(oj, 'submit', async (e) => {
       e.preventDefault(); const n = $('#ojn').value.trim(); if (!n) return;
       storage.set('dc_live_name', n);
       try { await api(`/api/group/${s.code}/join`, { method: 'POST', body: { deviceId: dev, name: n } }); await refresh(); } catch (x) { $('#ojerr').textContent = errorText(x); }

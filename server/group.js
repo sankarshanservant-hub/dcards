@@ -79,8 +79,9 @@ const cardOutTop = (c) => { if (!c) return null; const k = db.prepare('SELECT * 
 // онлайн-игры (на расстоянии) — отдельный модуль с тем же устройством комнаты
 const online = require('./online')({ db, R, dataOf, save, setRoom, pool, randomCard, cardOut: cardOutTop, publicCard, count, shuffle, derange });
 
-function create({ format, deviceId, name, showDemo, codes }) {
+function create({ format, deviceId, name, showDemo, codes, from }) {
   if (!FORMATS.includes(format)) return { error: 'group_bad_format' };
+  if (from) { const again = recentOffer(from, deviceId, format); if (again) return { ok: true, code: again, repeated: true }; }
   const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
   if (!n) return { error: 'live_name_required' };
   let code; do { code = crypto.randomBytes(4).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 5).toUpperCase(); } while (code.length < 5 || R.byCode.get(code));
@@ -88,7 +89,24 @@ function create({ format, deviceId, name, showDemo, codes }) {
   if (poolCodes && poolCodes.length && poolCodes.filter((c) => db.prepare("SELECT 1 FROM cards WHERE code = ? AND status = 'published'").get(c)).length < 2) return { error: 'collection_too_small' };
   const info = db.prepare('INSERT INTO group_rooms (code, format, host_device, is_demo, data) VALUES (?, ?, ?, ?, ?)').run(code, format, deviceId, showDemo ? 1 : 0, JSON.stringify(poolCodes && poolCodes.length ? { pool: poolCodes } : {}));
   db.prepare('INSERT INTO group_members (room_id, device_id, name) VALUES (?, ?, ?)').run(Number(info.lastInsertRowid), deviceId, n);
+  // «Продолжить этой компанией» (22.11.2026): предложение участникам прежней комнаты — каждый сам решает, присоединиться ли
+  if (from) { const o = offer(from, deviceId, code, format, n); if (o.error) return { ok: true, code, offerError: o.error }; return { ok: true, code, offered: o.count, fromId: o.id }; }
   return { ok: true, code };
+}
+function offer(fromCode, deviceId, code, format, byName) {
+  const old = R.byCode.get(String(fromCode || '').toUpperCase()); if (!old) return { error: 'group_offer_unavailable' };
+  const me = R.member.get(old.id, deviceId); if (!me || me.left_at) return { error: 'group_offer_unavailable' };
+  const count = R.members.all(old.id).filter((m) => m.id !== me.id).length;
+  if (!count) return { error: 'group_offer_nobody' };
+  save(old, { next: { code, format, by: me.id, byName, at: now() } });
+  return { ok: true, count, id: old.id };
+}
+/** Повторное нажатие «Предложить участникам» в ту же игру сразу после первого — та же новая комната. */
+function recentOffer(fromCode, deviceId, format) {
+  const old = R.byCode.get(String(fromCode || '').toUpperCase()); if (!old) return null;
+  const me = R.member.get(old.id, deviceId); const nx = dataOf(old).next;
+  if (!me || !nx || nx.by !== me.id || nx.format !== format || Date.now() - Date.parse(nx.at) > 60e3) return null;
+  const r = R.byCode.get(nx.code); return r && r.status !== 'ended' ? nx.code : null;
 }
 function room(code) {
   const r = R.byCode.get(String(code || '').toUpperCase());
@@ -351,6 +369,9 @@ function state(code, deviceId, showDemo) {
   const out = { code: r.code, format: r.format, status: r.status, step: r.step, version: version(r.id), id: r.id,
     host: r.host_device === deviceId, hostName: name((members.find((m) => m.device_id === r.host_device) || {}).id),
     members: members.map((m) => ({ id: m.id, name: m.name })), me: me && !me.left_at ? { id: me.id, name: me.name } : null, phase: d.phase || null };
+  // предложение продолжить: видно прежним участникам (кроме предложившего), пока новая комната открыта
+  const nx = d.next; const nr = nx && R.byCode.get(nx.code);
+  if (nx && nr && nr.status !== 'ended' && me && !me.left_at && nx.by !== me.id) out.next = { code: nx.code, format: nx.format, byName: nx.byName, joined: !!R.member.get(nr.id, deviceId) };
   if (r.status !== 'play') return out;
   if (r.format === 'pairs') return pairsState(r, me && !me.left_at ? me : null, out);
   if (online.ONLINE.includes(r.format)) return online.state(r, me && !me.left_at ? me : null, out, showDemo);

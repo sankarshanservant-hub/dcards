@@ -76,6 +76,7 @@ const routes = [
   [/^\/group\/solo\/story\/?$/, grp.solo],
   [/^\/group\/solo\/connect\/?$/, solo.connect],
   [/^\/group\/solo\/eagle\/?$/, solo.eagle],
+  [/^\/e\/([A-Za-z0-9_-]{22,40})\/?$/, solo.eagleX],
   [/^\/group\/solo\/imagine\/?$/, solo.imagine],
   [/^\/about\/?$/, pub.about],
   [/^\/about\/flow\/?$/, pub.aboutFlow],
@@ -100,6 +101,7 @@ if (!storage.get('dc_seen')) { if (/^\/x\//.test(appPath())) storage.set('dc_via
 const depth = () => (history.state && history.state.depth) || 0;
 const PARENTS = [
   [/^\/g\//, '/games', 'К играм', 'To games'],
+  [/^\/e\//, '/games', 'К играм', 'To games'],
   [/^\/group\/solo\/./, '/group/solo', 'Играть одному', 'Play solo'],
   [/^\/group\/solo\/?$/, '/games', 'К играм', 'To games'],
   [/^\/group\/?$/, '/games', 'К играм', 'To games'],
@@ -115,22 +117,27 @@ const PARENTS = [
   [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
 ];
 function addBackLink(path, ctx) {
-  if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back], [data-home]')) return;
+  if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back], [data-home], [data-local]')) return;
   // у страницы своя ссылка «← …» наверху — её не дублируем стрелкой, остаётся домик
   const own = [...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'));
   const par = PARENTS.find(([re]) => re.test(path));
   let back = '';
   if (!own && depth() > 0) back = `<a class="nav-ic" data-back href="${u(par ? par[1] : '/')}" aria-label="${esc(tt('Назад', 'Back'))}" title="${esc(tt('Назад', 'Back'))}">${ic.arrowLeft}</a>`;
   else if (!own && par) back = `<a class="nav-ic" data-local href="${u(par[1])}" aria-label="${esc(tt(par[2], par[3]))}" title="${esc(tt(par[2], par[3]))}">${ic.arrowLeft}</a>`;
-  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar"><a class="nav-ic" data-home href="${u('/')}" aria-label="${esc(tt('На главную', 'Home'))}" title="${esc(tt('На главную', 'Home'))}">${ic.home}</a>${back}</div>`);
+  // «Назад» ведёт туда же, куда домик (на главную), — оставляем только «Назад» (22.11.2026)
+  const backHome = back && (back.includes('data-back') ? prevPath === '/' : par && par[1] === '/');
+  const home = backHome ? '' : `<a class="nav-ic" data-home href="${u('/')}" aria-label="${esc(tt('На главную', 'Home'))}" title="${esc(tt('На главную', 'Home'))}">${ic.home}</a>`;
+  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar">${home}${back}</div>`);
 }
 main.addEventListener('click', (e) => {
   const a = e.target.closest('[data-back]');
   if (a && depth() > 0) { e.preventDefault(); e.stopPropagation(); history.back(); }
 }, true);
 
+let prevPath = null; let curPath = null;
 async function render() {
   const token = ++renderToken;
+  if (appPath() !== curPath) { prevPath = curPath; curPath = appPath(); }
   renderedPath = location.pathname;
   document.body.classList.remove('has-choice-bar');
   renderChrome();
@@ -235,6 +242,7 @@ function renderChrome() {
   const link = (href, ru, en, on) => `<a href="${u(href)}" class="${on ? 'on' : ''}">${esc(tt(ru, en))}</a>`;
   document.getElementById('nav').innerHTML =
     link('/library', 'Карты', 'Cards', p.startsWith('/library') || p.startsWith('/cards'))
+    + link('/games', 'Играть', 'Play', p.startsWith('/games') || p.startsWith('/group') || p.startsWith('/g/') || p.startsWith('/e/'))
     + link('/meetings', 'Встречи', 'Meetings', p.startsWith('/meetings') || p.startsWith('/m/'))
     + link('/start#join', 'Участвовать', 'Take part', p.startsWith('/start') || p.startsWith('/facilitator/about') || p.startsWith('/curator/apply'))
     + `<a href="${u('/chats')}" class="${p.startsWith('/chats') || p.startsWith('/team') ? 'on' : ''}">${esc(tt('Общение', 'Community'))}<span class="nav-badge" data-unread hidden></span></a>`;

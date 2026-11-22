@@ -9,6 +9,7 @@ const DEFAULT_Q = { 'что ты здесь видишь?': 'what do you see her
 
 const TITLES = [
   [/^Друг ответил на карту$/, () => 'Your friend answered the card'],
+  [/^Друг ответил в «Глаз-алмазе»$/, () => 'Your friend answered in Eagle Eye'],
   [/^Новый ответ на карту$/, () => 'A new answer to your card'],
   [/^Тебе прислали ответную карту$/, () => 'You got a card in reply'],
   [/^Тебе предложили поделиться ответами в сторис$/, () => 'You were invited to share your answers in Instagram Stories'],

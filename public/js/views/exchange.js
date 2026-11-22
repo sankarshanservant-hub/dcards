@@ -54,7 +54,7 @@ export async function page(ctx, token) {
   // 21.11.2026: «ещё кому-то» — одному или нескольким (выбор в форме); «новая карта» — выбор карты для нового обмена
   const moreBtns = (c, secret) => `<div class="x-next">
       <a class="btn light" href="${u('/play/' + c.code + '?origin=forward')}">${esc(tt('Отправить эту карту ещё кому-то', 'Send this card to someone else'))}</a>
-      <a class="btn light" href="${u(secret ? '/play?reply=' + encodeURIComponent(secret) : '/library?play=friend')}">${esc(tt('Отправить новую карту', 'Send a new card'))}</a></div>`;
+      <a class="btn light x-reply" href="${u(secret ? '/play?reply=' + encodeURIComponent(secret) : '/library?play=friend')}"><span>${esc(tt('Задать встречный вопрос', 'Ask a question back'))}</span><span class="small">${esc(secret ? tt('Выбери новую карту — она придёт в этот же разговор', 'Choose a new card — it arrives in this same conversation') : tt('Выбери новую карту и напиши свой вопрос', 'Choose a new card and write your question'))}</span></a></div>`;
 
   function draw() {
     clearInterval(poll);

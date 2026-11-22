@@ -189,6 +189,11 @@ function checkOwnerPassword(req, password) {
   attempts.set(key, a);
   return { ok: false, error: 'wrong_password' };
 }
+/** Вход владельца по паролю убран (решение владельца 22.11.2026). Остаётся только аварийно — пока ни у одного
+ *  настоящего аккаунта (вход по почте или аккаунтом портала) нет роли администратора: иначе в кабинет не попасть. */
+function ownerLoginOpen() {
+  return !db.prepare("SELECT 1 FROM user_roles r JOIN users u ON u.id = r.user_id WHERE r.role = 'admin' AND u.is_demo = 0 AND (u.demo_key IS NULL OR u.demo_key <> 'owner') LIMIT 1").get();
+}
 function ownerUser() {
   let u = stmt.byDemoKey.get('owner');
   if (!u) {
@@ -223,7 +228,7 @@ function demoUser(key) {
 function grant(userId, role, by) { if (ROLES.includes(role)) stmt.grant.run(userId, role, by || null); }
 function revoke(userId, role) { stmt.revoke.run(userId, role); }
 
-module.exports = {
+module.exports = { ownerLoginOpen,
   cpath, COOKIE, DEMO_COOKIE, ROLES, EMAIL_RE, DEMO_USERS,
   loadUser, requireUser, requireRole, issue, clear, publicUser, displayName, rolesOf,
   siteLogin, requestCode, checkCode, consumeCode, verifyCode, findOrCreateUser, checkOwnerPassword, ownerUser, ownerPassword, ownerPasswordTooShort, demoUser, grant, revoke,

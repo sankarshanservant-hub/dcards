@@ -102,6 +102,12 @@ const ERRORS = {
   group_host_only: ['Это делает ведущий — тот, кто открыл игру.', 'Only the host — the person who opened the game — can do this.'],
   group_need_two: ['Нужно хотя бы два вопроса.', 'At least two questions are needed.'],
   answer_required: ['Напишите ответ.', 'Write your answer.'],
+  eagle_task_gone: ['Этого задания больше нет в банке — выберите другое.', 'This task is no longer in the bank — choose another one.'],
+  eagle_task_changed: ['Задание обновили — откройте его заново.', 'The task was updated — open it again.'],
+  eagle_own_task: ['Это ваше задание — его результат уже здесь.', 'This is your own task — its result is already here.'],
+  group_offer_unavailable: ['Прежняя комната недоступна — предложение не доставить. Отправьте приглашение по ссылке.', 'The previous room is not available — the suggestion cannot be delivered. Send the invitation link instead.'],
+  group_offer_nobody: ['В прежней комнате больше никого нет — предложение некому показать. Отправьте приглашение по ссылке.', 'Nobody is left in the previous room. Send the invitation link instead.'],
+  owner_login_closed: ['Вход по паролю закрыт: войдите своим аккаунтом.', 'Password sign-in is closed: sign in with your account.'],
   why_required: ['Напишите одной строкой, почему эта карта.', 'Write in one line why this card.'],
   gift_question_required: ['Напишите вопрос к карте.', 'Write a question for the card.'],
   group_not_your_turn: ['Сейчас ход другого участника.', 'It is someone else’s turn now.'],
@@ -242,3 +248,35 @@ export function durationText(min) {
   const h = Math.floor(min / 60); const m = min % 60;
   return tt([h ? `${h} ч` : '', m ? `${m} мин` : ''].filter(Boolean).join(' '), [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' '));
 }
+
+/**
+ * Точечное обновление разметки (22.11.2026, причина мерцания в играх): вместо замены innerHTML целиком
+ * совпадающие узлы остаются на месте — картинки не создаются заново и не мигают, фокус и набранный текст сохраняются.
+ * Узлы сравниваются по порядку и тегу; у картинок с другим src узел заменяется.
+ */
+export function morph(root, html) {
+  const tpl = document.createElement('template'); tpl.innerHTML = html;
+  syncChildren(root, tpl.content);
+}
+function syncChildren(a, b) {
+  const an = [...a.childNodes]; const bn = [...b.childNodes];
+  for (let i = 0; i < bn.length; i++) {
+    const x = an[i]; const y = bn[i];
+    if (!x) { a.appendChild(y.cloneNode(true)); continue; }
+    if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || (x.nodeType === 1 && x.nodeName === 'IMG' && x.getAttribute('src') !== y.getAttribute('src'))) { a.replaceChild(y.cloneNode(true), x); continue; }
+    if (x.nodeType === 3 || x.nodeType === 8) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+    syncAttrs(x, y);
+    if (x.nodeName === 'TEXTAREA') { if (document.activeElement !== x && x.value !== y.value && x.defaultValue !== y.textContent) { x.value = y.textContent; } continue; }
+    syncChildren(x, y);
+  }
+  for (let i = an.length - 1; i >= bn.length; i--) a.removeChild(an[i]);
+}
+function syncAttrs(x, y) {
+  for (const { name } of [...x.attributes]) if (!y.hasAttribute(name)) x.removeAttribute(name);
+  for (const { name, value } of [...y.attributes]) if (x.getAttribute(name) !== value) x.setAttribute(name, value);
+  if (x.nodeName === 'INPUT' && document.activeElement !== x && y.hasAttribute('value') && x.value !== y.getAttribute('value')) x.value = y.getAttribute('value');
+  if ((x.nodeName === 'INPUT' || x.nodeName === 'BUTTON' || x.nodeName === 'SELECT') && x.disabled !== y.hasAttribute('disabled')) x.disabled = y.hasAttribute('disabled');
+  if (x.nodeName === 'DETAILS') x.open = y.hasAttribute('open');
+}
+/** Обработчик, который можно назначать повторно (после morph узлы те же): всегда один, последний. */
+export function listen(el, type, fn) { if (!el.__h) el.__h = {}; if (!el.__h[type]) el.addEventListener(type, (e) => el.__h[type](e)); el.__h[type] = fn; }

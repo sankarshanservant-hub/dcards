@@ -1,12 +1,13 @@
 // «Играть компанией»: форматы для друзей без фасилитатора. Комната по QR/коду, каждый — со своего телефона.
 import { lang } from '../i18n.js';
-import { esc, tt, u, shareLink, api, errorText, toast, visitorId, storage } from '../util.js';
+import { morph, listen, esc, tt, u, shareLink, api, errorText, toast, visitorId, storage } from '../util.js';
 import { ic, loading, failed } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { subscribe, signHtml, unlockSound, soundsReady, play, clock, left, mmss, bellsFor, keepAwake } from '../live-common.js';
 import { QUESTION_FORMATS } from '../content.js';
 import * as personal from '../personal.js';
-import { ONLINE_KEYS, room as onlineRoom } from './online.js';
+import { ONLINE_KEYS, room as onlineRoom, offerHtml, wireOffer, crewBox } from './online.js';
+import { scanButton, wireScan } from '../qr-scan.js';
 
 export const GROUP_FORMATS = [
   { key: 'one', ru: 'Одна карта на всех', en: 'One card for everyone', dru: 'Все смотрят на одну карту и по кругу говорят, что заметили и о чём она напоминает. Самый простой формат.', den: 'Everyone looks at one card and takes turns saying what they notice and what it reminds them of. The simplest format.' },
@@ -26,32 +27,49 @@ const CIRCLE = () => [tt('Что из сказанного другими вас
 // Блок открывается и закрывается только по нажатию: при обновлении состояния игры его положение сохраняется (ui.open).
 const circleHtml = (open) => `<details class="about-df card-ui flat" data-k="circle" ${open ? 'open' : ''}><summary><span class="grow">${esc(tt('Дополнительные вопросы', 'More questions'))}</span><span class="chev" aria-hidden="true">▾</span></summary><div class="about-body"><ul class="qlist">${CIRCLE().map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div></details>`;
 
-// ---------- выбор формата ----------
+// ---------- выбор формата (22.11.2026: сначала игра, затем имя и создание комнаты) ----------
 export async function choose(ctx) {
-  const name = storage.get('dc_live_name') || '';
-  // Источник карт: вся галерея или своя подборка (у гостя — из этого браузера)
   let cols = []; try { cols = (await personal.load()).collections.filter((c) => c.codes.length >= 2); } catch { /* только галерея */ }
   if (!ctx.alive()) return;
   const pre = ctx.query.get('collection');
+  const from = ctx.query.get('from'); // «Выбрать следующую игру»: код прежней комнаты
+  const fromQ = from ? '&from=' + encodeURIComponent(from) : '';
+  const crew = from ? await crewBox(from) : '';
+  if (!ctx.alive()) return;
+  const picked = GROUP_FORMATS.find((f) => f.key === ctx.query.get('f'));
+  if (!picked) {
+    ctx.main.innerHTML = `<div class="wrap page narrow stack">
+      <div class="page-head"><div class="head-with-tool"><h1>${esc(tt('Играть компанией на встрече', 'Play together at a meeting'))}</h1>${scanButton(ic.qr)}</div>
+        <p class="game-lead">${esc(tt('2–20 участников · каждый со своего телефона', '2–20 players · everyone on their own phone'))}</p>
+        <div class="game-how"><p>${esc(tt('Выберите игру. Один участник создаёт комнату и показывает QR-код — остальные заходят по нему. Регистрация не нужна.', 'Choose a game. One player creates a room and shows the QR code — the others join with it. No sign-up needed.'))}</p></div></div>
+      ${crew}
+      <div class="list">${GROUP_FORMATS.map((f) => `<a class="item group-format" href="${u('/group?f=' + f.key + (pre ? '&collection=' + encodeURIComponent(pre) : '') + fromQ)}"><span class="body"><b>${esc(fTitle(f))}</b><span class="small">${esc(fDesc(f))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
+      <p class="small"><a href="${u('/library')}">${esc(tt('Один телефон на всех? Откройте карту и вопросы', 'One phone for everyone? Open a card and its questions'))}</a></p>
+    </div>`;
+    wireScan(ctx.main, ctx.navigate);
+    return;
+  }
+  const name = storage.get('dc_live_name') || '';
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией', 'Play with friends'))}</h1>
-      <p class="game-lead">${esc(tt('Для живой встречи · 2–20 участников', 'For a live meeting · 2–20 players'))}<br>${esc(tt('Каждый со своего телефона', 'Everyone on their own phone'))}</p>
-      <div class="game-how"><p>${esc(tt('Один участник открывает игру и создаёт QR-код. Остальные заходят по этому коду.', 'One player opens the game and creates a QR code. The others join with this code.'))}</p>
-        <p>${esc(tt('Регистрация не нужна.', 'No sign-up needed.'))}</p></div></div>
-    <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
-    <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
-    ${cols.length ? `<label class="field" for="gsrc">${esc(tt('Какие карты', 'Which cards'))}</label><select id="gsrc"><option value="">${esc(tt('Вся галерея', 'The whole gallery'))}</option>${cols.map((c) => `<option value="${esc(String(c.id))}" ${pre === String(c.id) ? 'selected' : ''}>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)} · ${c.codes.length}</option>`).join('')}</select>` : ''}
-    <p class="form-error" id="gerr" role="alert"></p>
-    <div class="list">${GROUP_FORMATS.map((f) => `<button class="item group-format" type="button" data-f="${f.key}"><span class="body"><b>${esc(fTitle(f))}</b><span class="small">${esc(fDesc(f))}</span></span><span aria-hidden="true">→</span></button>`).join('')}</div>
-  </div>`;
-  ctx.main.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', async () => {
+    <div class="page-head"><p class="eyebrow">${esc(tt('Играть компанией на встрече', 'Play together at a meeting'))}</p><h1>${esc(fTitle(picked))}</h1><p class="lead">${esc(fDesc(picked))}</p></div>
+    ${crew}
+    <form class="stack" id="gcreate">
+      <label class="field" for="gname">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gname" maxlength="40" value="${esc(name)}" autocomplete="given-name" aria-describedby="gname-h">
+      <p class="small muted" id="gname-h" style="margin:-6px 0 0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p>
+      ${cols.length ? `<label class="field" for="gsrc">${esc(tt('Какие карты', 'Which cards'))}</label><select id="gsrc"><option value="">${esc(tt('Вся галерея', 'The whole gallery'))}</option>${cols.map((c) => `<option value="${esc(String(c.id))}" ${pre === String(c.id) ? 'selected' : ''}>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)} · ${c.codes.length}</option>`).join('')}</select>` : ''}
+      <p class="form-error" id="gerr" role="alert"></p>
+      <button class="btn yellow big" type="submit">${esc(from ? tt('Предложить участникам', 'Suggest to the players') : tt('Создать комнату', 'Create a room'))}</button>
+      <a class="small" href="${u('/group' + (from ? '?from=' + encodeURIComponent(from) : ''))}">${esc(tt('Выбрать другую игру', 'Choose another game'))}</a>
+    </form></div>`;
+  ctx.main.querySelector('#gcreate').addEventListener('submit', async (e) => {
+    e.preventDefault(); const b = e.target.querySelector('[type=submit]');
     const n = ctx.main.querySelector('#gname').value.trim();
     if (!n) { ctx.main.querySelector('#gerr').textContent = tt('Напишите имя — его увидят друзья.', 'Enter your name — your friends will see it.'); ctx.main.querySelector('#gname').focus(); return; }
     storage.set('dc_live_name', n); b.disabled = true;
     const src = ctx.main.querySelector('#gsrc'); const col = src && src.value ? cols.find((c) => String(c.id) === src.value) : null;
-    try { const r = await api('/api/group', { method: 'POST', body: { format: b.dataset.f, deviceId: visitorId(), name: n, codes: col ? col.codes : undefined } }); ctx.navigate('/g/' + r.code); }
+    try { const r = await api('/api/group', { method: 'POST', body: { format: picked.key, deviceId: visitorId(), name: n, codes: col ? col.codes : undefined, from: from || undefined } }); if (from && r.offerError) toast(errorText({ code: r.offerError })); ctx.navigate('/g/' + r.code); }
     catch (x) { b.disabled = false; ctx.main.querySelector('#gerr').textContent = errorText(x); }
-  }));
+  });
 }
 
 // ---------- комната ----------
@@ -90,7 +108,9 @@ export async function room(ctx, code) {
 
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
-      <div class="list"><a class="item" href="${u('/group')}"><span class="body"><b>${esc(tt('Сыграть ещё', 'Play again'))}</b></span><span>→</span></a><a class="item" href="${u('/library')}"><span class="body"><b>${esc(tt('Галерея карт', 'Card gallery'))}</b></span><span>→</span></a><a class="item" href="${u('/meetings')}"><span class="body"><b>${esc(tt('Найти встречу Dialogue Flow', 'Find a Dialogue Flow meeting'))}</b></span><span>→</span></a><a class="item" href="${u('/')}"><span class="body"><b>${esc(tt('На главную', 'Home'))}</b></span><span>→</span></a></div>`;
+      ${offerHtml(ui.offerHidden ? null : s, (k) => fTitle(F(k)))}
+      <div class="on-next"><a class="btn on-calm" href="${u('/group' + (s.me ? '?from=' + s.code : ''))}">${esc(tt('Выбрать следующую игру', 'Choose the next game'))}</a></div>
+      ${s.me ? `<p class="small muted" style="margin:0">${esc(tt('Участники этой игры увидят предложение и сами решат, присоединиться ли.', 'Players of this game will see the suggestion and decide for themselves whether to join.'))}</p>` : ''}`;
     if (!s.me) return `<p class="lead">${esc(fDesc(f))}</p><form class="form" id="gj"><label class="field" for="gjn">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gjn" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}" aria-describedby="gjn-h"><p class="small muted" id="gjn-h" style="margin:0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p><p class="form-error" id="gjerr" role="alert"></p><button class="btn yellow wide big" type="submit">${esc(tt('Войти в игру', 'Join the game'))}</button></form>${people()}`;
     if (s.status === 'lobby') return `<p class="lead">${esc(fDesc(f))}</p>${invite(s.host)}${people()}
       <div class="card-ui flat"><b>${esc(tt('Договорённости', 'Agreements'))}</b><ul class="g-rules">${RULES().map((r) => `<li>${esc(r)}</li>`).join('')}</ul></div>
@@ -230,26 +250,27 @@ export async function room(ctx, code) {
     if (!root || !ctx.main.contains(root)) { ctx.main.innerHTML = '<div class="live" id="groot"></div>'; root = ctx.main.querySelector('#groot'); lastHtml = ''; }
     const html = `<div class="live-in">
       <p class="eyebrow">${esc(tt('Играть компанией', 'Play with friends'))} · ${esc(fTitle(f))}</p>
-      ${body()}
+      ${s.status !== 'ended' ? offerHtml(ui.offerHidden ? null : s, (k) => fTitle(F(k))) : ''}${body()}
       ${s.me && s.status !== 'ended' && s.status !== 'lobby' ? invite() : ''}
       ${s.me && s.status !== 'ended' ? `<div class="row between">${s.host ? `<button class="linkbtn" type="button" data-end>${esc(tt('Завершить игру', 'End the game'))}</button>` : `<button class="linkbtn" type="button" data-leave>${esc(tt('Выйти', 'Leave'))}</button>`}</div>` : ''}
     </div>`;
     // перерисовываем только то, что изменилось: без мигания при каждом обновлении и при новом круге
-    if (html !== lastHtml) { root.innerHTML = html; lastHtml = html; wire(); }
+    if (html !== lastHtml) { morph(root, html); lastHtml = html; wire(); }
     runTimer();
   }
   function wire() {
     const $ = (q) => ctx.main.querySelector(q);
-    root.querySelectorAll('details[data-k]').forEach((d) => d.addEventListener('toggle', () => { ui.open[d.dataset.k] = d.open; lastHtml = ''; }));
+    wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); });
+    root.querySelectorAll('details[data-k]').forEach((d) => listen(d, 'toggle', () => { ui.open[d.dataset.k] = d.open; lastHtml = ''; }));
     const ch = $('[data-change]'); if (ch) ch.onclick = () => { ui.change = true; draw(); };
     const fo = $('[data-force]'); if (fo) fo.onclick = () => { if (confirm(tt('Открыть карты тех, кто уже выбрал? Остальные увидят их без своей.', 'Reveal the cards of those who have chosen? The others will see them without theirs.'))) act('reveal', { force: true }); };
     const sp = $('[data-spot]'); if (sp) sp.onclick = () => act('spot', { on: true });
     const us = $('[data-unspot]'); if (us) us.onclick = () => act('spot', { on: false });
-    ctx.main.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => { if (s.format === 'pairs') unlockSound(); const a = b.dataset.act; act(a, a === 'talk' ? { minutes: Number(($('#gmin') || {}).value) || s.minutes } : {}); }));
+    ctx.main.querySelectorAll('[data-act]').forEach((b) => listen(b, 'click', () => { if (s.format === 'pairs') unlockSound(); const a = b.dataset.act; act(a, a === 'talk' ? { minutes: Number(($('#gmin') || {}).value) || s.minutes } : {}); }));
     const gj = $('#gj');
     if (gj) gj.onsubmit = async (e) => { e.preventDefault(); if (s.format === 'pairs') unlockSound(); keepAwake(true); const n = $('#gjn').value.trim(); if (!n) return; storage.set('dc_live_name', n); try { await api(`/api/group/${s.code}/join`, { method: 'POST', body: { deviceId: dev, name: n } }); await refresh(); } catch (x) { $('#gjerr').textContent = errorText(x); } };
     const gq = $('#gq');
-    if (gq) { gq.gqt.addEventListener('input', () => { ui.text = gq.gqt.value; }); gq.onsubmit = async (e) => { e.preventDefault(); const t = gq.gqt.value.trim(); if (!t) return; await act('write', { text: t }); ui.text = ''; toast(tt('Вопрос принят', 'Question saved')); }; }
+    if (gq) { listen(gq.gqt, 'input', () => { ui.text = gq.gqt.value; }); gq.onsubmit = async (e) => { e.preventDefault(); const t = gq.gqt.value.trim(); if (!t) return; await act('write', { text: t }); ui.text = ''; toast(tt('Вопрос принят', 'Question saved')); }; }
     ctx.main.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => { ui.preview = b.dataset.pick; draw(); });
     const pc = $('[data-pv-close]'); if (pc) { pc.onclick = () => { ui.preview = null; draw(); }; pc.focus(); }
     const po = $('[data-pv-ok]'); if (po) po.onclick = async () => { const code0 = ui.preview; const slot = ui.slot; ui.preview = null; ui.slot = null; ui.change = false; if (slot) await act('partner', { slotId: slot }); else await act('pick', { code: code0 }); };
@@ -259,7 +280,7 @@ export async function room(ctx, code) {
     ctx.main.querySelectorAll('[data-list]').forEach((b) => b.onclick = () => { ui.list = b.dataset.list; draw(); });
     const sd = $('[data-sound]'); if (sd) sd.onclick = () => { unlockSound(); setTimeout(draw, 300); };
     ctx.main.querySelectorAll('[data-zoom]').forEach((b) => b.onclick = () => { const c = cardsBy.get(b.dataset.zoom); if (c) openViewer({ cards: [c], index: 0, mode: 'admin', simple: true }); });
-    const gu = $('#gurl'); if (gu) gu.addEventListener('focus', () => gu.select());
+    const gu = $('#gurl'); if (gu) listen(gu, 'focus', () => gu.select());
     const en = $('[data-end]'); if (en) en.onclick = () => { if (confirm(tt('Завершить игру для всех?', 'End the game for everyone?'))) act('end'); };
     const lv = $('[data-leave]'); if (lv) lv.onclick = async () => { await api(`/api/group/${s.code}/leave`, { method: 'POST', body: { deviceId: dev } }).catch(() => {}); ctx.navigate('/group'); };
   }
@@ -343,7 +364,8 @@ export async function solo(ctx) { // «История из трёх карт» (
       html = `<div class="s3-final">${st.codes.map((code, i) => `<div class="s3-part">${img(byCode.get(code), 'live-card s3-thumb')}<div><b>${i + 1}</b><p>${esc(st.texts[i] || '—')}</p><button class="link-btn small" type="button" data-go="${i + 1}">${esc(tt('Изменить', 'Edit'))}</button></div></div>`).join('')}</div>
         <button class="btn yellow big send-btn" type="button" data-share>${esc(tt('Поделиться', 'Share'))}</button>
         <p class="vb-note s3-hint" role="status"></p>
-        <button class="btn light" type="button" data-again>${esc(tt('Сыграть ещё', 'Play again'))}</button>`;
+        <button class="btn light" type="button" data-again>${esc(tt('Сыграть ещё', 'Play again'))}</button>
+        <a class="btn on-calm" href="${u('/group/solo')}">${esc(tt('Выбрать другую игру', 'Choose another game'))}</a>`;
     }
     ctx.main.querySelector('#solo').innerHTML = html;
     const ta = ctx.main.querySelector('#s3t');

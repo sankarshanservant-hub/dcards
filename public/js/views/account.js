@@ -66,9 +66,9 @@ export function login(ctx) {
             <button class="btn yellow wide" type="submit">${esc(tt('Войти', 'Sign in'))}</button>
             <button class="linkbtn" type="button" id="back" style="color:var(--on-navy)">${esc(tt('Другой email', 'Another email'))}</button></form>`}
       </div>` : ''}
-      <details class="card-ui flat"><summary><b>${esc(tt('Вход владельца проекта (пароль)', 'Project owner sign-in (password)'))}</b></summary>
+      ${session.config.ownerLogin ? `<details class="card-ui flat"><summary><b>${esc(tt('Первый вход администратора (пароль)', 'First administrator sign-in (password)'))}</b></summary>
         <form class="form" id="fo" style="margin-top:12px"><label class="field">${esc(tt('Пароль', 'Password'))}<input type="password" name="password" autocomplete="current-password" required></label>
-          <p class="form-error" id="oerr" role="alert"></p><button class="btn dark" type="submit">${esc(tt('Войти как владелец', 'Sign in as owner'))}</button></form></details>
+          <p class="form-error" id="oerr" role="alert"></p><button class="btn dark" type="submit">${esc(tt('Войти как владелец', 'Sign in as owner'))}</button></form></details>` : ''}
       ${step === 1 && session.config.demoMode ? `<div class="card-ui flat demo-entry row between" id="demo-entry"><span><b>${esc(tt('Демо-режим', 'Demo mode'))}</b><br><span class="small muted">${esc(tt('Тестовые роли и данные — отдельно от настоящих.', 'Test roles and data, kept apart from real ones.'))}</span></span>
         <a class="btn sm" href="${u('/demo')}">${esc(tt('Посмотреть демо', 'View the demo'))} →</a></div>` : ''}
     </div>`;
@@ -99,7 +99,7 @@ export function login(ctx) {
       });
       ctx.main.querySelector('#back').addEventListener('click', () => { step = 1; draw(); });
     }
-    ctx.main.querySelector('#fo').addEventListener('submit', async (e) => {
+    const fo = ctx.main.querySelector('#fo'); if (fo) fo.addEventListener('submit', async (e) => {
       e.preventDefault();
       try { await api('/api/auth/owner', { method: 'POST', body: { password: e.target.password.value } }); await refreshSession(); goAfterLogin(ctx); }
       catch (x) { ctx.main.querySelector('#oerr').textContent = errorText(x); }
