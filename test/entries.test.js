@@ -66,6 +66,8 @@ test('портал: /dialogue-cards/, вход аккаунтом портала
   assert.equal(c.json.siteLogin, true);
   const html = await call('harekrishna.info', 'GET', '/dialogue-cards/');
   assert.match(html.text, /<meta name="dc-base" content="\/dialogue-cards">/);
+  // ссылки для других людей (поделиться, приглашения, QR) с портала — на нейтральный адрес
+  assert.match(html.text, /<meta name="dc-share" content="https:\/\/dialogue\.cards">/);
   const cards = await call('harekrishna.info', 'GET', '/dialogue-cards/api/cards');
   assert.match(cards.json.cards[0].thumb, /^\/dialogue-cards\/media\/thumb\//);
   const p = await call('harekrishna.info', 'POST', '/dialogue-cards/api/auth/site', { session: 'good-session-token-1' });

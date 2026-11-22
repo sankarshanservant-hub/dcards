@@ -2,7 +2,7 @@
 // остальные заходят со своих телефонов. Разговор — в любом созвоне или переписке; очков и победителей нет.
 // Комната, вход и обновления — те же, что у игр компанией (/api/group, /g/<код>); экраны игр — здесь.
 import { lang } from '../i18n.js';
-import { esc, tt, u, api, errorText, toast, visitorId, storage } from '../util.js';
+import { esc, tt, u, shareLink, api, errorText, toast, visitorId, storage } from '../util.js';
 import { ic, loading, failed } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { subscribe } from '../live-common.js';
@@ -66,7 +66,7 @@ export async function room(ctx, code, first) {
   let s = first;
   const load = async () => { s = await api(`/api/group/${encodeURIComponent(code)}/state?device=${encodeURIComponent(dev)}`); };
   const g = G(s.format);
-  const url = `${location.origin}${u('/g/' + s.code)}`;
+  const url = shareLink('/g/' + s.code);
   // черновики и выбор — на этом телефоне; переживают обновления комнаты
   const ui = { busy: false, draft: {}, sel: {}, edit: {}, step: s.step, phase: s.phase };
   const cards = new Map();

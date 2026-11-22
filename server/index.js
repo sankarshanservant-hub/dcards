@@ -261,7 +261,7 @@ r.post('/api/c/:slug/unselect', (req, res) => {
 });
 r.get('/api/c/:slug/qr.:fmt(svg|png)', wrap(async (req, res) => {
   const f = loadCollection(req, res); if (!f) return;
-  const url = `${baseUrl(req)}${req.site.base}/s/${f.col.slug}`;
+  const url = `${site.shareUrl()}/s/${f.col.slug}`; // QR — для других людей: dialogue.cards
   const opts = { errorCorrectionLevel: 'M', margin: 2, color: { dark: '#0f1430', light: '#ffffff' } };
   if (req.params.fmt === 'svg') return res.type('image/svg+xml').send(await QRCode.toString(url, { ...opts, type: 'svg' }));
   const size = Math.min(Math.max(Number(req.query.size) || 1024, 256), 2048);
@@ -412,14 +412,14 @@ r.get('/api/chats/:room/media/:kind(full|thumb)/:file', auth.requireUser, roomGu
 const fac = auth.requireRole('facilitator');
 const ownsCollection = (req, id) => collections.ownerOf(id) === req.user.id || (req.has('admin') && (!req.user.is_demo || isDemoRow('collections', 'id', id)));
 r.get('/api/collections', fac, (req, res) => res.json({
-  collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => (req.user.is_demo ? c.isDemo : !c.isDemo || req.showDemo)), baseUrl: baseUrl(req) + req.site.base,
+  collections: collections.listAll(req.has('admin') ? null : req.user.id).filter((c) => (req.user.is_demo ? c.isDemo : !c.isDemo || req.showDemo)), baseUrl: site.shareUrl(),
 }));
 r.post('/api/collections', fac, (req, res) => res.json({ id: collections.create(req.body && req.body.title, !!(req.body && req.body.isTest), req.user.id, !!req.user.is_demo) }));
 r.get('/api/collections/:id', fac, (req, res) => {
   const id = Number(req.params.id);
   if (!collections.exists(id) || !ownsCollection(req, id)) return bad(res, 'not_found', 404);
   const d = collections.adminDetail(id);
-  res.json({ ...d, url: `${baseUrl(req)}${req.site.base}/s/${d.slug}` });
+  res.json({ ...d, url: `${site.shareUrl()}/s/${d.slug}` });
 });
 r.patch('/api/collections/:id', fac, (req, res) => {
   const id = Number(req.params.id);
@@ -674,7 +674,7 @@ r.post('/api/group/:code/leave', (req, res) => { const d = liveDevice(req, res);
 r.post('/api/group/:code/act', (req, res) => { const d = liveDevice(req, res); if (!d) return; const b = req.body || {}; groupDone(res, group.act(req.params.code, d, String(b.action || ''), b, req.showDemo)); });
 r.get('/api/group/:code/qr.png', wrap(async (req, res) => {
   const rm = group.room(req.params.code); if (!rm) return bad(res, 'group_not_found', 404);
-  const png = await QRCode.toBuffer(`${baseUrl(req)}${req.site.base}/g/${rm.code}`, { width: Math.min(1600, Math.max(200, Number(req.query.size) || 600)), margin: 2 });
+  const png = await QRCode.toBuffer(`${site.shareUrl()}/g/${rm.code}`, { width: Math.min(1600, Math.max(200, Number(req.query.size) || 600)), margin: 2 });
   res.type('png').send(png);
 }));
 
@@ -969,7 +969,7 @@ r.use(express.static(publicDir, {
   index: false,
   setHeaders: (res, file) => res.set('Cache-Control', /\.(js|css|html|json)$/.test(file) ? 'no-cache' : 'public, max-age=86400'),
 }));
-const indexHtml = (base) => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').replaceAll('{{BASE}}', base);
+const indexHtml = (base) => fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').replaceAll('{{BASE}}', base).replaceAll('{{SHARE}}', site.shareMeta());
 const cachedIndex = new Map(); // путь входа → index.html
 // Превью ссылок для мессенджеров (19.11.2026): у приглашения и публичной ссылки карты — сама иллюстрация и вопрос.
 // Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.

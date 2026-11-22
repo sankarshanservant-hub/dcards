@@ -1,6 +1,6 @@
 // Обмен с другом (/x/<ссылка>), колокольчик (/bell), «Мои обмены», «Мои подборки» (18.11.2026).
 import { lang } from '../i18n.js';
-import { esc, tt, u, api, errorText, toast, storage, fmtDate, cityCase } from '../util.js';
+import { esc, tt, u, shareLink, api, errorText, toast, storage, fmtDate, cityCase } from '../util.js';
 import { ic, loading, failed, session } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { shareInvite, friendText, storyText, SLOGAN, sendButton, send, sendInvite, copyInvite, STORY_APPS, saveImage, openStoryApp } from '../share.js';
@@ -23,8 +23,8 @@ const defaultQ = () => tt(DEFAULT_Q, 'What do you see here?');
 const questionText = (q) => (!q || q === DEFAULT_Q ? defaultQ() : q);
 const withInfo = (c, cls) => `<div class="card-with-info">${cardBtn(c, cls)}${authorLine(c)}</div>`;
 const authorLine = (c) => `<details class="card-info"><summary aria-label="${esc(tt('Сведения о карте', 'About the card'))}" title="${esc(tt('Сведения о карте', 'About the card'))}"><span aria-hidden="true">i</span></summary><p class="small muted">${c.author ? `${esc(tt('Художник', 'Artist'))}: ${esc(c.author)} · ` : ''}${esc(c.code)}</p></details>`;
-const cardShareUrl = (c) => `${location.origin}${u('/play/' + c.code)}`; // публичная ссылка карты: каждый начинает свой обмен
-const playUrl = (c) => `${location.origin}${u('/play/' + c.code)}`;
+const cardShareUrl = (c) => shareLink('/play/' + c.code); // публичная ссылка карты: каждый начинает свой обмен
+const playUrl = (c) => shareLink('/play/' + c.code);
 
 export async function page(ctx, token) {
   loading(ctx.main);
@@ -121,8 +121,8 @@ export async function page(ctx, token) {
         ui.busy = false; draw(); window.scrollTo(0, 0);
       };
     }
-    const si = $('[data-sinv-send]'); if (si) si.onclick = async () => { const k = await sendInvite(`${location.origin}${u('/x/' + v.invite)}`); if (k && !isGroup) markSent(v.secret, k); };
-    const ci = $('[data-copy-invite]'); if (ci) ci.onclick = () => copyInvite(`${location.origin}${u('/x/' + v.invite)}`);
+    const si = $('[data-sinv-send]'); if (si) si.onclick = async () => { const k = await sendInvite(shareLink('/x/' + v.invite)); if (k && !isGroup) markSent(v.secret, k); };
+    const ci = $('[data-copy-invite]'); if (ci) ci.onclick = () => copyInvite(shareLink('/x/' + v.invite));
     wireNotify(ctx.main);
   }
   draw();
@@ -212,7 +212,7 @@ export async function storyPage(ctx, token) {
     </div>`;
     wire();
   }
-  const otherLink = () => `${location.origin}${u(`/x/${v.story.otherDoor}/story`)}`;
+  const otherLink = () => shareLink(`/x/${v.story.otherDoor}/story`);
   async function act(action, extra = {}) {
     ui.busy = true;
     try { const r = await api(`/api/x/${encodeURIComponent(token)}/story`, { method: 'POST', body: { action, hash: v.story.hash, ...extra } }); v = r.exchange; }
@@ -345,7 +345,7 @@ export async function playPage(ctx, code) {
     ctx.main.querySelector('[data-zoom]').onclick = () => openViewer({ cards: [card], index: 0, mode: 'admin', simple: true });
     if (!card.author) api(`/api/cards/${encodeURIComponent(card.code)}`).then((d) => { if (d.author) { card.author = d.author; const al = ctx.main.querySelector('.x-page .card-info'); if (al) al.outerHTML = authorLine(card); } }).catch(() => {});
     ctx.main.querySelector('[data-other]').onclick = () => { card = pick(card.code); ui.cancelled = false; draw(); }; // черновик остаётся у своей карты
-    const cl = ctx.main.querySelector('[data-copy-link]'); if (cl) cl.onclick = () => copyInvite(`${location.origin}${u('/x/' + drafts[card.code].tok)}`);
+    const cl = ctx.main.querySelector('[data-copy-link]'); if (cl) cl.onclick = () => copyInvite(shareLink('/x/' + drafts[card.code].tok));
     // одно нажатие: ссылка готова заранее, системное меню открывается сразу, обмен сохраняется параллельно
     f.onsubmit = async (e) => {
       e.preventDefault(); if (ui.sending) return; // двойной тап — без второго обмена
@@ -355,7 +355,7 @@ export async function playPage(ctx, code) {
       const q0 = f.pq.value.replace(/\s+/g, ' ').trim(); const question = !q0 || q0 === defaultQ() ? '' : q0;
       d.key = d.key || newKey(); d.tok = d.tok || newToken(); drafts[card.code] = d; keep();
       ui.sending = true; ui.err = ''; f.querySelector('[type=submit]').disabled = true;
-      const sending = sendInvite(`${location.origin}${u('/x/' + d.tok)}`);
+      const sending = sendInvite(shareLink('/x/' + d.tok));
       let r = null;
       try {
         r = reply ? await api(`/api/x/${encodeURIComponent(reply)}/reply`, { method: 'POST', body: { code: card.code, text, question, clientKey: d.key, inviteToken: d.tok } })

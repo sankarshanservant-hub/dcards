@@ -1,5 +1,5 @@
 // Пульт фасилитатора для встречи по телефонам: QR для входа, участники, раунды, пары, таймер, перерыв, завершение, отзывы.
-import { esc, tt, u, api, errorText, toast, visitorId, fmtDate } from '../util.js';
+import { esc, tt, u, shareLink, api, errorText, toast, visitorId, fmtDate } from '../util.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ic, showQr, ROLE_LABEL } from '../ui.js';
 import { participant } from './live.js';
 import { signHtml, signWords, unlockSound, soundsReady, play, clock, left, mmss, bellsFor, keepAwake, subscribe } from '../live-common.js';
@@ -26,7 +26,7 @@ export async function panel(ctx, id) {
   if (!ctx.alive()) return;
   let skew = clock(p.serverNow); let tick = null; const fired = new Set(); let busy = false;
   let tab = 'panel'; let meMounted = false; let gen = 0;
-  const url = `${location.origin}${u('/s/' + p.slug)}`;
+  const url = shareLink('/s/' + p.slug);
   const refresh = async () => { try { const n = await api(`/api/fac/live/${id}?device=${encodeURIComponent(dev)}`); if (!ctx.alive()) return; p = n; skew = clock(n.serverNow); draw(); } catch { /* */ } };
   const unsub = subscribe(`/api/fac/live/${id}/events`, refresh, ctx.alive);
   keepAwake(true);

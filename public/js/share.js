@@ -2,7 +2,7 @@
 // даёт само устройство (системное меню). Где системного меню нет (компьютер) — небольшой выбор: Telegram, WhatsApp,
 // скопировать. Человек сам подтверждает отправку — открытие меню не означает доставку. Возвращает true, если человек
 // воспользовался действием (для аналитики); отменённое системное меню — false.
-import { tt, toast, esc, u } from './util.js';
+import { tt, toast, esc, u, shareLink } from './util.js';
 
 // Подпись проекта (21.11.2026, окончательная): одна строка для интерфейса, сообщений и метаданных.
 export const TAGLINE = () => tt('Повод для интересного разговора', 'A reason for an interesting conversation');
@@ -145,7 +145,7 @@ export async function sendImage(blob, name, caption) {
   }
   return null; // отправка файлов недоступна — вызывающий предлагает сохранить картинку
 }
-export const projectUrl = () => `${location.origin}${u('/')}`;
+export const projectUrl = () => shareLink('/');
 export const postcardCaption = () => `${SLOGAN()}\n${projectUrl()}`;
 export function openStoryApp(key) {
   const a = STORY_APPS.find((x) => x.key === key); if (!a) return;
