@@ -8,6 +8,19 @@ const mail = require('./mail');
 
 const LANGS = ['ru', 'en', 'zh', 'th', 'de', 'fr', 'es', 'it', 'uk', 'kk', 'other'];
 
+// Живые и онлайн-встречи (22.11.2026). Прежние встречи — живые. Данные подключения (join_info) видят только
+// записавшиеся (письмо и страница записи /r/<ссылка>), фасилитатор и администратор — в публичных ответах их нет.
+{
+  const cols = db.prepare('PRAGMA table_info(meetings)').all().map((c) => c.name);
+  if (!cols.includes('mode')) db.exec("ALTER TABLE meetings ADD COLUMN mode TEXT NOT NULL DEFAULT 'live'");
+  if (!cols.includes('address')) db.exec("ALTER TABLE meetings ADD COLUMN address TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes('platform')) db.exec("ALTER TABLE meetings ADD COLUMN platform TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes('join_info')) db.exec("ALTER TABLE meetings ADD COLUMN join_info TEXT NOT NULL DEFAULT ''");
+}
+const isOnline = (m) => m && m.mode === 'online';
+/** Где проходит: живая — площадка, адрес, город, страна; онлайн — платформа. */
+const placeOf = (m, lang = 'ru') => (isOnline(m) ? `${lang === 'en' ? 'Online' : 'Онлайн'}${m.platform ? ' · ' + m.platform : ''}` : [m.venue, m.address, m.city, m.country].filter(Boolean).join(', '));
+
 function validTz(tz) { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; } }
 /** Смещение пояса (мс) в момент utcMs. */
 function tzOffset(utcMs, tz) {
@@ -38,6 +51,7 @@ function dateOut(d, m) {
 function meetingOut(m, { withDates = false, includePast = false } = {}) {
   const out = {
     id: m.id, title: m.title, description: m.description, country: m.country, city: m.city, venue: m.venue,
+    mode: isOnline(m) ? 'online' : 'live', address: m.address || '', platform: m.platform || '',
     language: m.language, timezone: m.timezone, priceType: m.price_type, priceNote: m.price_note, durationMin: m.duration_min || null, format: m.df_format === 'part' ? 'part' : 'standalone', lat: m.lat ?? null, lng: m.lng ?? null, priceAmount: m.price_type === 'paid' ? m.price_amount : null, currency: m.price_type === 'paid' ? m.currency : '', capacity: m.capacity,
     askContact: !!m.ask_contact, status: m.status, removedReason: m.removed_reason, isDemo: !!m.is_demo,
     facilitator: userName(m.facilitator_id), facilitatorId: m.facilitator_id, createdAt: m.created_at,
@@ -54,7 +68,7 @@ const visible = (showDemo) => `m.status = 'published' AND ${showDemo ? '1=1' : '
 function places(showDemo) {
   const rows = db.prepare(`SELECT m.country, m.city, COUNT(DISTINCT d.id) AS n FROM meetings m
     JOIN meeting_dates d ON d.meeting_id = m.id AND d.status = 'active' AND d.starts_at >= ?
-    WHERE ${visible(showDemo)} GROUP BY m.country, m.city ORDER BY m.country, m.city`).all(nowIso());
+    WHERE ${visible(showDemo)} AND m.mode <> 'online' GROUP BY m.country, m.city ORDER BY m.country, m.city`).all(nowIso());
   const byCountry = new Map();
   for (const r of rows) {
     if (!byCountry.has(r.country)) byCountry.set(r.country, { country: r.country, cities: [], count: 0 });
@@ -62,10 +76,16 @@ function places(showDemo) {
   }
   return [...byCountry.values()];
 }
-function upcoming({ country, city }, showDemo) {
+/** Ближайшие даты. mode: live | online | (все); живые — страна, город, язык; онлайн — язык и с какой даты (UTC ISO). */
+function upcoming({ country, city, mode, language, from }, showDemo) {
+  const md = mode === 'online' || mode === 'live' ? mode : null;
+  const lg = LANGS.includes(language) ? language : null;
+  const fromIso = from && !Number.isNaN(Date.parse(from)) && new Date(from).toISOString() > nowIso() ? new Date(from).toISOString() : nowIso();
+  const geo = md !== 'online'; // у онлайн-встреч города нет
   const rows = db.prepare(`SELECT d.*, m.id AS mid FROM meeting_dates d JOIN meetings m ON m.id = d.meeting_id
-    WHERE ${visible(showDemo)} AND d.status = 'active' AND d.starts_at >= ? AND (? IS NULL OR m.country = ?) AND (? IS NULL OR m.city = ?)
-    ORDER BY d.starts_at LIMIT 200`).all(nowIso(), country || null, country || null, city || null, city || null);
+    WHERE ${visible(showDemo)} AND d.status = 'active' AND d.starts_at >= ? AND (? IS NULL OR m.mode = ?) AND (? IS NULL OR m.language = ?)
+      AND (? IS NULL OR m.country = ?) AND (? IS NULL OR m.city = ?)
+    ORDER BY d.starts_at LIMIT 200`).all(fromIso, md, md, lg, lg, geo && country || null, geo && country || null, geo && city || null, geo && city || null);
   return rows.map((d) => { const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.mid); return { ...dateOut(d, m), meeting: meetingOut(m) }; });
 }
 function datePublic(id, showDemo, viewer = null) {
@@ -113,11 +133,11 @@ async function register(dateId, { name, email, contact, userId = null, visitorId
   const subject = lang === 'en' ? `You are registered: ${m.title}` : `Вы записаны: ${m.title}`;
   const ics = `${baseUrl}${require('./site').base()}/api/registrations/${token}/ics`;
   const body = lang === 'en'
-    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nLanguage: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
-    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${[m.venue, m.city, m.country].filter(Boolean).join(', ')}\nЯзык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} за участника. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
+    ? `Hello, ${n}!\n\nYou are registered for the Dialogue Flow meeting “${m.title}”.\nWhen: ${when}\nWhere: ${placeOf(m, 'en')}\n${isOnline(m) && m.join_info ? `How to join:\n${m.join_info}\n` : ''}Language: ${m.language}\nFacilitator: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Price: ${m.price_amount} ${m.currency} per person. Payment is arranged by the facilitator. ${m.price_note}\n` : 'Free.\n'}\nAdd to calendar: ${ics}\nCannot come? Cancel here to free your seat: ${link}`
+    : `Здравствуйте, ${n}!\n\nВы записаны на встречу Dialogue Flow «${m.title}».\nКогда: ${when}\nГде: ${placeOf(m, 'ru')}\n${isOnline(m) && m.join_info ? `Как подключиться:\n${m.join_info}\n` : ''}Язык встречи: ${m.language}\nФасилитатор: ${userName(m.facilitator_id)}\n${m.price_type === 'paid' ? `Стоимость: ${m.price_amount} ${m.currency} за участника. Оплату организует фасилитатор. ${m.price_note}\n` : 'Бесплатно.\n'}\nДобавить в календарь: ${ics}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`;
   // Демо-встреча: письмо не отправляется (честно сообщаем об этом на странице), настоящая почта не задействуется.
   const letter = m.is_demo ? { sent: false, demo: true, demoMeeting: true, subject, body } : await mail.send(e, subject, body);
-  return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: [m.venue, m.city, m.country].filter(Boolean).join(', ') };
+  return { ok: true, token, letter, link, isDemo: !!m.is_demo, startsAt: d.starts_at, timezone: m.timezone, place: placeOf(m, lang), joinInfo: isOnline(m) ? m.join_info : '' };
 }
 
 function registrationByToken(token) {
@@ -125,7 +145,9 @@ function registrationByToken(token) {
   if (!r) return null;
   const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(r.date_id);
   const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
-  return { name: r.name, email: r.email, status: r.status, createdAt: r.created_at, cancelledAt: r.cancelled_at, date: dateOut(d, m), meeting: meetingOut(m) };
+  // данные подключения — записавшемуся (пока запись активна)
+  return { name: r.name, email: r.email, status: r.status, createdAt: r.created_at, cancelledAt: r.cancelled_at, date: dateOut(d, m), meeting: meetingOut(m),
+    joinInfo: isOnline(m) && r.status === 'active' ? m.join_info : '' };
 }
 // Текст для .ics: любые переводы строк — «\\n», прочие управляющие символы убираются (строки файла не разрываются).
 const icsText = (s) => String(s || '').replace(/\r\n|\r|\n/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
@@ -139,10 +161,11 @@ function icsByToken(token, baseUrl, lang = 'ru') {
   const d = db.prepare('SELECT * FROM meeting_dates WHERE id = ?').get(r.date_id);
   const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(d.meeting_id);
   const link = `${baseUrl}${require('./site').base()}/r/${token}`;
-  const place = [m.venue, m.city, m.country].filter(Boolean).join(', ');
+  const place = placeOf(m, lang);
+  const join = isOnline(m) && r.status === 'active' && m.join_info ? (lang === 'en' ? `\nHow to join:\n${m.join_info}` : `\nКак подключиться:\n${m.join_info}`) : '';
   const desc = (lang === 'en'
-    ? `Dialogue Flow meeting.\nLocal time: ${fmtLocal(d, m, 'en')}\nPlace: ${place}\nFacilitator: ${userName(m.facilitator_id)}\nCannot come? Cancel to free your seat: ${link}`
-    : `Встреча Dialogue Flow.\nМестное время: ${fmtLocal(d, m, 'ru')}\nМесто: ${place}\nФасилитатор: ${userName(m.facilitator_id)}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}`);
+    ? `Dialogue Flow meeting.\nLocal time: ${fmtLocal(d, m, 'en')}\nPlace: ${place}\nFacilitator: ${userName(m.facilitator_id)}\nCannot come? Cancel to free your seat: ${link}${join}`
+    : `Встреча Dialogue Flow.\nМестное время: ${fmtLocal(d, m, 'ru')}\nМесто: ${place}\nФасилитатор: ${userName(m.facilitator_id)}\nНе сможете прийти? Отмените запись, чтобы освободить место: ${link}${join}`);
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dialogue Cards//Meetings//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
     `UID:dcards-reg-${r.id}-${d.id}@dialogue-cards`, `DTSTAMP:${icsTime(new Date().toISOString())}`, `DTSTART:${icsTime(d.starts_at)}`, ...(m.duration_min ? [`DTEND:${icsTime(new Date(new Date(d.starts_at).getTime() + m.duration_min * 60000).toISOString())}`] : []),
     `SUMMARY:${icsText(m.title)}`, `LOCATION:${icsText(place)}`, `DESCRIPTION:${icsText(desc)}`, `URL:${link}`,
@@ -163,12 +186,17 @@ const line = (v, n) => String(v ?? '').replace(/[\r\n\t\u2028\u2029]+/g, ' ').re
 const multiline = (v, n) => String(v ?? '').replace(/\r\n|\r/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '').trim().slice(0, n);
 function parseMeeting(body) {
   const tz = String(body.timezone || '').trim();
+  const online = body.mode === 'online';
   const m = {
+    mode: online ? 'online' : 'live',
+    address: online ? '' : line(body.address, 300),
+    platform: online ? line(body.platform, 80) : '',
+    join_info: online ? multiline(body.joinInfo, 500) : '',
     title: line(body.title, 140),
     description: multiline(body.description, 3000),
-    country: line(body.country, 80),
-    city: line(body.city, 80),
-    venue: line(body.venue, 300),
+    country: online ? '' : line(body.country, 80),
+    city: online ? '' : line(body.city, 80),
+    venue: online ? '' : line(body.venue, 300),
     language: LANGS.includes(body.language) ? body.language : 'ru',
     timezone: tz,
     price_type: body.priceType === 'paid' ? 'paid' : 'free',
@@ -177,12 +205,12 @@ function parseMeeting(body) {
     currency: body.priceType === 'paid' ? String(body.currency || '').trim().toUpperCase().slice(0, 3) : '',
     df_format: body.format === 'part' ? 'part' : 'standalone',
     duration_min: body.durationMin === '' || body.durationMin == null ? null : Math.round(Number(body.durationMin)),
-    lat: body.lat === '' || body.lat == null ? null : Number(body.lat),
-    lng: body.lng === '' || body.lng == null ? null : Number(body.lng),
+    lat: online || body.lat === '' || body.lat == null ? null : Number(body.lat),
+    lng: online || body.lng === '' || body.lng == null ? null : Number(body.lng),
     capacity: Math.max(1, Math.min(500, Number(body.capacity) || 0)),
     ask_contact: body.askContact ? 1 : 0,
   };
-  if (!m.title || !m.country || !m.city) return { error: 'required_fields' };
+  if (!m.title || (online ? !m.platform : !m.country || !m.city)) return { error: 'required_fields' };
   if (!validTz(tz)) return { error: 'bad_timezone' };
   if (!Number(body.capacity)) return { error: 'capacity_required' };
   if ((m.lat === null) !== (m.lng === null) || (m.lat !== null && !(Math.abs(m.lat) <= 90 && Math.abs(m.lng) <= 180))) return { error: 'bad_point' };
@@ -218,8 +246,8 @@ function create(user, body) {
   const p = parseMeeting(body); if (p.error) return p;
   const ds = expandDates(body, p.m.timezone); if (ds.error) return ds;
   const id = db.transaction(() => {
-    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, duration_min, df_format, lat, lng, capacity, ask_contact, is_demo)
-      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @duration_min, @df_format, @lat, @lng, @capacity, @ask_contact, @is_demo)`)
+    const info = db.prepare(`INSERT INTO meetings (facilitator_id, title, description, country, city, venue, language, timezone, price_type, price_note, price_amount, currency, duration_min, df_format, lat, lng, capacity, ask_contact, is_demo, mode, address, platform, join_info)
+      VALUES (@fid, @title, @description, @country, @city, @venue, @language, @timezone, @price_type, @price_note, @price_amount, @currency, @duration_min, @df_format, @lat, @lng, @capacity, @ask_contact, @is_demo, @mode, @address, @platform, @join_info)`)
       .run({ ...p.m, fid: user.id, is_demo: user.is_demo ? 1 : 0 });
     const ins = db.prepare('INSERT INTO meeting_dates (meeting_id, starts_at, local_time, capacity) VALUES (?, ?, ?, ?)');
     for (const d of ds.dates) ins.run(info.lastInsertRowid, d.utc, d.local, p.m.capacity);
@@ -236,7 +264,7 @@ function update(meetingId, body) {
     for (const d of fut) { const utc = zonedToUtc(d.local_time, p.m.timezone); if (utc) db.prepare('UPDATE meeting_dates SET starts_at = ? WHERE id = ?').run(utc, d.id); }
   }
   db.prepare(`UPDATE meetings SET title=@title, description=@description, country=@country, city=@city, venue=@venue, language=@language,
-    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, duration_min=@duration_min, df_format=@df_format, lat=@lat, lng=@lng, capacity=@capacity, ask_contact=@ask_contact WHERE id=@id`).run({ ...p.m, id: meetingId });
+    timezone=@timezone, price_type=@price_type, price_note=@price_note, price_amount=@price_amount, currency=@currency, duration_min=@duration_min, df_format=@df_format, lat=@lat, lng=@lng, capacity=@capacity, ask_contact=@ask_contact, mode=@mode, address=@address, platform=@platform, join_info=@join_info WHERE id=@id`).run({ ...p.m, id: meetingId });
   return { ok: true };
 }
 function addDates(meetingId, body) {
@@ -261,8 +289,9 @@ function setDate(dateId, { status, capacity }) {
 const meetingOfDate = (dateId) => (db.prepare('SELECT meeting_id FROM meeting_dates WHERE id = ?').get(dateId) || {}).meeting_id;
 const facilitatorOf = (meetingId) => (db.prepare('SELECT facilitator_id FROM meetings WHERE id = ?').get(meetingId) || {}).facilitator_id;
 function setPublished(meetingId, published) {
+  const was = (db.prepare('SELECT status FROM meetings WHERE id = ?').get(meetingId) || {}).status;
   db.prepare(`UPDATE meetings SET status = ? WHERE id = ? AND status <> 'removed'`).run(published ? 'published' : 'unpublished', meetingId);
-  return { ok: true };
+  return { ok: true, becamePublished: !!published && was === 'unpublished' };
 }
 function mine(userId) {
   return db.prepare('SELECT * FROM meetings WHERE facilitator_id = ? ORDER BY id DESC').all(userId).map((m) => meetingOut(m, { withDates: true, includePast: true }));
@@ -271,6 +300,7 @@ function oneForEditor(meetingId) {
   const m = db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId);
   if (!m) return null;
   const out = meetingOut(m, { withDates: true, includePast: true });
+  out.joinInfo = m.join_info || ''; // только для фасилитатора и администратора (редактор)
   for (const d of out.dates) {
     d.registrations = db.prepare('SELECT id, name, email, contact, status, created_at AS createdAt, cancelled_at AS cancelledAt FROM registrations WHERE date_id = ? ORDER BY id').all(d.id);
   }
@@ -291,6 +321,6 @@ function restoreByAdmin(meetingId) {
 }
 
 module.exports = {
-  LANGS, validTz, zonedToUtc, places, upcoming, datePublic, register, registrationByToken, cancelByToken, icsByToken,
+  isOnline, placeOf, LANGS, validTz, zonedToUtc, places, upcoming, datePublic, register, registrationByToken, cancelByToken, icsByToken,
   create, update, addDates, setDate, setPublished, mine, oneForEditor, meetingOfDate, facilitatorOf, allForAdmin, removeByAdmin, restoreByAdmin,
 };

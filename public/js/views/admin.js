@@ -3,7 +3,7 @@
 import { esc, tt, u, api, errorText, toast, fmtDate, storage } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, rolesText, demoPill, WORK_STATUS, statusPill } from '../ui.js';
-import { langName } from './meetings.js';
+import { langName, whereText } from './meetings.js';
 
 const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['works', 'Работы', 'Works'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
   ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters']];
@@ -168,7 +168,7 @@ const SECTIONS = {
     if (!ctx.alive()) return;
     const sec = shell(ctx, 'meetings', tt('Встречи', 'Meetings'), `<p class="small muted">${esc(tt('Администратор может снять встречу, если формат не соответствует проекту. Снятая встреча исчезает из поиска; фасилитатор видит причину.', 'An administrator can take a meeting down if it does not fit the project. It disappears from search; the facilitator sees the reason.'))}</p>
       <div class="list">${meetings.map((m) => `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(m.title)} ${demoPill(m.isDemo)}</b>
-        <span class="small">${esc(m.facilitator)} · ${esc(m.city)}, ${esc(m.country)} · ${esc(langName(m.language))} · ${esc(tt('ближайших дат', 'upcoming dates'))}: ${m.dates.length}</span>
+        <span class="small">${esc(m.facilitator)} · ${esc(whereText(m))} · ${esc(langName(m.language))} · ${esc(tt('ближайших дат', 'upcoming dates'))}: ${m.dates.length}</span>
         ${m.status === 'removed' ? `<span class="small warn">${esc(tt('Снята:', 'Taken down:'))} ${esc(m.removedReason || '—')}</span> <button class="linkbtn" type="button" data-restore="${m.id}">${esc(tt('Вернуть', 'Restore'))}</button>`
           : `<div class="row" style="margin-top:6px"><input type="text" placeholder="${esc(tt('Причина снятия', 'Reason'))}" data-reason="${m.id}" style="max-width:300px"><button class="btn sm danger" type="button" data-remove="${m.id}">${esc(tt('Снять с публикации', 'Take down'))}</button>
             ${m.dates[0] ? `<a class="btn sm" href="${u('/m/' + m.dates[0].id)}">${esc(tt('Страница', 'Page'))}</a>` : ''}</div>`}</span>
