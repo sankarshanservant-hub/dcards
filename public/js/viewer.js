@@ -1,7 +1,7 @@
 // Просмотр карты: целиком, с сохранением пропорций, увеличение щипком / двойным касанием, листание свайпом и стрелками.
 // «Карта / Вопросы» (переключатель и свайп), «На весь экран» (в том числе без Fullscreen API), экран разговора после выбора. Кнопка «Назад» в браузере закрывает просмотр и возвращает к тому же месту в сетке.
 import { t, dateLabel, lang } from './i18n.js';
-import { esc, api, u, tt, toast, visitorId, errorText, storage } from './util.js';
+import { esc, api, u, shareLink, tt, toast, visitorId, errorText, storage } from './util.js';
 import { session } from './ui.js';
 import { QUESTION_FORMATS, START_GUIDES } from './content.js';
 import * as personal from './personal.js';
@@ -520,7 +520,7 @@ export function openViewer(opts) {
   async function copyLink() {
     // делимся самой картой с авторством — без личного текста; ссылка ведёт на эту карту в галерее
     const c0 = opts.cards[index]; const inf = detailsCache.get(c0.code);
-    const url = `${location.origin}${u('/play/' + encodeURIComponent(c0.code))}`; // публичная ссылка карты: получатель начнёт свой обмен
+    const url = shareLink('/play/' + encodeURIComponent(c0.code)); // публичная ссылка карты: получатель начнёт свой обмен
     // 21.11.2026: одно нажатие — сразу системное меню; изображение карты, если меню умеет принимать файлы (подготовлено заранее)
     const text = `${SLOGAN()} ${c0.code}${inf && inf.author ? ' · ' + inf.author : ''}`;
     if (navigator.share) {
@@ -603,7 +603,7 @@ export function openViewer(opts) {
         } catch (x) { ui.sendErr = `${errorText(x)} ${tt('Текст сохранён — попробуйте ещё раз.', 'Your text is kept — try again.')}`; }
         ui.sending = false; renderBottom(); focusIn('[data-sh]'); return;
       }
-      if (cb0 && cb0.dataset.sh && ui.sent) { (cb0.dataset.sh === 'copy' ? copyInvite : sendInvite)(`${location.origin}${u('/x/' + ui.sent.invite)}`); return; }
+      if (cb0 && cb0.dataset.sh && ui.sent) { (cb0.dataset.sh === 'copy' ? copyInvite : sendInvite)(shareLink('/x/' + ui.sent.invite)); return; }
       if (cb0 && cb0.hasAttribute('data-copy-back') && ui.sent) { shareInvite('copy', `${location.origin}${u('/x/' + ui.sent.secret)}`, '', tt('Личная ссылка скопирована — сохраните её', 'Personal link copied — keep it')); return; }
       const ql = e.target.closest('a[data-q-open]');
       if (ql) { e.preventDefault(); openQ(ql.dataset.qOpen); return; }

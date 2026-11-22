@@ -3,6 +3,11 @@ import { t, lang } from './i18n.js';
 // Адрес приложения (если оно стоит в подпапке, сервер подставляет её в <meta name="dc-base">).
 export const BASE = (document.querySelector('meta[name="dc-base"]')?.content || '').replace(/\/$/, '');
 export const u = (p) => BASE + p;
+// Ссылки для других людей (поделиться, приглашения, карты, QR) — всегда на нейтральный адрес приложения (dialogue.cards), даже
+// если человек сам открыл приложение на портале (решение владельца 22.11.2026). Сервер подставляет его в <meta name="dc-share">;
+// пусто — один вход (локально, в тестах): текущий адрес.
+export const SHARE = (document.querySelector('meta[name="dc-share"]')?.content || '').replace(/\/$/, '');
+export const shareLink = (p) => (SHARE || location.origin + BASE) + p;
 
 /** Текст на текущем языке: tt('по-русски', 'in English'). */
 export const tt = (ru, en) => (lang === 'en' ? en : ru);

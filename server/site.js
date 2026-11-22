@@ -32,6 +32,11 @@ module.exports = {
   base: () => current().base,
   /** Полный адрес приложения для текущего запроса, без «/» в конце. */
   appUrl: () => current().origin + current().base,
+  /** Адрес для ссылок другим людям (поделиться, приглашения, QR): всегда нейтральный dialogue.cards, если входов два
+   *  (решение владельца 22.11.2026); один вход — адрес текущего запроса. */
+  shareUrl: () => (config.siteUrl && config.publicUrl ? config.publicUrl : current().origin + current().base),
+  /** То же для страницы: пусто — браузер возьмёт текущий адрес. */
+  shareMeta: () => (config.siteUrl && config.publicUrl ? config.publicUrl : ''),
   /** Вход через портал (кнопка «Аккаунт harekrishna.info»). */
   portalNow: () => current().portal,
   /** Пути, на которых сервер отвечает. */

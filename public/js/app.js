@@ -1,5 +1,5 @@
 import { lang, setLang } from './i18n.js';
-import { esc, tt, u, api, BASE, toast, errorText, storage } from './util.js';
+import { esc, tt, u, shareLink, api, BASE, toast, errorText, storage } from './util.js';
 import { isViewerOpen, handleViewerPopState, closeViewer } from './viewer.js';
 import { session, hasRole, ic, rolesText, refreshSession, skipSiteAutoLogin } from './ui.js';
 import * as pub from './views/public.js';
@@ -291,7 +291,7 @@ function mi(href, icon, ru, en, noteRu = '', noteEn = '', hl = false, badge = ''
 // «Поделиться приложением» (22.11.2026): публичный адрес главной, без параметров текущего экрана и личных обменов.
 // Закрытие системного меню ничего не меняет — человек остаётся на своём экране.
 async function shareApp() {
-  const url = `${location.origin}${u('/')}`;
+  const url = shareLink('/');
   const text = tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation');
   if (navigator.share) { try { await navigator.share({ title: 'Dialogue Cards', text, url }); } catch { /* отмена */ } return; }
   try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }

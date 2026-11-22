@@ -1,6 +1,6 @@
 // «Играть компанией»: форматы для друзей без фасилитатора. Комната по QR/коду, каждый — со своего телефона.
 import { lang } from '../i18n.js';
-import { esc, tt, u, api, errorText, toast, visitorId, storage } from '../util.js';
+import { esc, tt, u, shareLink, api, errorText, toast, visitorId, storage } from '../util.js';
 import { ic, loading, failed } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { subscribe, signHtml, unlockSound, soundsReady, play, clock, left, mmss, bellsFor, keepAwake } from '../live-common.js';
@@ -69,7 +69,7 @@ export async function room(ctx, code) {
   const ui = { preview: null, slot: null, busy: false, text: '', found: {}, showSign: false, list: null, open: {}, change: false, step: null };
   let tick = null; const fired = new Set(); let lastRecall = s.recallAt || null;
   const f = F(s.format);
-  const url = `${location.origin}${u('/g/' + s.code)}`;
+  const url = shareLink('/g/' + s.code);
   const refresh = async () => { try { await load(); if (ctx.alive()) draw(); } catch { /* */ } };
   subscribe(`/api/group/${s.code}/events`, refresh, ctx.alive);
   const act = async (action, body = {}) => {
