@@ -1577,3 +1577,18 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .on-crew { display: grid; gap: 8px; }
 .x-reply { flex-direction: column; gap: 2px; text-align: center; }
 .x-reply .small { font-weight: 400; color: var(--text-2); }
+
+/* ---------- встречи: живые и онлайн, подписки (22.11.2026) ---------- */
+.mode-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.mode-seg a { padding: 8px 14px; min-height: 40px; display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border); color: var(--text); text-decoration: none; font-weight: 600; }
+.mode-seg a.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.mode-seg a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.ev-online .ev-ic svg { stroke: currentColor; }
+.msubs { display: grid; gap: 10px; }
+.msubs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.msubs-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.msubs-list li .grow { flex: 1 1 200px; min-width: 0; }
+.msubs-list select { max-width: 100%; }
+.join-info dd a { overflow-wrap: anywhere; }
+.mode-pick { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+#online-where[hidden], #live-where[hidden] { display: none; }

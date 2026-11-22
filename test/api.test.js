@@ -1493,3 +1493,65 @@ test('22.11: вход владельца по паролю закрываетс�
   // снять роль, чтобы не влиять на другие проверки
   await call('POST', `/api/admin/users/${a.user.id}/roles`, { role: 'admin', grant: false }, { cookie: a.cookie });
 });
+
+test('22.11: живые и онлайн-встречи — обязательные поля, фильтры, данные подключения только записавшимся; подписки и уведомления', async () => {
+  const day = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+  const JOIN = 'https://zoom.example/j/123 · код 777';
+  // онлайн без платформы — нельзя; без пояса — нельзя
+  assert.equal((await call('POST', '/api/fac/meetings', { mode: 'online', title: 'Онлайн', language: 'de', timezone: 'Europe/Berlin', capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie })).json.error, 'required_fields');
+  assert.equal((await call('POST', '/api/fac/meetings', { mode: 'online', title: 'Онлайн', platform: 'Zoom', language: 'de', timezone: 'Mars/Base', capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie })).json.error, 'bad_timezone');
+  // подписки до публикации: гость — онлайн по языку; гость 2 — онлайн другого языка; аккаунт — живые в Казани
+  const G1 = 'g'.repeat(32); const G2 = 'h'.repeat(32);
+  assert.equal((await call('POST', '/api/meeting-subs', { mode: 'online' }, { visitor: G1 })).json.error, 'sub_language_required');
+  assert.equal((await call('POST', '/api/meeting-subs', { mode: 'live' }, { visitor: G1 })).json.error, 'sub_city_required');
+  const s1 = (await call('POST', '/api/meeting-subs', { mode: 'online', language: 'de', city: 'игнор' }, { visitor: G1 })).json.sub;
+  assert.equal(s1.city, '', 'у онлайн-подписки нет города');
+  assert.equal((await call('POST', '/api/meeting-subs', { mode: 'online', language: 'de' }, { visitor: G1 })).json.repeated, true, 'повтор не дублируется');
+  await call('POST', '/api/meeting-subs', { mode: 'online', language: 'fr' }, { visitor: G2 });
+  const s3 = (await call('POST', '/api/meeting-subs', { mode: 'live', country: 'Россия', city: 'Казань', language: 'ru' }, { cookie: visitor.cookie })).json.sub;
+  const on = await call('POST', '/api/fac/meetings', { mode: 'online', title: 'Онлайн-встреча', platform: 'Zoom', joinInfo: JOIN, city: 'Казань', country: 'Россия', venue: 'не нужно', language: 'de', timezone: 'Europe/Berlin', capacity: 5, firstDate: `${day}T19:00` }, { cookie: facil.cookie });
+  assert.equal(on.status, 201, JSON.stringify(on.json));
+  // публично: режим, платформа; ни города, ни данных подключения
+  const list = (await call('GET', '/api/meetings?mode=online')).json.dates;
+  const d = list.find((x) => x.meeting.id === on.json.id); assert.ok(d);
+  assert.equal(d.meeting.mode, 'online'); assert.equal(d.meeting.platform, 'Zoom'); assert.equal(d.meeting.city, ''); assert.equal(d.meeting.timezone, 'Europe/Berlin');
+  assert.equal(JSON.stringify(list).includes('zoom.example'), false, 'данных подключения нет в поиске');
+  assert.equal(JSON.stringify((await call('GET', `/api/meetings/dates/${d.id}`)).json).includes('zoom.example'), false, 'и на странице встречи');
+  assert.ok(!(await call('GET', '/api/meetings?mode=live')).json.dates.some((x) => x.meeting.id === on.json.id), 'в «Живых» онлайн нет');
+  assert.ok(!(await call('GET', '/api/meetings?mode=online&language=ru')).json.dates.some((x) => x.meeting.id === on.json.id), 'фильтр по языку');
+  assert.ok(!(await call('GET', `/api/meetings?mode=online&from=${new Date(Date.now() + 20 * 86400000).toISOString()}`)).json.dates.some((x) => x.meeting.id === on.json.id), 'фильтр по дате');
+  assert.ok(!(await call('GET', '/api/meetings/places')).json.places.some((p) => p.cities.some((c) => c.city === '')), 'онлайн не попадает в города');
+  // фасилитатор видит данные подключения в редакторе
+  assert.equal((await call('GET', `/api/fac/meetings/${on.json.id}`, null, { cookie: facil.cookie })).json.joinInfo, JOIN);
+  // запись — письмо и страница записи с данными подключения
+  const reg = await call('POST', `/api/meetings/dates/${d.id}/register`, { name: 'Ханс', email: 'hans@example.org', lang: 'ru' });
+  assert.equal(reg.status, 201, JSON.stringify(reg.json));
+  assert.equal(reg.json.joinInfo, JOIN); assert.ok(reg.json.letter.body.includes(JOIN), 'данные подключения — в письме');
+  const rp = (await call('GET', `/api/registrations/${reg.json.token}`)).json; assert.equal(rp.joinInfo, JOIN);
+  const ics = await fetch(base + `/api/registrations/${reg.json.token}/ics`).then((r) => r.text()); assert.ok(ics.replace(/\r\n /g, '').includes('zoom.example'), 'и в календаре');
+  await call('POST', `/api/registrations/${reg.json.token}/cancel`);
+  assert.equal((await call('GET', `/api/registrations/${reg.json.token}`)).json.joinInfo, '', 'после отмены — не показываем');
+  // уведомления: G1 — да (один раз), G2 — нет
+  const n1 = (await call('GET', '/api/bell', null, { visitor: G1 })).json.items.filter((n) => n.title === 'Новая онлайн-встреча');
+  assert.equal(n1.length, 1); assert.equal(n1[0].url, `/m/${d.id}`);
+  assert.equal((await call('GET', '/api/bell', null, { visitor: G2 })).json.items.filter((n) => n.title === 'Новая онлайн-встреча').length, 0);
+  // скрыть и снова опубликовать — повторного уведомления нет
+  await call('POST', `/api/fac/meetings/${on.json.id}/publish`, { published: false }, { cookie: facil.cookie });
+  await call('POST', `/api/fac/meetings/${on.json.id}/publish`, { published: true }, { cookie: facil.cookie });
+  assert.equal((await call('GET', '/api/bell', null, { visitor: G1 })).json.items.filter((n) => n.title === 'Новая онлайн-встреча').length, 1);
+  // живая встреча в Казани на русском → подписчику-аккаунту; адрес сохраняется
+  const lv = await call('POST', '/api/fac/meetings', { mode: 'live', title: 'Живая встреча', country: 'Россия', city: 'Казань', venue: 'Кафе', address: 'ул. Баумана, 1', language: 'ru', capacity: 5, firstDate: `${day}T18:00` }, { cookie: facil.cookie });
+  assert.equal(lv.status, 201, JSON.stringify(lv.json));
+  const ld = (await call('GET', '/api/meetings?mode=live&country=Россия&city=Казань&language=ru')).json.dates.find((x) => x.meeting.id === lv.json.id);
+  assert.ok(ld); assert.equal(ld.meeting.mode, 'live'); assert.equal(ld.meeting.address, 'ул. Баумана, 1');
+  assert.ok((await call('GET', '/api/bell', null, { cookie: visitor.cookie })).json.items.some((n) => /Новая встреча в городе Казань/.test(n.title)));
+  assert.equal((await call('GET', '/api/bell', null, { visitor: G1 })).json.items.filter((n) => /Казань/.test(n.title)).length, 0, 'онлайн-подписчику о живой встрече не пишем');
+  // список, изменение, отключение подписки
+  assert.equal((await call('GET', '/api/meeting-subs', null, { visitor: G1 })).json.subs.length, 1);
+  assert.equal((await call('PATCH', `/api/meeting-subs/${s1.id}`, { language: 'ru' }, { visitor: G1 })).json.sub.language, 'ru');
+  assert.equal((await call('PATCH', `/api/meeting-subs/${s1.id}`, { language: 'ru' }, { visitor: G2 })).status, 404, 'чужую подписку не изменить');
+  assert.equal((await call('DELETE', `/api/meeting-subs/${s3.id}`, null, { visitor: G1 })).status, 404, 'чужую не удалить');
+  assert.equal((await call('DELETE', `/api/meeting-subs/${s1.id}`, null, { visitor: G1 })).status, 200);
+  assert.equal((await call('GET', '/api/meeting-subs', null, { visitor: G1 })).json.subs.length, 0);
+  await call('DELETE', `/api/meeting-subs/${s3.id}`, null, { cookie: visitor.cookie });
+});

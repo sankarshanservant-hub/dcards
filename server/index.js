@@ -272,7 +272,14 @@ r.get('/api/c/:slug/qr.:fmt(svg|png)', wrap(async (req, res) => {
 
 // ---------- встречи (публично) ----------
 r.get('/api/meetings/places', (req, res) => res.json({ places: meetings.places(req.showDemo) }));
-r.get('/api/meetings', (req, res) => res.json({ dates: meetings.upcoming({ country: req.query.country, city: req.query.city }, req.showDemo) }));
+r.get('/api/meetings', (req, res) => res.json({ dates: meetings.upcoming({ country: req.query.country, city: req.query.city, mode: req.query.mode, language: req.query.language, from: req.query.from }, req.showDemo) }));
+// Подписки на новые встречи (22.11.2026): аккаунт или гость (этот браузер)
+const msubs = require('./meeting-subs');
+const subWho = (req, res) => { if (!req.user && !req.visitor) { bad(res, 'bad_visitor'); return false; } return true; };
+r.get('/api/meeting-subs', (req, res) => res.json({ subs: msubs.list(req.user, req.visitor) }));
+r.post('/api/meeting-subs', (req, res) => { if (subWho(req, res)) out(res, msubs.create(req.user, req.visitor, req.body || {}), 201); });
+r.patch('/api/meeting-subs/:id', (req, res) => { if (subWho(req, res)) out(res, msubs.update(req.user, req.visitor, req.params.id, req.body || {})); });
+r.delete('/api/meeting-subs/:id', (req, res) => { if (subWho(req, res)) out(res, msubs.remove(req.user, req.visitor, req.params.id)); });
 r.get('/api/meetings/dates/:id', (req, res) => {
   const d = meetings.datePublic(Number(req.params.id), req.showDemo, req.user ? { id: req.user.id, isAdmin: req.has('admin') } : null);
   if (!d) return bad(res, 'not_found', 404);
@@ -466,6 +473,8 @@ r.get('/api/places/resolve', fac, (req, res) => res.json(places.resolve({ city: 
  */
 function meetingPlace(req, existing) {
   const b = req.body || {};
+  // онлайн-встреча: города нет, пояс выбирает фасилитатор (время вводится в этом поясе)
+  if (b.mode === 'online') return meetings.validTz(String(b.timezone || '')) ? { city: '', country: '', timezone: String(b.timezone) } : { error: 'bad_timezone' };
   const same = (m) => m && cityKey(m.city) === cityKey(b.city) && cityKey(m.country) === cityKey(b.country);
   if (same(existing)) return { city: existing.city, country: existing.country, timezone: existing.timezone };
   const srcId = Number(b.sameAs);
@@ -479,7 +488,9 @@ function meetingPlace(req, existing) {
 }
 r.post('/api/fac/meetings', fac, (req, res) => {
   const pl = meetingPlace(req, null); if (pl.error) return res.status(400).json(pl);
-  out(res, meetings.create(req.user, { ...req.body, ...pl }), 201);
+  const r0 = meetings.create(req.user, { ...req.body, ...pl });
+  if (r0.id) safe(() => msubs.notifyNew(r0.id)); // подписчикам — о новой встрече
+  out(res, r0, 201);
 });
 r.get('/api/fac/meetings/:id', fac, (req, res) => {
   const id = Number(req.params.id);
@@ -503,7 +514,9 @@ r.post('/api/fac/meetings/:id/dates', fac, (req, res) => {
 r.post('/api/fac/meetings/:id/publish', fac, (req, res) => {
   const id = Number(req.params.id);
   if (!meetings.facilitatorOf(id) || !ownsMeeting(req, id)) return bad(res, 'not_found', 404);
-  out(res, meetings.setPublished(id, !!req.body.published));
+  const r0 = meetings.setPublished(id, !!req.body.published);
+  if (r0.becamePublished) safe(() => msubs.notifyNew(id)); // повторная публикация не дублирует (dedupe по встрече)
+  out(res, r0);
 });
 r.patch('/api/fac/dates/:id', fac, (req, res) => {
   const mid = meetings.meetingOfDate(Number(req.params.id));
@@ -982,7 +995,7 @@ r.patch('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, pers
 r.delete('/api/me/collections/:id', auth.requireUser, (req, res) => out(res, personal.deleteCollection(req.user.id, req.params.id)));
 r.post('/api/me/collections/:id/cards', auth.requireUser, (req, res) => out(res, personal.toggle(req.user.id, req.params.id === 'favorites' ? 'favorites' : req.params.id, (req.body || {}).code, (req.body || {}).on !== false)));
 // после входа: обмены и колокольчик этого браузера — в аккаунт; личные данные гостя — по согласию (merge)
-r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id) + xgroups.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id) }));
+r.post('/api/me/claim', auth.requireUser, (req, res) => res.json({ ok: true, exchanges: exchanges.claim(req.visitor, req.user.id) + xgroups.claim(req.visitor, req.user.id), notifications: bell.claim(req.visitor, req.user.id), meetingSubs: msubs.claim(req.visitor, req.user.id) }));
 r.put('/api/me/images/:id', auth.requireUser, (req, res) => out(res, personal.saveImage(req.user.id, { ...(req.body || {}), id: req.params.id })));
 r.delete('/api/me/images/:id', auth.requireUser, (req, res) => out(res, personal.deleteImage(req.user.id, req.params.id)));
 r.put('/api/me/postcards/:id', auth.requireUser, (req, res) => out(res, personal.savePostcard(req.user.id, { ...(req.body || {}), id: req.params.id })));

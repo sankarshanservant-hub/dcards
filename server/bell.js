@@ -30,12 +30,12 @@ function onPush(fn) { pushHook = fn; }
 const PUSH_TEXT = {
   exchange_answered: 'Друг ответил на карту', story_proposed: 'Вам предложили поделиться ответами в сторис', story_agreed: 'Друг согласился поделиться в сторис',
   work_published: 'Решение по вашей работе', work_returned: 'Решение по вашей работе', work_rejected: 'Решение по вашей работе',
-  application: 'Новости по вашей заявке', registration: 'Новости по вашей записи на встречу',
+  application: 'Новости по вашей заявке', registration: 'Новости по вашей записи на встречу', meeting_new: 'Новая встреча Dialogue Flow',
 };
 const PUSH_TEXT_EN = {
   exchange_answered: 'Your friend answered the card', story_proposed: 'You were invited to share your answers in Instagram Stories', story_agreed: 'Your friend agreed to share in Instagram Stories',
   work_published: 'A decision on your work', work_returned: 'A decision on your work', work_rejected: 'A decision on your work',
-  application: 'News about your application', registration: 'News about your meeting registration',
+  application: 'News about your application', registration: 'News about your meeting registration', meeting_new: 'A new Dialogue Flow meeting',
 };
 
 /**
