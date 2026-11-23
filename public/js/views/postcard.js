@@ -3,7 +3,7 @@
 // Текст — свободный элемент: тап выделяет, перетаскивание пальцем, масштаб двумя пальцами или за круглую ручку; тап мимо снимает
 // выделение. Рамка и ручка — отдельный слой, в картинку не попадают. Предпросмотр, «Мои открытки» и экспорт рисует одна функция.
 // Открытка не меняет число «Выбрали для разговора». Без регистрации.
-import { esc, tt, u, api } from '../util.js';
+import { esc, tt, u, api, morph, listen } from '../util.js';
 import { loading, failed } from '../ui.js';
 import { sendButton, saveImage, sendImage, postcardCaption } from '../share.js';
 import * as personal from '../personal.js';
@@ -52,7 +52,7 @@ export async function postcard(ctx, code) {
     if (ui.tab === 'layout') {
       return `<div class="pc-group"><b>${esc(tt('Расположение иллюстрации', 'Illustration layout'))}</b>
         <div class="pc-layouts">${LAYOUTS.map((l) => `<button type="button" class="pc-layout ${l.key === st.layout ? 'on' : ''}" data-layout="${l.key}" aria-pressed="${l.key === st.layout}"><span class="pc-lmini ${l.key}" aria-hidden="true"><i></i><s></s></span>${esc(tt(l.ru, l.en))}</button>`).join('')}</div></div>
-        ${st.layout !== 'full' ? `<div class="pc-group"><b>${esc(tt('Цвет фона', 'Background colour'))}</b>${swatches(PAPERS, st.paper, 'data-paper', 'data-paper-custom', tt('Свой цвет фона', 'Custom background colour'))}</div>` : ''}`;
+        ${st.layout !== 'full' ? `<div class="pc-group"><b>${esc(tt('Фон открытки', 'Postcard background'))}</b>${swatches(PAPERS, st.paper, 'data-paper', 'data-paper-custom', tt('Свой цвет фона', 'Custom background colour'))}</div>` : ''}`;
     }
     return `<div class="pc-group"><label for="pct"><b>${esc(tt('Надпись', 'Text'))}</b></label>
         <textarea id="pct" rows="3" maxlength="240" placeholder="${esc(tt('Пожелание, наблюдение или привет — можно без надписи', 'A wish, an observation or a hello — or no text at all'))}">${esc(st.text)}</textarea>
@@ -62,16 +62,17 @@ export async function postcard(ctx, code) {
       <div class="pc-group"><b>${esc(tt('Шрифт', 'Font'))}</b><div class="pc-fonts">${FONTS.map((f) => `<button type="button" class="pc-font ${f.key === st.font ? 'on' : ''}" data-font="${f.key}" aria-pressed="${f.key === st.font}"><span class="pc-font-name">${esc(tt(f.ru, f.en))}</span><span class="pc-font-sample" style="font-family:${f.family};font-weight:${weightOf(f, st.weight)}">${esc(sample())}</span></button>`).join('')}</div></div>
       <div class="pc-group"><b>${esc(tt('Начертание', 'Weight'))}</b><div class="pc-row">${WEIGHTS.map(([w, ru, en]) => chip('data-weight', w, st.weight, esc(tt(ru, en)))).join('')}</div></div>
       <div class="pc-group"><b>${esc(tt('Размер', 'Size'))}</b><input type="range" data-size min="0.02" max="0.16" step="0.002" value="${st.k}" aria-label="${esc(tt('Размер текста', 'Text size'))}"></div>
-      <div class="pc-group"><b>${esc(tt('Цвет', 'Colour'))}</b>${swatches(TEXT_COLORS.map((c) => [c]), st.color, 'data-color', 'data-color-custom', tt('Свой цвет текста', 'Custom text colour'))}</div>
-      <div class="pc-group"><b>${esc(tt('Положение', 'Position'))}</b><div class="pc-row">${[['left', 'По левому краю', 'Left'], ['center', 'По центру', 'Centre'], ['right', 'По правому краю', 'Right']].map(([k, ru, en]) => chip('data-align', k, st.align, esc(tt(ru, en)))).join('')}</div>
-        <div class="pc-row">${chip('data-bg', 'none', st.bg, esc(tt('Без подложки', 'No backing')))}${st.layout === 'full' ? chip('data-bg', 'grad', st.bg, esc(tt('Затемнение', 'Shade'))) : ''}${chip('data-bg', 'plate', st.bg, esc(tt('Плашка', 'Plate')))}</div>
-        ${st.bg !== 'none' ? `<div class="pc-row">${chip('data-tone', 'dark', st.tone, esc(tt('Тёмная', 'Dark')))}${chip('data-tone', 'light', st.tone, esc(tt('Светлая', 'Light')))}</div>` : ''}</div>
+      <div class="pc-group"><b>${esc(tt('Цвет текста', 'Text colour'))}</b>${swatches(TEXT_COLORS.map((c) => [c]), st.color, 'data-color', 'data-color-custom', tt('Свой цвет текста', 'Custom text colour'))}</div>
+      <div class="pc-group"><b id="pc-al">${esc(tt('Выравнивание', 'Alignment'))}</b><div class="pc-seg3" role="radiogroup" aria-labelledby="pc-al">${[['left', 'По левому краю', 'Left'], ['center', 'По центру', 'Centre'], ['right', 'По правому краю', 'Right']].map(([k, ru, en]) => `<button type="button" role="radio" class="${k === st.align ? 'on' : ''}" aria-checked="${k === st.align}" data-align="${k}">${esc(tt(ru, en))}</button>`).join('')}</div></div>
+      <div class="pc-group"><b id="pc-bk">${esc(tt('Подложка текста', 'Text backing'))}</b><span class="small muted">${esc(tt('Заливка прямо под надписью — не фон открытки', 'A fill right under the text — not the postcard background'))}</span>
+        <div class="pc-seg3 two" role="radiogroup" aria-labelledby="pc-bk">${[['none', 'Без подложки', 'No backing'], ['plate', 'С заливкой', 'With a fill']].map(([k, ru, en]) => `<button type="button" role="radio" class="${(k === 'plate' ? st.bg !== 'none' : st.bg === 'none') ? 'on' : ''}" aria-checked="${k === 'plate' ? st.bg !== 'none' : st.bg === 'none'}" data-bg="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
+        ${st.bg !== 'none' ? `<div class="pc-sub"><span class="small">${esc(tt('Заливка', 'Fill'))}</span><div class="pc-row">${chip('data-tone', 'dark', st.tone, esc(tt('Тёмная', 'Dark')))}${chip('data-tone', 'light', st.tone, esc(tt('Светлая', 'Light')))}</div></div>` : ''}</div>
       <button class="link-btn" type="button" data-notext style="justify-self:start">${esc(tt('Убрать надпись', 'Remove the text'))}</button>` : ''}`;
   }
   function render() {
     const focusId = document.activeElement && document.activeElement.id;
     const sel = focusId === 'pct' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
-    ctx.main.innerHTML = `<div class="wrap page narrow stack pc-page editing">
+    const html = `<div class="wrap page narrow stack pc-page editing">
       <h1 class="pc-title">${esc(tt('Создание открытки', 'Create a postcard'))}</h1>
       <div class="pc-stage"><div class="pc-wrap"><canvas id="pc" role="img" aria-label="${esc(tt('Предпросмотр открытки', 'Postcard preview'))}"></canvas><div class="pc-sel" hidden><span class="pc-handle" aria-hidden="true">${HANDLE}</span></div></div></div>
       <div class="pc-tabs two" role="tablist">${[['layout', 'Макет', 'Layout'], ['text', 'Текст', 'Text']].map(([k, ru, en]) => `<button type="button" role="tab" class="${k === ui.tab ? 'on' : ''}" aria-selected="${k === ui.tab}" data-tab="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
@@ -82,6 +83,9 @@ export async function postcard(ctx, code) {
           <button class="btn light" type="button" data-save ${ui.overflow ? 'disabled' : ''}>${esc(tt('Сохранить изображение', 'Save image'))}</button></div>
         <div class="pc-status" role="status">${ui.savedMsg ? `<b>${esc(ui.savedMsg)}</b> <a href="${u('/me/postcards')}">${esc(tt('Открыть мои открытки', 'Open my postcards'))}</a>${ui.savedId ? ` · <button class="link-btn" type="button" data-asnew>${esc(tt('Сохранить как новую', 'Save as new'))}</button>` : ''}` : ''}${ui.hint ? `<p class="vb-note" style="margin:4px 0 0">${esc(ui.hint)}</p>` : ''}</div>
       </div></div>`;
+    const y = window.scrollY;
+    if (ctx.main.querySelector('.pc-page')) morph(ctx.main, html); else ctx.main.innerHTML = html;
+    if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     const cv = ctx.main.querySelector('#pc'); paint(cv);
     wire(cv);
     if (focusId === 'pct') { const t = ctx.main.querySelector('#pct'); if (t) { t.focus(); if (sel) t.setSelectionRange(sel[0], sel[1]); } }
@@ -121,7 +125,7 @@ export async function postcard(ctx, code) {
     const ccu = $('[data-color-custom]'); if (ccu) { ccu.oninput = () => { st.color = ccu.value; ui.touched = true; redrawOnly(); }; ccu.onchange = () => render(); }
     const sz = $('[data-size]'); if (sz) sz.oninput = () => { st.k = Number(sz.value); ui.sel = true; redrawOnly(); };
     const nt = $('[data-notext]'); if (nt) nt.onclick = () => { st.text = ''; ui.sel = false; render(); };
-    const ta = $('#pct'); if (ta) ta.addEventListener('input', () => { const had = hasText(); st.text = ta.value; ui.sel = hasText(); ui.savedMsg = ''; if (had !== hasText()) render(); else redrawOnly(); });
+    const ta = $('#pct'); if (ta) listen(ta, 'input', () => { const had = hasText(); st.text = ta.value; ui.sel = hasText(); ui.savedMsg = ''; if (had !== hasText()) render(); else redrawOnly(); });
     // текст на открытке: тап выделяет; перетаскивание одним пальцем, масштаб — двумя пальцами или за ручку; тап мимо снимает выделение
     const pts = new Map(); let drag = null; let pinch = null; let resize = null;
     const pt = (e) => { const r = cv.getBoundingClientRect(); const g = geo(st, W, H); return [(e.clientX - r.left) * (g.CW / r.width), (e.clientY - r.top) * (g.CH / r.height)]; };

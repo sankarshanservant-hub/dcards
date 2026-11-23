@@ -116,7 +116,7 @@ export async function library(ctx) {
     <div id="pick">${pickHtml()}</div>
     <div class="row between"><div><h1>${esc(tt('Галерея карт', 'Card gallery'))}</h1>
       <p class="muted gal-hint" ${intent ? 'hidden' : ''}>${esc(hintText())}</p></div>
-      <div class="play-rows gal-acts" id="play">${diceButtonHtml()}<a class="btn light gal-play" href="${u('/games')}" ${intent ? 'hidden' : ''}>${ic.cube}<span>${esc(tt('Играть', 'Play'))}</span></a></div></div>
+      <div class="play-rows gal-acts" id="play">${diceButtonHtml()}<a class="btn light gal-play" href="${u('/games')}" ${intent ? 'hidden' : ''}><span>${esc(tt('Играть', 'Play'))}</span></a></div></div>
     ${cards.length ? `<div class="seg gal-order" role="radiogroup" aria-label="${esc(tt('Порядок карт', 'Card order'))}"><button type="button" role="radio" data-order="new" aria-checked="${order === 'new'}">${esc(tt('Сначала новые', 'Newest first'))}</button><button type="button" role="radio" data-order="mix" aria-checked="${order === 'mix'}">${esc(tt('Вперемешку', 'Shuffled'))}</button></div>
       <div class="grid" id="gal">${cards.map((c, i) => tileHtml(c, i)).join('')}</div>` : `<p class="empty">${esc(tt('В галерее пока нет карт.', 'No cards in the gallery yet.'))}</p>`}
     <div class="gallery-end"><a class="btn yellow big" href="${u('/start#join')}">${ic.people} ${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>
