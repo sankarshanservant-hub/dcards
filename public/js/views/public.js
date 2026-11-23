@@ -37,8 +37,8 @@ export async function home(ctx) {
         <p class="greet">${esc(TAGLINE())}</p></div>
       <div class="home-axis">
         <h2 class="home-q">${esc(tt('Что ты здесь видишь?', 'What do you see here?'))}</h2>
-        <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
         <p class="home-hint">${esc(tt('Открой любую карту', 'Open any card'))}</p>
+        <div class="trio" id="trio" aria-busy="true"><span class="slot"></span><span class="slot"></span><span class="slot"></span></div>
         <div class="home-acts"><a class="btn yellow home-ask" href="${u('/library?play=friend')}">${esc(tt('Спроси друга', 'Ask a friend'))}</a><a class="btn home-play" href="${u('/games')}">${ic.cube}<span>${esc(tt('Играть', 'Play'))}</span></a></div>
         <a class="btn home-all" href="${u('/library')}" id="all-cards">${esc(tt('Все карты', 'All cards'))}</a>
       </div>

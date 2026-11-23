@@ -742,7 +742,14 @@ export function openViewer(opts) {
   const onResize = () => { if (mode.view === 'questions') el.classList.toggle('q-side', wide()); syncBottom(); };
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
+  // центрирование держится после загрузки картинки, смены высоты нижней панели (шрифты, раскрытые блоки)
+  // и изменения видимой области (панели браузера, поворот, клавиатура) — 23.11.2026
+  const ro = 'ResizeObserver' in window && bottom ? new ResizeObserver(() => { if (!el.classList.contains('kb-open')) syncBottom(); }) : null;
+  if (ro) ro.observe(bottom);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+  const imgEl = el.querySelector('[data-img]'); if (imgEl) imgEl.addEventListener('load', () => layout());
   state.cleanup = () => {
+    if (ro) ro.disconnect(); if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('fullscreenchange', onFsChange);
     window.removeEventListener('resize', onResize);
