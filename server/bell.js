@@ -26,14 +26,16 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 let pushHook = null; // push.js подключает себя (без циклического require)
 function onPush(fn) { pushHook = fn; }
 
+/** Заголовки push по виду события (23.11.2026: «Друг ответил» вместо общего). */
+const PUSH_TITLE = { exchange_answered: ['Друг ответил', 'Your friend answered'], eagle_answered: ['Друг ответил', 'Your friend answered'] };
 /** Нейтральные тексты для экрана блокировки — без имён, ответов и причин. */
 const PUSH_TEXT = {
-  exchange_answered: 'Друг ответил на карту', story_proposed: 'Вам предложили поделиться ответами в сторис', story_agreed: 'Друг согласился поделиться в сторис',
+  exchange_answered: 'Открой, чтобы сравнить ваши ответы', eagle_answered: 'Открой, чтобы сравнить ваши ответы', story_proposed: 'Вам предложили поделиться ответами в сторис', story_agreed: 'Друг согласился поделиться в сторис',
   work_published: 'Решение по вашей работе', work_returned: 'Решение по вашей работе', work_rejected: 'Решение по вашей работе',
   application: 'Новости по вашей заявке', registration: 'Новости по вашей записи на встречу', meeting_new: 'Новая встреча Dialogue Flow',
 };
 const PUSH_TEXT_EN = {
-  exchange_answered: 'Your friend answered the card', story_proposed: 'You were invited to share your answers in Instagram Stories', story_agreed: 'Your friend agreed to share in Instagram Stories',
+  exchange_answered: 'Open to compare your answers', eagle_answered: 'Open to compare your answers', story_proposed: 'You were invited to share your answers in Instagram Stories', story_agreed: 'Your friend agreed to share in Instagram Stories',
   work_published: 'A decision on your work', work_returned: 'A decision on your work', work_rejected: 'A decision on your work',
   application: 'News about your application', registration: 'News about your meeting registration', meeting_new: 'A new Dialogue Flow meeting',
 };
@@ -61,7 +63,7 @@ function add(to, n) {
   const id = Number(info.lastInsertRowid);
   if (uid && n.push !== false && pushHook) {
     const en = (db.prepare('SELECT lang FROM users WHERE id = ?').get(uid) || {}).lang === 'en';
-    pushHook(uid, { title: 'Dialogue Cards', body: en ? (PUSH_TEXT_EN[n.kind] || 'Something new in D-Cards') : (PUSH_TEXT[n.kind] || 'Новое событие в D-Cards'), url: n.url, tag: `dc-n${id}` }, n.kind);
+    pushHook(uid, { title: PUSH_TITLE[n.kind] ? (en ? PUSH_TITLE[n.kind][1] : PUSH_TITLE[n.kind][0]) : 'Dialogue Cards', body: en ? (PUSH_TEXT_EN[n.kind] || 'Something new in D-Cards') : (PUSH_TEXT[n.kind] || 'Новое событие в D-Cards'), url: n.url, tag: `dc-n${id}` }, n.kind);
   }
   return id;
 }

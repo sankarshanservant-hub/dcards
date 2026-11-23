@@ -13,7 +13,7 @@ import { bellText } from '../bell-i18n.js';
 const forName = (n) => { const g = n && /^[А-ЯЁ][а-яё]+$/.test(n) ? cityCase(n, 'gen') : null; return g || (n && /^[A-Z][a-z]+$/.test(n) ? n : null); };
 const when = (iso) => fmtDate(iso, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 // значок раскрытия: только две головки стрелок по диагонали (вверх-вправо и вниз-влево), без стержней
-const ZOOM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M10 19H5v-5"/></svg>';
+const ZOOM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg>';
 const cardBtn = (c, cls = '') => `<button type="button" class="live-card-btn ${cls}" data-zoom aria-label="${esc(tt('Рассмотреть карту на весь экран', 'View the card full screen'))} ${esc(c.code)}"><img class="live-card" src="${esc(c.full || c.thumb)}" alt="${esc(c.code)}" width="${c.width || 910}" height="${c.height || 1560}"><span class="zoom-ic" aria-hidden="true">${ZOOM}</span></button>`;
 // сведения о карте (автор, номер) — не главная информация: компактно, за значком ⓘ
 // вопрос другу (20.11.2026): стандартный — на языке интерфейса, изменённый — как написал отправитель
@@ -294,6 +294,8 @@ function wireNotify(root) {
 // /play — случайная карта; /play/<код> — эта карта (публичная ссылка); ?reply=<личная ссылка> — «Твоя очередь» в том же
 // разговоре; ?origin=forward — эту карту ещё кому-то (отдельный обмен). Черновик принадлежит своей карте.
 const PKEY = 'dc_play_drafts';
+// бумажный самолётик — крупный и узнаваемый (23.11.2026)
+const PLANE = '<svg class="plane" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.5 2.5 2.8 10.1c-.7.3-.7 1.3 0 1.6l6.3 2.6 2.6 6.3c.3.7 1.3.7 1.6 0L21.5 2.5z"/><path d="M21.5 2.5 9.1 14.3"/></svg>';
 export async function playPage(ctx, code) {
   const reply = ctx.query.get('reply');
   // кому: одному другу (личный обмен) или нескольким людям (общий обмен по одной ссылке) — выбирается в этой же форме
@@ -324,6 +326,7 @@ export async function playPage(ctx, code) {
       <h1 class="x-h x-center">${esc(reply ? (other && forName(other) ? tt(`Карта для ${forName(other)}`, `A card for ${other}`) : tt('Отправь новую карту', 'Send a new card')) : tt('Вопрос другу', 'Question to a friend'))}</h1>
       ${withInfo(card, 'md')}
       <div class="row" style="justify-content:center"><button class="btn sm light" type="button" data-other>${esc(tt('Другая карта', 'Another card'))}</button><a class="btn sm light" href="${u('/library?play=friend' + (reply ? '&reply=' + encodeURIComponent(reply) : ''))}">${esc(tt('Все карты', 'All cards'))}</a></div>
+      <p class="x-intro">${esc(tt('Задай другу вопрос и запиши свою версию ответа', 'Ask your friend a question and write your own answer'))}</p>
       <form class="form" id="pf">
         ${reply ? '' : `<div class="seg x-who" role="radiogroup" aria-label="${esc(tt('Кому', 'To whom'))}"><button type="button" role="radio" data-who="one" aria-checked="${!multi}">${esc(tt('Одному другу', 'One friend'))}</button><button type="button" role="radio" data-who="many" aria-checked="${multi}">${esc(tt('Нескольким людям', 'Several people'))}</button></div>`}
         <label class="field" for="pq">${esc(tt('Твой вопрос', 'Your question'))}</label>
@@ -334,7 +337,7 @@ export async function playPage(ctx, code) {
         ${session.user || reply ? '' : `<label class="field small">${esc(tt('Твоё имя для друга', 'Your name for your friend'))}<input id="pn" maxlength="40" value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"></label>`}
         ${ui.err ? `<p class="field-error" role="alert">${esc(ui.err)}</p>` : ''}
         ${ui.cancelled && dr.tok ? `<p class="vb-note x-cancelled" role="status">${esc(tt('Отправка отменена. Текст и ссылка сохранены — можно отправить ещё раз или скопировать ссылку.', 'Sending was cancelled. Your text and link are kept — send again or copy the link.'))} <button class="link-btn" type="button" data-copy-link>${esc(tt('Скопировать приглашение', 'Copy the invitation'))}</button></p>` : ''}
-        <button class="btn yellow big send-btn" type="submit" ${ui.sending || !String(dr.text || '').trim() ? 'disabled' : ''}>${esc(reply ? tt('Отправить карту', 'Send the card') : multi ? tt('Отправить', 'Send') : tt('Отправить другу', 'Send to a friend'))}</button></form></div>`;
+        <button class="btn yellow big send-btn" type="submit" aria-label="${esc(reply ? tt('Отправить карту', 'Send the card') : multi ? tt('Отправить нескольким людям', 'Send to several people') : tt('Отправить другу', 'Send to a friend'))}" ${ui.sending || !String(dr.text || '').trim() ? 'disabled' : ''}>${PLANE}<span>${esc(reply ? tt('Отправить карту', 'Send the card') : tt('Отправить', 'Send'))}</span></button></form></div>`;
     const f = ctx.main.querySelector('#pf');
     const upd = (k, v) => { drafts[card.code] = { ...(drafts[card.code] || {}), [k]: v }; keep(); };
     f.pt.addEventListener('input', () => { upd('text', f.pt.value); f.querySelector('[type=submit]').disabled = ui.sending || !f.pt.value.trim(); });
@@ -431,13 +434,17 @@ export async function myCollections(ctx) {
   if (!ctx.alive()) return;
   const by = new Map(cards.map((c) => [c.code, c]));
   const open = ctx.query.get('c');
+  // папки одного уровня (23.11.2026): «Избранное» и подборки, «Мои открытки», «Мои образы»
+  const folder = (href, icon, title, n) => `<a class="item" href="${u(href)}"><span class="ic">${icon}</span><span class="body"><b>${esc(title)}</b><span class="small">${n}</span></span><span aria-hidden="true">→</span></a>`;
   const draw = () => {
     const cur = open && s.collections.find((c) => String(c.id) === open);
+    const fav = s.collections.find((c) => c.favorites); const rest = s.collections.filter((c) => !c.favorites);
+    const colItem = (c) => (c ? `<a class="item" href="${u('/me/collections?c=' + encodeURIComponent(c.id))}"><span class="mini-strip">${c.codes.slice(0, 4).map((k) => by.get(k)).filter(Boolean).map((k) => `<img src="${esc(k.thumb)}" alt="">`).join('') || `<span class="muted small">—</span>`}</span>
+        <span class="body"><b>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)}</b><span class="small">${c.codes.length} ${esc(tt('карт', 'cards'))}</span></span><span aria-hidden="true">→</span></a>` : '');
     if (cur) {
       const list = cur.codes.map((k) => by.get(k)).filter(Boolean);
       ctx.main.innerHTML = `<div class="wrap page stack"><a class="small" href="${u('/me/collections')}">← ${esc(tt('Мои подборки', 'My collections'))}</a>
         <div class="row between"><h1 style="margin:0">${esc(cur.favorites ? tt('Избранное', 'Favourites') : cur.title)}</h1><span class="muted">${list.length} / ${personal.MAX_CARDS}</span></div>
-        ${cur.favorites ? `<a class="item pc-fav-link" href="${u('/me/postcards')}"><span class="ic">${ic.mail || ic.cards}</span><span class="body"><b>${esc(tt('Мои открытки', 'My postcards'))}</b><span class="small">${(s.postcards || []).length}</span></span><span aria-hidden="true">→</span></a>` : ''}
         <div class="row">${list.length >= 2 ? `<a class="btn yellow sm" href="${u('/group?collection=' + encodeURIComponent(cur.id))}">${ic.people} ${esc(tt('Играть компанией', 'Play with friends'))}</a>` : ''}
           ${cur.favorites ? '' : `<button class="btn sm light" type="button" id="ren">${esc(tt('Переименовать', 'Rename'))}</button><button class="btn sm light" type="button" id="del">${esc(tt('Удалить подборку', 'Delete collection'))}</button>`}</div>
         ${list.length ? `<div class="grid">${list.map((c, i) => `<div class="cell"><button class="tile" type="button" data-i="${i}" aria-label="${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" loading="lazy"></button>
@@ -452,8 +459,9 @@ export async function myCollections(ctx) {
     ctx.main.innerHTML = `<div class="wrap page stack"><h1 style="margin:0">${esc(tt('Мои подборки', 'My collections'))}</h1>
       ${s.server ? '' : `<p class="vb-note">${esc(tt('Сохранено в этом браузере. Войдите, чтобы видеть на других устройствах.', 'Saved in this browser. Sign in to see them on other devices.'))}</p>`}
       <form class="row" id="nc"><label class="sr-only" for="nct">${esc(tt('Название новой подборки', 'New collection name'))}</label><input id="nct" maxlength="80" placeholder="${esc(tt('Новая подборка…', 'New collection…'))}" style="flex:1;min-width:0"><button class="btn sm" type="submit">${esc(tt('Создать', 'Create'))}</button></form>
-      <div class="list">${s.collections.map((c) => `<a class="item" href="${u('/me/collections?c=' + encodeURIComponent(c.id))}"><span class="mini-strip">${c.codes.slice(0, 4).map((k) => by.get(k)).filter(Boolean).map((k) => `<img src="${esc(k.thumb)}" alt="">`).join('') || `<span class="muted small">—</span>`}</span>
-        <span class="body"><b>${esc(c.favorites ? tt('Избранное', 'Favourites') : c.title)}</b><span class="small">${c.codes.length} ${esc(tt('карт', 'cards'))}${c.favorites ? ` · ${esc(tt('открыток', 'postcards'))}: ${(s.postcards || []).length}` : ''}</span></span><span aria-hidden="true">→</span></a>${c.favorites ? `<a class="item sub-item" href="${u('/me/postcards')}"><span class="body"><b>${esc(tt('Мои открытки', 'My postcards'))}</b><span class="small">${(s.postcards || []).length}</span></span><span aria-hidden="true">→</span></a>` : ''}`).join('')}<a class="item" href="${u('/me/images')}"><span class="mini-strip" aria-hidden="true"></span><span class="body"><b>${esc(tt('Мои образы', 'My images'))}</b><span class="small">${(s.images || []).length}</span></span><span aria-hidden="true">→</span></a></div></div>`;
+      <div class="list folders">${colItem(fav)}${folder('/me/postcards', ic.mail || ic.cards, tt('Мои открытки', 'My postcards'), (s.postcards || []).length)}${folder('/me/images', ic.picPlus || ic.cards, tt('Мои образы', 'My images'), (s.images || []).length)}</div>
+      ${rest.length ? `<h2 class="small muted" style="margin:6px 0 0">${esc(tt('Мои подборки карт', 'My card collections'))}</h2><div class="list">${rest.map(colItem).join('')}</div>` : ''}
+    </div>`;
     ctx.main.querySelector('#nc').onsubmit = async (e) => { e.preventDefault(); const t0 = ctx.main.querySelector('#nct').value; if (!t0.trim()) return; await personal.createCollection(t0); draw(); };
   };
   draw();

@@ -59,6 +59,16 @@ export function openViewer(opts) {
   const el = document.createElement('div');
   const withQ = opts.mode !== 'admin'; // вопросы — у карт галереи и подборки встречи
   el.className = `viewer viewer--${opts.mode}`;
+  // экранная клавиатура (23.11.2026): поле ввода в окне карты (название подборки, заметка) остаётся над клавиатурой —
+  // нижняя панель поднимается на высоту клавиатуры, поле прокручивается в видимую область; после закрытия всё на месте
+  const vv = window.visualViewport;
+  const kbFit = () => {
+    if (!vv) return; const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    el.style.setProperty('--kb', kb + 'px'); el.classList.toggle('kb-open', kb > 60);
+    const f = document.activeElement; if (kb > 60 && f && el.contains(f) && /^(INPUT|TEXTAREA)$/.test(f.tagName)) f.scrollIntoView({ block: 'nearest' });
+  };
+  el.addEventListener('focusin', (e) => { if (!/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || !vv) return; vv.addEventListener('resize', kbFit); vv.addEventListener('scroll', kbFit); setTimeout(kbFit, 250); setTimeout(kbFit, 600); });
+  el.addEventListener('focusout', () => { if (!vv) return; setTimeout(() => { const f = document.activeElement; if (!(f && el.contains(f) && /^(INPUT|TEXTAREA)$/.test(f.tagName))) { vv.removeEventListener('resize', kbFit); vv.removeEventListener('scroll', kbFit); el.style.setProperty('--kb', '0px'); el.classList.remove('kb-open'); } }, 100); });
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-label', tt('Просмотр карты', 'Card view'));

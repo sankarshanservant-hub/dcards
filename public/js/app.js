@@ -109,7 +109,7 @@ const PARENTS = [
   [/^\/group\/online\/?$/, '/games', 'К играм', 'To games'],
   [/^\/team\//, '/chats', 'К чатам', 'To chats'],
   [/^\/me\/notifications/, '/me', 'Профиль', 'Profile'],
-  [/^\/me\/postcards/, '/me/collections?c=favorites', 'Избранное', 'Favourites'],
+  [/^\/me\/postcards/, '/me/collections', 'Мои подборки', 'My collections'],
   [/^\/me\/images/, '/me/collections', 'Мои подборки', 'My collections'],
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
   [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
@@ -117,7 +117,11 @@ const PARENTS = [
   [/^\/admin\/./, '/admin', 'Кабинет администратора', 'Admin space'],
   [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
 ];
+// Панель «домик / Назад» живёт рядом с <main>, а не внутри (23.11.2026): страницы игр перерисовывают свою область целиком,
+// и прежняя панель внутри исчезала после первого же действия («Запомнил», «Проверить») — выхода не было видно.
+const backBar = (() => { const el = document.createElement('div'); el.id = 'backbar'; main.parentNode.insertBefore(el, main); return el; })();
 function addBackLink(path, ctx) {
+  backBar.innerHTML = '';
   if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back], [data-home], [data-local]')) return;
   // у страницы своя ссылка «← …» наверху — её не дублируем стрелкой, остаётся домик
   const own = [...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'));
@@ -128,15 +132,26 @@ function addBackLink(path, ctx) {
   // «Назад» ведёт туда же, куда домик (на главную), — оставляем только «Назад» (22.11.2026)
   const backHome = back && (back.includes('data-back') ? prevPath === '/' : par && par[1] === '/');
   const home = backHome ? '' : `<a class="nav-ic" data-home href="${u('/')}" aria-label="${esc(tt('На главную', 'Home'))}" title="${esc(tt('На главную', 'Home'))}">${ic.home}</a>`;
-  main.insertAdjacentHTML('afterbegin', `<div class="wrap back-bar">${home}${back}</div>`);
+  backBar.innerHTML = `<div class="wrap back-bar">${home}${back}</div>`;
 }
-main.addEventListener('click', (e) => {
+backBar.addEventListener('click', (e) => {
   const a = e.target.closest('[data-back]');
   if (a && depth() > 0) { e.preventDefault(); e.stopPropagation(); history.back(); }
 }, true);
 
 let prevPath = null; let curPath = null;
+// Обработчики, которые страница вешает на общий <main> (ctx.main.addEventListener), живут только до следующей отрисовки
+// (23.11.2026): раньше они копились — например, «Запомнил» на новой карте «Глаз-алмаза» срабатывал и в обработчике прошлого
+// обмена и перерисовывал экран старым заданием. Постоянные обработчики приложения добавлены выше, до этой обёртки.
+let routeAbort = new AbortController();
+const baseAdd = EventTarget.prototype.addEventListener;
+main.addEventListener = function (type, fn, opts) {
+  const o = typeof opts === 'object' && opts ? { ...opts } : { capture: !!opts };
+  if (!o.signal) o.signal = routeAbort.signal;
+  return baseAdd.call(this, type, fn, o);
+};
 async function render() {
+  routeAbort.abort(); routeAbort = new AbortController(); backBar.innerHTML = '';
   const token = ++renderToken;
   if (appPath() !== curPath) { prevPath = curPath; curPath = appPath(); }
   renderedPath = location.pathname;
@@ -301,8 +316,9 @@ function mi(href, icon, ru, en, noteRu = '', noteEn = '', hl = false, badge = ''
 // Закрытие системного меню ничего не меняет — человек остаётся на своём экране.
 async function shareApp() {
   const url = shareLink('/');
-  const text = tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation');
-  if (navigator.share) { try { await navigator.share({ title: 'Dialogue Cards', text, url }); } catch { /* отмена */ } return; }
+  // без повторов названия: адрес и превью уже показывают «Dialogue Cards» (23.11.2026)
+  const text = tt('Повод для интересного разговора', 'A reason for an interesting conversation');
+  if (navigator.share) { try { await navigator.share({ text, url }); } catch { /* отмена */ } return; }
   try { await navigator.clipboard.writeText(url); toast(tt('Ссылка скопирована', 'Link copied')); }
   catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), url); }
 }

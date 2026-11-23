@@ -1469,7 +1469,7 @@ test('22.11: «Глаз-алмаз» — банк 40 карт × 3 пары до
   v = (await call('GET', `/api/eagle/x/${tok}`, null, { visitor: VA })).json;
   assert.equal(v.mine, true); assert.equal(v.replies, 1); assert.equal(v.answers[1].text, 'Чемодан', 'отправитель видит ответ друга');
   const bl = (await call('GET', '/api/bell', null, { visitor: VA })).json;
-  assert.ok((bl.items || bl.notifications || []).some((n) => /Глаз-алмаз/.test(n.title)), 'гостю-отправителю — уведомление');
+  assert.ok((bl.items || bl.notifications || []).some((n) => n.title === "Друг ответил" && n.url === `/e/${tok}`), 'гостю-отправителю — уведомление');
   // банк обновили: отправленное задание остаётся прежним (снимок)
   eagle._setBank(txt.replace(it.q, it.q + ' (новая версия)'));
   v = (await call('GET', `/api/eagle/x/${tok}`, null, { visitor: VB })).json; assert.equal(v.question, it.q);

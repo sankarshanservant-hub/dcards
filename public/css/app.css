@@ -1599,3 +1599,42 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .join-info dd a { overflow-wrap: anywhere; }
 .mode-pick { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 #online-where[hidden], #live-where[hidden] { display: none; }
+/* «Глаз-алмаз» 23.11: действия после проверки */
+.btn.eagle-next { background: transparent; color: var(--text); border: 1.5px solid var(--accent); }
+:root[data-theme="light"] .btn.eagle-next { border: 2px solid #c99400; }
+.text-link { color: var(--text); text-decoration: underline; text-underline-offset: 3px; justify-self: start; }
+.eagle-invite-h { margin: 0; font-size: 1.3rem; font-weight: 800; }
+.eagle-send .btn { justify-self: start; }
+/* «Вопрос другу» (23.11.2026): вступление, самолётик на кнопке */
+.x-intro { margin: 0; text-align: center; font-size: 1.05rem; }
+.send-btn { gap: 10px; justify-content: center; }
+.send-btn .plane { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; flex: none; }
+/* «Придумай ассоциации» (23.11.2026): больше воздуха, пример по блокам, три строки действий */
+.solo-page .imag-step { gap: 14px; padding-top: 14px; }
+.solo-page .imag-step + .imag-step { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 20px; }
+.imag-ex { margin-top: 2px; }
+.imag-ex > summary { cursor: pointer; font-weight: 600; color: var(--accent-text); padding: 6px 0; }
+.imag-ex-in { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; }
+.imag-ex-in > div { display: grid; gap: 10px; min-width: 0; }
+.ex-block { display: grid; gap: 2px; padding: 8px 12px; border-left: 3px solid var(--border-strong); }
+.ex-line { margin: 0; overflow-wrap: anywhere; }
+.ex-k { color: var(--text-2); }
+.branches { gap: 14px; }
+.assoc-add.wide { margin-top: 4px; }
+.imag-acts { display: grid; gap: 12px; justify-items: start; margin-top: 6px; }
+.imag-acts .row { gap: 10px; flex-wrap: wrap; }
+.btn.imag-other { background: transparent; color: var(--text); border: 1.5px solid var(--accent); }
+:root[data-theme="light"] .btn.imag-other { border: 2px solid #c99400; }
+.btn.imag-new { background: transparent; color: var(--text); border: 1px solid var(--border-strong); }
+.imag-saved:empty { display: none; }
+/* «Мои образы»: образ — главный акцент, пара — крупнее */
+.img-text { font-size: clamp(1.35rem, 5vw, 1.7rem); line-height: 1.35; font-weight: 700; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.imag-pair.small-pair span, .imag-pair.small-pair b { font-size: 1.15rem; }
+.img-item .img-text-s { font-size: 1.15rem; line-height: 1.35; font-weight: 700; white-space: normal; overflow-wrap: anywhere; display: block; }
+.img-item .body .small { font-size: 1rem; color: var(--text-2); }
+/* окно карты при открытой клавиатуре: нижняя панель над клавиатурой, поле видно (23.11.2026) */
+.viewer.kb-open .viewer-bottom { bottom: var(--kb, 0px); max-height: calc(100% - var(--kb, 0px) - var(--top)); padding-bottom: 12px; }
+.viewer.kb-open .qpanel-body, .viewer.kb-open .picker-body { padding-bottom: calc(var(--kb, 0px) + 20px); }
+/* значок полноэкранного просмотра (23.11.2026): справа от карты, без кружка — только диагональные стрелки; область нажатия сохранена */
+.live-card-btn .zoom-ic { left: auto; right: -44px; top: -4px; bottom: auto; width: 40px; height: 40px; border: 0; background: transparent; border-radius: 0; color: var(--text); box-shadow: none; }
+.live-card-btn .zoom-ic svg { width: 22px; height: 22px; }

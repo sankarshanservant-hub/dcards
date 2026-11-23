@@ -1,7 +1,7 @@
 {
   "name": "Dialogue Cards",
   "short_name": "D-Cards",
-  "description": "Иллюстрации для живого разговора. Встречи Dialogue Flow.",
+  "description": "Повод для интересного разговора",
   "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",

@@ -10,6 +10,7 @@ const DEFAULT_Q = { 'что ты здесь видишь?': 'what do you see her
 const TITLES = [
   [/^Друг ответил на карту$/, () => 'Your friend answered the card'],
   [/^Друг ответил в «Глаз-алмазе»$/, () => 'Your friend answered in Eagle Eye'],
+  [/^Друг ответил$/, () => 'Your friend answered'],
   [/^Новый ответ на карту$/, () => 'A new answer to your card'],
   [/^Новая онлайн-встреча$/, () => 'A new online meeting'],
   [/^Новая встреча в городе (.+)$/, (m) => `A new meeting in ${m[1]}`],
@@ -39,6 +40,7 @@ const TITLES = [
   [/^Работа отклонена( \(решение принято\))?$/, (m) => `Work declined${m[1] ? ' (decided)' : ''}`],
 ];
 const BODIES = [
+  [/^Открой, чтобы сравнить ваши ответы$/, () => 'Open to compare your answers'],
   [/^(.+) написал\(а\), что видит в карте$/, (m) => `${NAME(m[1])} wrote what they see in the card`],
   [/^(.+) ответил\(а\) в общем обмене$/, (m) => `${NAME(m[1])} answered in the shared exchange`],
   [/^Посмотри макет и реши$/, () => 'Look at the layout and decide'],

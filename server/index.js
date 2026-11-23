@@ -927,7 +927,7 @@ r.get('/api/eagle/x/:t', (req, res) => {
 r.post('/api/eagle/x/:t/answer', (req, res) => {
   const r0 = eagle.reply(String(req.params.t), req.user, req.visitor, req.body || {});
   if (r0.error) return out(res, r0);
-  if (!r0.repeated) safe(() => bell.add(r0.x.from_user ? { userId: r0.x.from_user } : { visitorId: r0.x.from_visitor }, { kind: 'eagle_answered', title: 'Друг ответил в «Глаз-алмазе»', body: r0.name, url: `/e/${r0.x.secret}`, dedupe: `e:${r0.x.id}:${req.visitor}`, isDemo: !!r0.x.is_demo }));
+  if (!r0.repeated) safe(() => bell.add(r0.x.from_user ? { userId: r0.x.from_user } : { visitorId: r0.x.from_visitor }, { kind: 'eagle_answered', title: 'Друг ответил', body: 'Открой, чтобы сравнить ваши ответы', url: `/e/${r0.x.secret}`, dedupe: `e:${r0.x.id}:${req.visitor}`, isDemo: !!r0.x.is_demo }));
   const v = eagle.view(String(req.params.t), req.user, req.visitor);
   const c = pubCard(v.code); res.json({ ok: true, repeated: !!r0.repeated, ...v, card: c ? cards.publicCard(c) : null });
 });
@@ -1018,8 +1018,10 @@ const indexHtml = (base) => fs.readFileSync(path.join(publicDir, 'index.html'), 
 const cachedIndex = new Map(); // путь входа → index.html
 // Превью ссылок для мессенджеров (19.11.2026): у приглашения и публичной ссылки карты — сама иллюстрация и вопрос.
 // Никаких ответов и имён; запрос превью ничего не меняет в обмене и не считается открытием.
-const OG_DESC = 'Dialogue Cards — повод для интересного разговора';
+const OG_DESC = 'Повод для интересного разговора';
 function ogFor(req) {
+  // главная: заголовок — «Dialogue Cards», описание — слоган, без повторов названия и без встреч (23.11.2026)
+  if (req.path === '/' || req.path === '') return { title: 'Dialogue Cards', home: true, image: `${baseUrl(req)}${req.site.base}/og/eagle.jpg`, url: `${site.shareUrl()}/` };
   // «Глаз-алмаз»: в превью вопрос скрыт, картинка — рубашка карты
   if (/^\/e\/[A-Za-z0-9_-]{22,40}\/?$/.test(req.path)) return { title: 'Проверим нашу наблюдательность?', desc: 'Рассмотри карту, запомни детали и ответь на вопрос. Потом сравним наши ответы.', image: `${baseUrl(req)}${req.site.base}/og/eagle.jpg`, url: `${baseUrl(req)}${req.site.base}${req.path}` };
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
@@ -1053,9 +1055,10 @@ r.get('*', (req, res) => {
   const html = cachedIndex.get(base);
   const og = ogFor(req);
   if (og) {
-    const tags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Dialogue Cards"><meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(og.desc || OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
+    const tags = `<meta property="og:type" content="website">${og.home ? '' : '<meta property="og:site_name" content="Dialogue Cards">'}<meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(og.desc || OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
     // приглашение и личные ссылки — не для поисковиков
-    return res.set('Cache-Control', 'no-cache').set('X-Robots-Tag', 'noindex').type('html').send(html.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => `<title>${escAttr(og.title)} · Dialogue Cards</title>`)); // функции: «$» в тексте вопроса — обычный символ
+    if (!og.home) res.set('X-Robots-Tag', 'noindex'); // главную индексировать можно
+    return res.set('Cache-Control', 'no-cache').type('html').send(html.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => (og.home ? '<title>Dialogue Cards</title>' : `<title>${escAttr(og.title)} · Dialogue Cards</title>`))); // функции: «$» в тексте вопроса — обычный символ
   }
   res.set('Cache-Control', 'no-cache').type('html').send(html);
 });

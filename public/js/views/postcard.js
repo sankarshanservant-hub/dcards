@@ -182,7 +182,7 @@ export async function myPostcards(ctx) {
   const list = (s.postcards || []).filter((p) => by.has(p.code));
   const blobs = new Map(); const imgs = new Map();
   ctx.main.innerHTML = `<div class="wrap page stack">
-    <a class="small" href="${u('/me/collections?c=favorites')}">← ${esc(tt('Избранное', 'Favourites'))}</a>
+    <a class="small" href="${u('/me/collections')}">← ${esc(tt('Мои подборки', 'My collections'))}</a>
     <h1 style="margin:0">${esc(tt('Мои открытки', 'My postcards'))}</h1>
     ${s.server ? '' : `<p class="vb-note">${esc(tt('Сохранено в этом браузере. Войдите, чтобы видеть на других устройствах.', 'Saved in this browser. Sign in to see them on other devices.'))}</p>`}
     ${list.length ? `<div class="pc-list">${list.map((p) => `<div class="pc-item" data-id="${esc(p.id)}">

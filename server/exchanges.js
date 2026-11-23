@@ -185,8 +185,8 @@ function answer(token, user, visitor, { text, name, answerKey }) {
   event(x.id, 'answered');
   // один подтверждённый выбор: карту выбрал А, разговор состоялся, когда ответил Б
   talk.record(`x:${x.id}`, db.prepare('SELECT * FROM cards WHERE id = ?').get(x.card_id), { source: 'exchange', chooserId: x.a_user_id, demo: !!x.is_demo });
-  bell.add(x.a_user_id ? { userId: x.a_user_id } : { visitorId: x.a_visitor }, { kind: 'exchange_answered', title: 'Друг ответил на карту',
-    body: `${x.b_name || 'Друг'} написал(а), что видит в карте`, url: `/x/${x.a_secret}`, dedupe: `x:${x.id}:answered`, isDemo: !!x.is_demo });
+  bell.add(x.a_user_id ? { userId: x.a_user_id } : { visitorId: x.a_visitor }, { kind: 'exchange_answered', title: 'Друг ответил',
+    body: 'Открой, чтобы сравнить ваши ответы', url: `/x/${x.a_secret}`, dedupe: `x:${x.id}:answered`, isDemo: !!x.is_demo });
   return { ok: true, ...links(x, 'b') };
 }
 
