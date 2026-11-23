@@ -101,6 +101,8 @@ const ERRORS = {
   group_not_member: ['Сначала войдите в игру.', 'Join the game first.'],
   group_host_only: ['Это делает ведущий — тот, кто открыл игру.', 'Only the host — the person who opened the game — can do this.'],
   group_need_two: ['Нужно хотя бы два вопроса.', 'At least two questions are needed.'],
+  eagle_look_first: ['Сначала рассмотрите карту и нажмите «Запомнил».', 'First look at the card and tap “Got it”.'],
+  eagle_no_tasks: ['Для этих карт пока нет заданий «Глаз-алмаза».', 'There are no Eagle Eye tasks for these cards yet.'],
   answer_required: ['Напишите ответ.', 'Write your answer.'],
   sub_city_required: ['Выберите город — подписка на живые встречи идёт по городу.', 'Choose a city — live meeting alerts are by city.'],
   sub_language_required: ['Выберите язык — подписка на онлайн-встречи идёт по языку.', 'Choose a language — online meeting alerts are by language.'],
