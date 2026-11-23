@@ -6,7 +6,9 @@
 //   chain  — «История по кругу»: по очереди — одна из трёх карт и одна-две фразы к общей истории;
 //   gift   — «Карта для соседа»: карта и свой вопрос для одного человека, ответы видны всей комнате;
 //   bridge — «Мост между картами»: две карты, «что их связывает?», отметка «удивило».
-const ONLINE = ['see', 'whose', 'chain', 'gift', 'bridge'];
+//   eagle  — «Глаз-алмаз» (23.11.2026): одна карта на всех; каждый в своём темпе «Запомнил» → вопрос → обязательный ответ;
+//            когда ответили (или пропустили) все в комнате — карта, правильный ответ и ответы всех с именами.
+const ONLINE = ['see', 'whose', 'chain', 'gift', 'bridge', 'eagle'];
 const MIN2 = ['whose', 'gift'];
 const DEFAULT_SEE = { ru: 'Что ты здесь видишь?', en: 'What do you see here?' };
 const CHAIN_MAX = 8;
@@ -24,6 +26,7 @@ module.exports = function makeOnline(h) {
       .run(r.id, r.step, memberId, row.code, row.target_id, row.text);
   };
   const fresh = (r) => R.byCode.get(r.code);
+  const eagleBank = require('./eagle');
   /** Несколько разных случайных карт (без уже показанных в этой комнате, пока они есть). */
   function some(r, n, showDemo, avoid = []) {
     const all = pool(showDemo || r.is_demo, r).map((c) => c.code);
@@ -55,6 +58,14 @@ module.exports = function makeOnline(h) {
       patch = { phase: 'pick', answers: {} };
     } else if (r.format === 'chain') {
       patch = { phase: 'turn', story: [], turn: 0, offer: some(r, 3, showDemo, seen), seen };
+    } else if (r.format === 'eagle') {
+      // только карты с заданиями из банка; вопрос и правильный ответ — один на раунд, снимок (переживает обновление банка)
+      const codes = pool(showDemo || r.is_demo, r).map((c) => c.code);
+      const items = eagleBank.forCards(codes).items; const withTasks = Object.keys(items);
+      if (!withTasks.length) return { error: 'eagle_no_tasks' };
+      const fresh0 = withTasks.filter((c) => !seen.includes(c)); const from = fresh0.length ? fresh0 : withTasks;
+      const code = from[Math.floor(Math.random() * from.length)]; const list = items[code]; const it = list[Math.floor(Math.random() * list.length)];
+      patch = { phase: 'play', card: code, qid: it.id, q: it.q, a: it.a, looked: {}, skipped: {}, seen: [...seen, code].slice(-40) };
     }
     setRoom(r, { status: 'play', step });
     if (r.format === 'gift') {
@@ -77,6 +88,10 @@ module.exports = function makeOnline(h) {
       if (ids.every((id) => order.every((owner) => owner === id || !ids.includes(owner) || (g[owner] && g[owner][id]))) && order.length) save(r, { phase: 'open' });
     }
     if (r.format === 'gift' && d.phase === 'pick' && done((p) => p.code && p.text)) save(r, { phase: 'answer' });
+    if (r.format === 'eagle' && d.phase === 'play') {
+      const sk = d.skipped || {};
+      if (ids.length && ids.every((id) => sk[id] || ps.some((p) => p.member_id === id && p.text))) save(r, { phase: 'open' });
+    }
     if (r.format === 'gift' && d.phase === 'answer') {
       const a = d.answers || {}; const got = ps.filter((p) => p.code && p.text).map((p) => p.target_id);
       if (got.length && got.filter((id) => ids.includes(id)).every((id) => a[id])) save(r, { phase: 'open' });
@@ -93,6 +108,7 @@ module.exports = function makeOnline(h) {
     const hostOnly = host ? null : { error: 'group_host_only' };
     const ids = members(r).map((m) => m.id);
     const ok = () => ({ ok: true, id: r.id });
+    if (r.format === 'eagle' && !['start', 'again'].includes(action)) return eagleAct(r, me, host, action, body, d, ok);
     switch (action) {
       case 'start': case 'again': return hostOnly || round(r, body || {}, showDemo);
       case 'write': { // see, bridge: свой ответ (можно поправить до раскрытия)
@@ -164,10 +180,57 @@ module.exports = function makeOnline(h) {
     }
   }
 
+  // ---------- «Глаз-алмаз» в компании ----------
+  function eagleAct(r, me, host, action, body, d, ok) {
+    if (d.phase !== 'play') return { error: 'live_bad_state' };
+    const mine = picks(r).find((p) => p.member_id === me.id);
+    switch (action) {
+      case 'look': save(r, { looked: { ...(d.looked || {}), [me.id]: true } }); return ok();
+      case 'answer': {
+        if (!(d.looked || {})[me.id]) return { error: 'eagle_look_first' };
+        if (mine && mine.text) return ok(); // ответ записан для раунда — повтор ничего не меняет
+        const t = clean(body.text, 300); if (!t) return { error: 'answer_required' };
+        const sk = { ...(d.skipped || {}) }; delete sk[me.id];
+        save(r, { skipped: sk }); upsert(r, me.id, { text: t }); advance(r); return ok();
+      }
+      case 'skip': {
+        if (mine && mine.text) return { error: 'live_bad_state' };
+        save(r, { skipped: { ...(d.skipped || {}), [me.id]: true } }); advance(r); return ok();
+      }
+      case 'reveal': {
+        if (!host) return { error: 'group_host_only' };
+        if (!picks(r).some((p) => p.text)) return { error: 'group_nobody_yet' };
+        save(r, { phase: 'open' }); return ok();
+      }
+      default: return { error: 'live_bad_state' };
+    }
+  }
+  function eagleState(r, me, out, d, ps, ms) {
+    const looked = d.looked || {}; const sk = d.skipped || {};
+    const stage = (id) => (ps.some((p) => p.member_id === id && p.text) ? 'answered' : sk[id] ? 'skipped' : looked[id] ? 'ask' : 'look');
+    out.card = cardOut(d.card);
+    out.stages = Object.fromEntries(ms.map((m) => [m.id, stage(m.id)])); // кто где — без содержания ответов
+    out.answeredCount = ms.filter((m) => ['answered', 'skipped'].includes(stage(m.id))).length;
+    if (d.phase === 'open') {
+      out.question = d.q; out.answer = d.a;
+      // ответы всех, кто ответил (и уже вышедших), и пометка «пропустил(а)» у тех, кто в комнате
+      const nm = (id) => (ms.find((m) => m.id === id) || db.prepare('SELECT name FROM group_members WHERE id = ?').get(id) || {}).name || '—';
+      out.answers = [...ps.filter((p) => p.text).map((p) => ({ id: p.member_id, name: nm(p.member_id), text: p.text })),
+        ...ms.filter((m) => sk[m.id] && !ps.some((p) => p.member_id === m.id && p.text)).map((m) => ({ id: m.id, name: m.name, skipped: true }))];
+      return out;
+    }
+    if (!me) return out;
+    const st = stage(me.id); out.myStage = st;
+    if (st === 'ask' || st === 'answered') out.question = d.q; // вопрос — только после своего «Запомнил»
+    if (st === 'answered') out.myText = ps.find((p) => p.member_id === me.id).text;
+    return out;
+  }
+
   function state(r, me, out, showDemo) {
     const d = dataOf(r); const ps = picks(r); const ms = members(r); const ids = ms.map((m) => m.id);
     const name = (id) => (ms.find((m) => m.id === id) || db.prepare('SELECT name FROM group_members WHERE id = ?').get(id) || {}).name || '—';
     const mine = me ? ps.find((p) => p.member_id === me.id) : null;
+    if (r.format === 'eagle') return eagleState(r, me, out, d, ps, ms);
     out.ready = ps.filter((p) => (r.format === 'whose' ? p.code : r.format === 'gift' ? p.code && p.text : p.text)).map((p) => p.member_id);
     if (r.format === 'see' || r.format === 'bridge') {
       if (r.format === 'see') { out.card = cardOut(d.card); out.question = d.question || null; out.defaultQuestion = DEFAULT_SEE; }

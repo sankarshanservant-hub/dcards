@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS group_picks (
   PRIMARY KEY (room_id, step, member_id)
 );`);
 
-const FORMATS = ['one', 'own', 'guess', 'friend', 'story', 'question', 'pairs', 'see', 'whose', 'chain', 'gift', 'bridge'];
+const FORMATS = ['one', 'own', 'guess', 'friend', 'story', 'question', 'pairs', 'see', 'whose', 'chain', 'gift', 'bridge', 'eagle'];
 const MAX = 20;
 const TTL = 12 * 3600e3;
 const bus = new EventEmitter(); bus.setMaxListeners(0);

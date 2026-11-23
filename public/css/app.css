@@ -1638,3 +1638,12 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 /* значок полноэкранного просмотра (23.11.2026): справа от карты, без кружка — только диагональные стрелки; область нажатия сохранена */
 .live-card-btn .zoom-ic { left: auto; right: -44px; top: -4px; bottom: auto; width: 40px; height: 40px; border: 0; background: transparent; border-radius: 0; color: var(--text); box-shadow: none; }
 .live-card-btn .zoom-ic svg { width: 22px; height: 22px; }
+
+/* «Глаз-алмаз» в компании онлайн (23.11.2026): статусы участников, скрытая карта, ответы до 20 человек */
+.on-stages li { font-size: .85rem; }
+.on-stages li .muted { color: var(--text-2); }
+.on-room .eagle-hidden.on-eagle-hidden { aspect-ratio: auto; height: 120px; width: min(240px, 62vw); }
+.on-room .eagle-hidden.on-eagle-hidden svg { width: 40px; height: 40px; }
+.on-eagle-answers { gap: 8px; }
+.on-eagle-answers li { padding: 10px 14px; }
+@media (min-width: 900px) { .on-eagle-answers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

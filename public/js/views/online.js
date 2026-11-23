@@ -25,7 +25,14 @@ export const ONLINE_GAMES = [
   { key: 'bridge', ru: 'Мост между картами', en: 'A bridge between cards',
     dru: 'Всем открываются две карты рядом. Каждый пишет, что их связывает: слово, образ или короткую историю. Ответы открываются вместе, и можно отметить тот, что удивил.',
     den: 'Two cards open side by side. Each person writes what connects them: a word, an image or a short story. The answers open together, and you can mark the one that surprised you.' },
+  { key: 'eagle', ru: 'Глаз-алмаз', en: 'Eagle Eye',
+    dru: 'Всем открывается одна карта. Каждый рассматривает её в своём темпе и нажимает «Запомнил» — карта скрывается, появляется вопрос. Когда ответят все, откроются карта, правильный ответ и ответы участников.',
+    den: 'Everyone sees the same card. Each person looks at it at their own pace and taps “Got it” — the card disappears and a question appears. When everyone has answered, the card, the correct answer and everyone’s answers open.' },
 ];
+// Ограничения (сверено с сервером, 23.11.2026): в комнате до 20 человек (server/group.js, MAX); «Чья это карта?» и
+// «Карта для соседа» начинаются, когда в комнате хотя бы двое; остальные игры можно начать и одному.
+export const ROOM_MAX = 20;
+const limitText = (g) => (g.min ? tt(`${g.min}–${ROOM_MAX} участников`, `${g.min}–${ROOM_MAX} players`) : tt(`До ${ROOM_MAX} участников`, `Up to ${ROOM_MAX} players`));
 export const ONLINE_KEYS = ONLINE_GAMES.map((g) => g.key);
 // Приглашение — по игре (22.11.2026)
 const PITCH = {
@@ -34,6 +41,7 @@ const PITCH = {
   chain: ['Давайте сыграем в «Историю по кругу». По очереди сочиним общую историю по картам.', 'Let’s play “A story in turns”. We’ll take turns writing a shared story from the cards.'],
   gift: ['Давайте сыграем в «Карту для соседа». Каждый выберет карту и вопрос для другого участника.', 'Let’s play “A card for your neighbour”. Everyone picks a card and a question for another player.'],
   bridge: ['Давайте сыграем в «Мост между картами». Посмотрим на две карты и поищем, что их связывает.', 'Let’s play “A bridge between cards”. We’ll look at two cards and look for what connects them.'],
+  eagle: ['Давайте сыграем в «Глаз-алмаз». Рассмотрим одну карту, запомним детали и сравним ответы.', 'Let’s play “Eagle Eye”. We’ll look at one card, remember the details and compare our answers.'],
 };
 export const pitchOf = (key) => { const p = PITCH[key]; return p ? tt(p[0], p[1]) : ''; };
 /** Предложение продолжить: участник сам решает, присоединиться ли (22.11.2026). */
@@ -67,10 +75,10 @@ export async function choose(ctx) {
   if (!picked) {
     ctx.main.innerHTML = `<div class="wrap page narrow stack">
       <div class="page-head"><p class="eyebrow">Dialogue Cards</p><h1>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</h1>
-        <p class="game-lead">${esc(tt('На расстоянии · друзья подключаются по ссылке', 'At a distance · friends join by link'))}</p>
+        <p class="game-lead">${esc(tt(`На расстоянии · до ${ROOM_MAX} участников · друзья подключаются по ссылке`, `At a distance · up to ${ROOM_MAX} players · friends join by link`))}</p>
         <div class="game-how"><p>${esc(tt('Выберите игру, затем создайте комнату и отправьте приглашение. Говорить можно в любом созвоне или переписке — ответы видны прямо в игре. Регистрация не нужна.', 'Choose a game, then create a room and send an invitation. Talk on any call or chat — the answers are shown right in the game. No sign-up needed.'))}</p></div></div>
       ${from ? await crewBox(from) : ''}
-      <div class="list">${ONLINE_GAMES.map((g) => `<a class="item group-format" href="${u('/group/online?g=' + g.key + (from ? '&from=' + encodeURIComponent(from) : ''))}"><span class="body"><b>${esc(title(g))}</b><span class="small">${esc(desc(g))}</span>${g.min ? `<span class="small muted">${esc(tt('Нужно хотя бы двое', 'At least two players'))}</span>` : ''}</span><span aria-hidden="true">→</span></a>`).join('')}</div>
+      <div class="list">${ONLINE_GAMES.map((g) => `<a class="item group-format" href="${u('/group/online?g=' + g.key + (from ? '&from=' + encodeURIComponent(from) : ''))}"><span class="body"><b>${esc(title(g))}</b><span class="small">${esc(desc(g))}</span><span class="small muted">${esc(limitText(g))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
     </div>`;
     return;
   }
@@ -240,6 +248,38 @@ export async function room(ctx, code, first) {
     return `<ul class="on-feed">${(s.feed || []).map((x) => `<li>${img(x.card, 'sm')}<div class="stack"><span class="small muted">${esc(x.from)} → ${esc(x.to)}</span><p class="on-ask">${esc(x.question)}</p><p>${x.answer ? esc(x.answer) : `<span class="muted">${esc(tt('Без ответа', 'No answer'))}</span>`}</p></div></li>`).join('')}</ul><div class="row">${startBtn(true)}</div>${waitHost(tt('Ждём новый раунд', 'Waiting for a new round'))}`;
   }
 
+  // «Глаз-алмаз» в компании (23.11.2026): карта сверху, вопрос и ответы — под ней на протяжении всего раунда
+  const STAGE = { look: ['смотрит карту', 'looking at the card'], ask: ['отвечает', 'answering'], answered: ['ответил(а)', 'answered'], skipped: ['пропустил(а)', 'skipped'] };
+  function eaglePeople() {
+    if (s.phase === 'open') return '';
+    return `<ul class="on-people on-stages" aria-label="${esc(tt('Участники', 'Players'))}">${s.members.map((m) => { const st = (s.stages || {})[m.id] || 'look'; const done = st === 'answered' || st === 'skipped';
+      return `<li class="${done ? 'done' : ''}">${done ? ic.check : ''}<span>${esc(m.name)}${s.me && m.id === s.me.id ? ` (${esc(tt('вы', 'you'))})` : ''} · <span class="muted">${esc(tt(STAGE[st][0], STAGE[st][1]))}</span></span></li>`; }).join('')}</ul>`;
+  }
+  const hiddenCard = () => `<div class="eagle-hidden on-eagle-hidden" role="img" aria-label="${esc(tt('Карта скрыта', 'The card is hidden'))}">${ic.lock || ''}<span>${esc(tt('Карта скрыта', 'The card is hidden'))}</span></div>`;
+  function eagle() {
+    const total = s.members.length; const n = s.answeredCount || 0;
+    if (s.phase === 'open') {
+      return `<div class="on-cardbox">${img(s.card)}</div><p class="on-q">${esc(s.question || '')}</p>
+        <p class="eagle-answer">${esc(tt('Правильный ответ', 'Correct answer'))}: ${esc(s.answer || '')}</p>
+        <ul class="on-answers on-eagle-answers">${(s.answers || []).map((a) => `<li><b>${esc(a.name)}${s.me && a.id === s.me.id ? ` (${esc(tt('вы', 'you'))})` : ''}</b>${a.skipped ? `<p class="muted">${esc(tt('пропустил(а) задание', 'skipped the task'))}</p>` : `<p>${esc(a.text)}</p>`}</li>`).join('')}</ul>
+        <div class="row">${s.host ? `<button class="btn yellow" type="button" data-round="again" ${dis()}>${esc(tt('Следующее задание', 'Next task'))}</button>` : ''}</div>${waitHost(tt('Следующее задание запускает ведущий', 'The host starts the next task'))}`;
+    }
+    const st = s.myStage || 'look';
+    const reveal = s.host && n > 0 && n < total ? hostBtn('reveal', tt('Открыть ответы, не дожидаясь всех', 'Open the answers without waiting'), 'light') : '';
+    const skip = `<button class="linkbtn" type="button" data-act="skip" ${dis()}>${esc(tt('Пропустить это задание', 'Skip this task'))}</button>`;
+    if (st === 'look') return `<p class="small muted" style="margin:0">${esc(tt('Рассмотри карту и запомни детали.', 'Look at the card and remember the details.'))}<br>${esc(tt('Когда нажмёшь «Запомнил», карта скроется и появится вопрос.', 'When you tap “Got it”, the card disappears and a question appears.'))}</p>
+      <div class="on-cardbox">${img(s.card)}</div><div class="row wrap"><button class="btn yellow" type="button" data-act="look" ${dis()}>${esc(tt('Запомнил', 'Got it'))}</button>${skip}</div>${progress(n, total, tt('Ответили', 'Answered'))}${reveal}`;
+    if (st === 'ask') {
+      const has = !!(ui.draft.e || '').trim();
+      return `${hiddenCard()}<p class="on-q">${esc(s.question || '')}</p>${lang === 'en' ? `<p class="small muted" style="margin:0">${esc('The questions are in Russian for now.')}</p>` : ''}
+        <form class="stack on-form" data-form="eagle">${ta('e', tt('Твой ответ', 'Your answer'), '', 3, 300)}<button class="btn yellow" type="submit" data-esend ${has && !ui.busy ? '' : 'disabled'}>${esc(tt('Отправить ответ', 'Send answer'))}</button></form>
+        <div class="row">${skip}</div>${progress(n, total, tt('Ответили', 'Answered'))}${reveal}`;
+    }
+    const mine = st === 'answered' ? `<div class="card-ui flat on-mine"><span class="small muted">${esc(tt('Твой ответ', 'Your answer'))}</span><p>${esc(s.myText || '')}</p></div>` : `<p class="muted" style="margin:0">${esc(tt('Ты пропустил(а) это задание.', 'You skipped this task.'))}</p>`;
+    return `${hiddenCard()}${s.question ? `<p class="on-q">${esc(s.question)}</p>` : ''}${mine}
+      <p class="on-turn" aria-live="polite">${esc(tt(`Ждём остальных: ответили ${n} из ${total}`, `Waiting for the others: ${n} of ${total} answered`))}</p>${reveal}`;
+  }
+
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
       ${offerHtml(ui.offerHidden ? null : s, gameTitle)}
@@ -249,12 +289,12 @@ export async function room(ctx, code, first) {
     if (s.status === 'lobby') return `${h}<p class="lead">${esc(desc(g))}</p>${s.host ? inviteBox(true) : ''}${people()}
       <p class="small muted" style="margin:0">${esc(tt('Говорить можно в любом созвоне или переписке. Можно сказать «пас» — объяснять не нужно.', 'Talk on any call or chat. You can say “pass” — no explanation needed.'))}</p>
       ${roundOpts()}<div class="row">${startBtn(false)}</div>${waitHost(tt('Ждём начала', 'Waiting to start'))}`;
-    const game = { see, bridge, whose, chain, gift }[s.format];
-    return h + offerHtml(ui.offerHidden ? null : s, gameTitle) + game() + people();
+    const game = { see, bridge, whose, chain, gift, eagle }[s.format];
+    return h + offerHtml(ui.offerHidden ? null : s, gameTitle) + game() + (s.format === 'eagle' ? eaglePeople() : people());
   }
 
   function draw() {
-    if (ui.step !== s.step) { ui.step = s.step; ui.sel = {}; ui.edit = {}; for (const k of ['w', 'why', 'c', 'g', 'a']) delete ui.draft[k]; }
+    if (ui.step !== s.step) { ui.step = s.step; ui.sel = {}; ui.edit = {}; for (const k of ['w', 'why', 'c', 'g', 'a', 'e']) delete ui.draft[k]; }
     if (ui.phase !== s.phase) { ui.phase = s.phase; ui.edit = {}; }
     if (!root || !ctx.main.contains(root)) { ctx.main.innerHTML = '<div class="live" id="oroot"></div>'; root = ctx.main.querySelector('#oroot'); lastHtml = ''; }
     const html = `<div class="live-in on-room">
@@ -272,7 +312,7 @@ export async function room(ctx, code, first) {
   const $ = (q) => root.querySelector(q);
   function wire() {
     wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); });
-    root.querySelectorAll('[data-draft]').forEach((t) => listen(t, 'input', () => { ui.draft[t.dataset.draft] = t.value; }));
+    root.querySelectorAll('[data-draft]').forEach((t) => listen(t, 'input', () => { ui.draft[t.dataset.draft] = t.value; const b = t.dataset.draft === 'e' && root.querySelector('[data-esend]'); if (b) b.disabled = !t.value.trim() || ui.busy; }));
     root.querySelectorAll('[data-invite]').forEach((b) => b.onclick = () => sendRoomInvite(url, pitchOf(g.key)));
     root.querySelectorAll('[data-round]').forEach((b) => b.onclick = () => act(b.dataset.round, roundBody()));
     root.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => act(b.dataset.act));
@@ -290,7 +330,7 @@ export async function room(ctx, code, first) {
     root.querySelectorAll('[data-form]').forEach((f) => listen(f, 'submit', async (e) => {
       e.preventDefault(); const kind = f.dataset.form; const t = f.querySelector('textarea'); const text = (t ? t.value : '').trim();
       if (!text) { toast(kind === 'gift' ? tt('Напишите вопрос к карте.', 'Write a question for the card.') : kind === 'pick' ? tt('Напишите одной строкой, почему эта карта.', 'Write in one line why this card.') : tt('Напишите ответ.', 'Write your answer.')); if (t) t.focus(); return; }
-      const map = { write: ['write', {}], pick: ['pick', { code: ui.sel.p }], add: ['add', { code: ui.sel.c }], gift: ['pick', { code: ui.sel.g }], answer: ['answer', {}] };
+      const map = { write: ['write', {}], pick: ['pick', { code: ui.sel.p }], add: ['add', { code: ui.sel.c }], gift: ['pick', { code: ui.sel.g }], answer: ['answer', {}], eagle: ['answer', {}] };
       const [action, extra] = map[kind];
       if (await act(action, { ...extra, text })) { const k = t && t.dataset.draft; if (k) delete ui.draft[k]; ui.edit = {}; lastHtml = ''; draw(); }
     }));
