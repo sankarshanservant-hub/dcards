@@ -302,6 +302,12 @@ const dict = {
 };
 
 function detect() {
+  // ?lang=en|ru — язык задан снаружи: рамка портала (/en/apps/dialogue-cards/ → ?lang=en) или ссылка; запоминается
+  const q = new URLSearchParams(location.search).get('lang');
+  if (q === 'ru' || q === 'en') {
+    try { localStorage.setItem('dc_lang', q); } catch { /* storage unavailable */ }
+    return q;
+  }
   try {
     const saved = localStorage.getItem('dc_lang');
     if (saved === 'ru' || saved === 'en') return saved;
