@@ -97,14 +97,14 @@ r.get('/media/:kind(full|thumb)/:file', (req, res) => {
   const privateOk = isStaff(req) || (req.user && info.artist_id === req.user.id);
   if (!publicOk && !privateOk) return res.sendStatus(404);
   res.set('Cache-Control', publicOk && !info.is_demo ? 'public, max-age=86400' : 'private, no-store');
-  res.sendFile(path.join(config.mediaDir, req.params.kind, file));
+  res.sendFile(path.join(config.mediaDir, req.params.kind, file), (err) => { if (err && !res.headersSent) res.sendStatus(404); });
 });
 // Работы на рассмотрении: автору, кураторам и администраторам.
 r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
   const file = path.basename(req.params.file);
   if (!works.workMediaAllowed(file, req.user, req.roles)) return res.sendStatus(404);
   res.set('Cache-Control', 'private, no-store');
-  res.sendFile(path.join(config.mediaDir, 'works', req.params.kind, file));
+  res.sendFile(path.join(config.mediaDir, 'works', req.params.kind, file), (err) => { if (err && !res.headersSent) res.sendStatus(404); });
 });
 
 // ---------- общее ----------
@@ -113,7 +113,7 @@ r.get('/media/works/:kind(full|thumb)/:file', (req, res) => {
 const emailLoginEnabled = () => mail.connected() || !config.isProduction;
 r.get('/api/config', (req, res) => res.json({
   demoMode: config.demoMode, ownerLogin: auth.ownerLoginOpen(), mailConnected: mail.connected(), emailLogin: emailLoginEnabled(), siteLogin: !!config.siteAuthUrl && req.site.portal, translationConnected: false,
-  termsVersion: config.termsVersion, basePath: req.site.base, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
+  termsVersion: config.termsVersion, authorTerms: terms.active() ? { active: true, editionId: (terms.current('ru') || {}).id } : { active: false }, basePath: req.site.base, maxCollectionSize: config.maxCollectionSize, languages: meetings.LANGS,
 }));
 r.get('/api/me', (req, res) => res.json({ user: auth.publicUser(req.user), demoMode: config.demoMode, showDemo: !!req.showDemo }));
 r.patch('/api/me', auth.requireUser, (req, res) => {
@@ -221,6 +221,14 @@ r.post('/api/cards/:code/comments', auth.requireUser, (req, res) => {
 r.delete('/api/comments/:id', auth.requireUser, (req, res, next) => (demoOnly(req, res, isDemoRow('comments', 'id', Number(req.params.id)) || !req.has('admin')) ? next() : undefined), (req, res) => out(res, community.deleteComment(Number(req.params.id), req.user, req.has('admin'))));
 r.get('/api/criteria', (req, res) => res.json({ criteria: works.criteriaList() }));
 r.get('/api/terms', (req, res) => res.json({ version: config.termsVersion, draft: true }));
+// ---------- соглашение с авторами (25.11.2026) ----------
+const terms = require('./terms');
+// действующая редакция (если опубликована) — на языке читателя или русский оригинал, пока перевод на проверке
+r.get('/api/terms/authors', (req, res) => { const e = terms.forReader(req.query.lang === 'en' ? 'en' : 'ru'); res.set('Cache-Control', 'no-store').json({ active: terms.active(), edition: e }); });
+// конкретная редакция (например, принятая автором) — опубликованные открыты, черновики — только администрации
+r.get('/api/terms/editions/:id', (req, res) => { const e = terms.editionText(req.params.id, req.user, req.has && req.has('admin')); if (!e) return bad(res, 'not_found', 404); res.json({ edition: e }); });
+r.post('/api/artist/consent', auth.requireUser, (req, res) => { const b = req.body || {}; out(res, terms.accept(req.user, { editionId: b.editionId, purpose: b.purpose, target: b.target }), 201); });
+r.get('/api/artist/consents', auth.requireUser, (req, res) => res.json({ consents: terms.mine(req.user.id) }));
 
 // ---------- подборка на встрече (участник, без аккаунта) ----------
 function loadCollection(req, res) {
@@ -307,24 +315,29 @@ r.post('/api/registrations/:token/cancel', (req, res) => { const r0 = meetings.c
 r.get('/api/artist/works', auth.requireUser, (req, res) => res.json({ works: works.myWorks(req.user.id), cards: works.myCards(req.user.id), criteria: works.criteriaList() }));
 r.post('/api/artist/works', auth.requireUser, artistUpload.array('images', 20), wrap(async (req, res) => {
   const notes = [].concat(req.body.notes || []);
-  const result = await works.submit(req.user, req.files || [], { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, notes, clientKey: req.body.clientKey });
+  const result = await works.submit(req.user, req.files || [], { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, notes, clientKey: req.body.clientKey, consentId: req.body.consentId });
   if (!result.error) auth.grant(req.user.id, 'artist');
   if (!result.error && !result.repeated) safe(() => events.worksQueued(!!req.user.is_demo, req.user.id));
   out(res, result, 201);
 }));
 r.post('/api/artist/works/:id/versions', auth.requireUser, artistUpload.single('image'), wrap(async (req, res) => {
   if (!req.file) return bad(res, 'no_image');
-  const r0 = await works.addVersion(req.user, Number(req.params.id), req.file, req.body.note);
+  const r0 = await works.addVersion(req.user, Number(req.params.id), req.file, req.body.note, req.body.consentId);
   if (r0.ok) safe(() => events.worksQueued(!!req.user.is_demo, req.user.id));
   out(res, r0);
 }));
 r.post('/api/artist/cards/:code/replace', auth.requireUser, artistUpload.single('image'), wrap(async (req, res) => {
   if (!req.file) return bad(res, 'no_image');
-  const r0 = await works.proposeReplacement(req.user, req.params.code, req.file, { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, note: req.body.note });
+  const r0 = await works.proposeReplacement(req.user, req.params.code, req.file, { termsAccepted: req.body.termsAccepted === 'true', termsVersion: req.body.termsVersion, note: req.body.note, consentId: req.body.consentId });
   if (r0.id) safe(() => events.worksQueued(!!req.user.is_demo, req.user.id));
   out(res, r0, 201);
 }));
 r.post('/api/artist/cards/:code/withdraw', auth.requireUser, (req, res) => out(res, works.withdrawCard(req.user, req.params.code)));
+r.post('/api/artist/cards/:code/versions/:vid/revoke', auth.requireUser, (req, res) => out(res, works.revokeOldVersion(req.user, req.params.code, req.params.vid)));
+r.post('/api/artist/works/:id/withdraw', auth.requireUser, (req, res) => out(res, works.withdrawWork(req.user, Number(req.params.id))));
+// ---------- изменения в коллекции: история для фасилитаторов ----------
+const collection = require('./collection');
+r.get('/api/fac/changes', auth.requireUser, (req, res) => { if (!req.has('facilitator') && !req.has('admin')) return bad(res, 'forbidden', 403); res.json({ changes: collection.history(req.showDemo), unreadRemoved: db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND kind = 'collection_removed' AND read_at IS NULL").get(req.user.id).n }); });
 r.get('/api/works/:id', auth.requireUser, (req, res) => {
   const id = Number(req.params.id);
   if (!works.canSee(req.user, req.roles, id)) return bad(res, 'not_found', 404);
@@ -867,7 +880,7 @@ admin.get('/cards', (req, res) => {
       (SELECT COUNT(*) FROM comments c WHERE c.card_id = k.id AND c.deleted_at IS NULL) AS comments
     FROM cards k WHERE ${demoWhere(demoScope(req), 'k.is_demo')} ORDER BY k.number ASC`).all();
   res.json({ cards: rows.map((x) => ({
-    ...cards.publicCard(x, { withDetails: true }), status: x.status, source: x.source, removedAt: x.removed_at, removedBy: x.removed_by,
+    ...cards.publicCard(x, { withDetails: true }), status: x.status, source: x.source, removedAt: x.removed_at, removedBy: x.removed_by, purged: !!x.purged_at,
     selections: x.selections, colSelections: x.col_selections, testSelections: x.test_selections, offers: x.offers, inCollections: x.in_collections, comments: x.comments,
     printPermission: x.print_permission,
   })) });
@@ -904,7 +917,16 @@ admin.post('/cards/:code/remove', (req, res) => {
   if (!x.changes) return bad(res, 'not_found', 404);
   res.json({ ok: true });
 });
+// окончательное исключение карты из коллекции (в отличие от временного «Снять с публикации»): файлы удаляются, фасилитаторы уведомляются
+admin.post('/cards/:code/exclude', (req, res) => { if (!(req.body && req.body.confirm)) return bad(res, 'confirm_required'); out(res, collection.removeFinal(req.params.code, 'admin')); });
+admin.get('/removals', (req, res) => res.json({ removals: collection.adminRemovals(demoScope(req)), mailConnected: mail.connected() }));
+admin.post('/removal-tasks/:id', (req, res) => out(res, collection.setTask(req.params.id, String((req.body || {}).status || ''), (req.body || {}).note, req.user.id)));
+admin.post('/removals/retry-mail', wrap(async (req, res) => { await collection.processMail(); res.json({ ok: true }); }));
+admin.get('/terms', (req, res) => res.json({ drafts: terms.drafts(), active: terms.active(), stats: db.prepare('SELECT e.version, e.lang, COUNT(c.id) AS n FROM terms_editions e LEFT JOIN terms_consents c ON c.edition_id = e.id AND c.used_at IS NOT NULL GROUP BY e.id').all() }));
+admin.post('/terms/publish', (req, res) => { const b = req.body || {}; if (!b.confirm) return bad(res, 'confirm_required'); out(res, terms.publish(req.user, b.lang)); });
 admin.post('/cards/:code/restore', (req, res) => {
+  const pc = db.prepare('SELECT purged_at FROM cards WHERE code = ?').get(req.params.code);
+  if (pc && pc.purged_at) return bad(res, 'card_purged'); // окончательно удалённую карту вернуть нельзя
   const x = db.prepare(`UPDATE cards SET status = 'published', removed_at = NULL, removed_by = '' WHERE code = ? AND status = 'removed'`).run(req.params.code);
   if (!x.changes) return bad(res, 'not_found', 404);
   res.json({ ok: true });

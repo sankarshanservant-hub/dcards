@@ -32,12 +32,12 @@ const PUSH_TITLE = { exchange_answered: ['Друг ответил', 'Your friend
 const PUSH_TEXT = {
   exchange_answered: 'Открой, чтобы сравнить ваши ответы', eagle_answered: 'Открой, чтобы сравнить ваши ответы', story_proposed: 'Вам предложили поделиться ответами в сторис', story_agreed: 'Друг согласился поделиться в сторис',
   work_published: 'Решение по вашей работе', work_returned: 'Решение по вашей работе', work_rejected: 'Решение по вашей работе',
-  application: 'Новости по вашей заявке', registration: 'Новости по вашей записи на встречу', meeting_new: 'Новая встреча Dialogue Flow',
+  application: 'Новости по вашей заявке', registration: 'Новости по вашей записи на встречу', meeting_new: 'Новая встреча Dialogue Flow', collection_removed: 'Карта удалена из коллекции — проверьте свои материалы',
 };
 const PUSH_TEXT_EN = {
   exchange_answered: 'Open to compare your answers', eagle_answered: 'Open to compare your answers', story_proposed: 'You were invited to share your answers in Instagram Stories', story_agreed: 'Your friend agreed to share in Instagram Stories',
   work_published: 'A decision on your work', work_returned: 'A decision on your work', work_rejected: 'A decision on your work',
-  application: 'News about your application', registration: 'News about your meeting registration', meeting_new: 'A new Dialogue Flow meeting',
+  application: 'News about your application', registration: 'News about your meeting registration', meeting_new: 'A new Dialogue Flow meeting', collection_removed: 'A card was removed from the collection — check your materials',
 };
 
 /**

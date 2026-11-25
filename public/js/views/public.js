@@ -4,6 +4,7 @@ import { openViewer } from '../viewer.js';
 import { SLOGAN, TAGLINE } from '../share.js';
 import { ABOUT_CARDS, ABOUT_FLOW, ABOUT_CLOSING } from '../content.js';
 import { scanButton, wireScan } from '../qr-scan.js';
+import { loadTerms, fullHtml } from '../author-terms.js';
 import { session, ic, tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
 const openFromQuery = (cards, openAt) => {
@@ -327,4 +328,20 @@ export function terms(ctx) {
         <li>${esc(tt('Согласие не означает отказа от выплат за будущие способы использования.', 'Consent does not waive payment for future ways of use.'))}</li></ul>
       <p class="small muted">${esc(tt('Сайт записывает версию условий и время согласия к каждой отправке работ.', 'The site records the terms version and the time of consent for every submission.'))}</p>
     </div></div>`;
+}
+
+// ---------- полный текст соглашения с авторами (25.11.2026): действующая редакция или конкретная, принятая автором ----------
+export async function termsAuthors(ctx, id) {
+  loading(ctx.main);
+  let ed = null;
+  try { ed = id ? (await api(`/api/terms/editions/${encodeURIComponent(id)}`)).edition : (await loadTerms()).edition; }
+  catch (e) { if (e.status !== 404) return failed(ctx.main, e, ctx.rerender); }
+  if (!ctx.alive()) return;
+  if (!ed) { ctx.main.innerHTML = `<div class="wrap page narrow"><p class="empty">${esc(tt('Новая редакция условий для авторов ещё не опубликована.', 'The new version of the terms for authors has not been published yet.'))}</p><a href="${u('/terms')}">${esc(tt('Действующие условия публикации', 'Current publication terms'))}</a></div>`; return; }
+  const cur = (await loadTerms().catch(() => ({}))).edition;
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">
+    ${ed.status !== 'published' ? `<p class="notice demo small">${esc(tt('Черновик для администрации — не опубликован.', 'Draft for the administration — not published.'))}</p>` : ''}
+    ${cur && cur.id !== ed.id && ed.status === 'published' ? `<p class="notice small">${esc(tt('Это прежняя редакция — та, которую вы приняли.', 'This is an earlier version — the one you accepted.'))} <a href="${u('/terms/authors')}">${esc(tt('Действующая редакция', 'Current version'))}</a></p>` : ''}
+    ${ed.translationPending ? `<p class="notice small">${esc('The English translation is under review. The original Russian text is shown.')}</p>` : ''}
+    <article class="at-doc">${fullHtml(ed.body)}</article></div>`;
 }

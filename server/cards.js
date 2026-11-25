@@ -24,7 +24,7 @@ function publicCard(row, { withDetails = false } = {}) {
     publishedAt: row.published_at,
     isDemo: !!row.is_demo,
   };
-  if (withDetails) { c.number = row.number; c.author = row.author; }
+  if (withDetails) { c.number = row.number; c.author = row.author; c.version = `v${(db.prepare('SELECT COUNT(*) AS n FROM card_versions WHERE card_id = ?').get(row.id) || {}).n + 1}`; }
   return c;
 }
 

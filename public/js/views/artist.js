@@ -3,16 +3,19 @@
 import { lang } from '../i18n.js';
 import { esc, tt, u, api, upload, errorText, toast, fmtDate } from '../util.js';
 import { openViewer } from '../viewer.js';
-import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill, timeline, stepsBar, ic } from '../ui.js';
+import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill, timeline, stepsBar, ic, hasRole } from '../ui.js';
+import { loadTerms, resetTermsCache, stepHtml, miniHtml, openFull, accept, fullHtml } from '../author-terms.js';
 
 const critHtml = (c) => `<li><b>${c.number}.</b>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временная формулировка', 'placeholder wording'))}</span>` : ''}</li>`;
 const reasonsHtml = (d) => (d && d.criteria.length ? `<ul class="reasons">${d.criteria.map(critHtml).join('')}</ul>` : '')
   + (d && d.comment ? `<p class="small" style="margin:6px 0 0">${esc(tt('Комментарий куратора:', 'Curator’s comment:'))} ${esc(d.comment)}</p>` : '');
 
+let termsEd = null; // действующая редакция соглашения (если включена) — для форм новой версии и исправления
 function workCard(w) {
   const returned = w.status === 'needs_changes';
+  const canWithdraw = ['submitted', 'discussion', 'needs_changes', 'recommended'].includes(w.status);
   return `<div class="work" data-work="${w.id}">
-    <a class="thumb" href="${u('/artist/works/' + w.id)}" aria-label="${esc(tt(`Работа №${w.id}`, `Work #${w.id}`))}">${w.version ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</a>
+    <a class="thumb" href="${u('/artist/works/' + w.id)}" aria-label="${esc(tt(`Работа №${w.id}`, `Work #${w.id}`))}">${w.version && w.version.thumb ? `<img src="${esc(w.version.thumb)}" alt="" loading="lazy">` : ''}</a>
     <div class="body"><div class="row" style="gap:6px">${statusPill(WORK_STATUS, w.status)}${demoPill(w.isDemo)}
       ${w.kind === 'replacement' ? `<span class="pill">${esc(tt('Новая версия', 'New version'))} ${esc(w.targetCard ? w.targetCard.code : '')}</span>` : ''}</div>
       <a class="small muted" href="${u('/artist/works/' + w.id)}" style="color:inherit">${esc(tt('Работа', 'Work'))} №${w.id} · ${esc(tt('версий', 'versions'))}: ${w.versionsCount} · ${esc(fmtDate(w.updatedAt, { day: 'numeric', month: 'short' }))} →</a>
@@ -20,15 +23,21 @@ function workCard(w) {
       ${['needs_changes', 'rejected'].includes(w.status) ? `<div class="small"><b>${esc(returned ? tt('Почему возвращена:', 'Why it was returned:') : tt('Причина решения:', 'Reason:'))}</b></div>${reasonsHtml(w.lastResult)}` : ''}
       ${returned ? `<form class="work-fix" data-fix="${w.id}">
         <label class="field small">${esc(tt('Что исправлено (по желанию)', 'What was fixed (optional)'))}<input type="text" name="note" maxlength="300"></label>
+        ${termsEd ? miniHtml(termsEd, `fixterms-${w.id}`) : ''}
         <div class="row"><label class="btn yellow sm">${ic.plus} ${esc(tt('Загрузить новую версию', 'Upload a new version'))}<input type="file" name="image" accept="image/jpeg,image/png" hidden></label></div>
-      </form>` : ''}</div></div>`;
+      </form>` : ''}
+      ${canWithdraw ? `<button class="linkbtn small" type="button" data-wwithdraw="${w.id}" style="justify-self:start">${esc(tt('Снять с рассмотрения', 'Withdraw from review'))}</button>` : ''}</div></div>`;
 }
 
 export async function cabinet(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Кабинет автора доступен после входа по email.', 'Sign in with email to open the author space.'));
   loading(ctx.main);
-  let data;
-  try { data = await api('/api/artist/works'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  let data; let consents = [];
+  try {
+    data = await api('/api/artist/works');
+    termsEd = session.config.authorTerms && session.config.authorTerms.active ? (await loadTerms()).edition : null;
+    consents = (await api('/api/artist/consents')).consents;
+  } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   // Порядок по полезности: «Нужно доработать» → «На рассмотрении» (и на обсуждении) → «В галерее» (карточки карт); отклонённые — ниже, свёрнуто.
   // Одобренные работы показываются как опубликованные карты, без повторного списка.
@@ -52,15 +61,39 @@ export async function cabinet(ctx) {
           ${c.status === 'published' ? `<p class="small muted" style="margin:0">${esc(tt('Выбрали для разговора', 'Chosen for a conversation'))}: <b>${c.selectedCount || 0}</b></p>` : ''}
           ${c.status === 'published' ? `<div class="mc-actions"><label class="btn sm">${esc(tt('Новая версия', 'New version'))}<input type="file" accept="image/jpeg,image/png" data-replace="${esc(c.code)}" hidden></label>
             <button class="linkbtn mc-remove" type="button" data-withdraw="${esc(c.code)}">${esc(tt('Убрать', 'Remove'))}</button></div>` : ''}
+          ${c.status === 'published' && (c.oldVersions || []).length ? `<div class="mc-vers small"><span class="muted">${esc(tt(`Сейчас в галерее: ${c.version}. Прежние версии:`, `In the gallery now: ${c.version}. Earlier versions:`))}</span>
+            ${c.oldVersions.map((v) => (v.revoked ? `<span class="muted">${esc(v.label)} — ${esc(tt('разрешение отозвано', 'permission withdrawn'))}</span>` : `<button class="linkbtn small" type="button" data-revoke="${esc(c.code)}" data-vid="${v.id}" data-vl="${esc(v.label)}">${esc(tt(`Отозвать разрешение на ${v.label}`, `Withdraw permission for ${v.label}`))}</button>`)).join(' ')}</div>` : ''}
           <div class="mc-ask"></div>
         </article>`).join('') : ''}</div>
+      ${consents.length ? `<section class="stack" style="gap:6px"><h2 style="margin:14px 0 0">${esc(tt('Мои согласия с условиями', 'My consents to the terms'))}</h2>
+        <ul class="at-consents">${consents.map((x) => `<li><a href="${u('/terms/authors/' + x.editionId)}">${esc(tt(`Редакция ${x.version}`, `Version ${x.version}`))}</a> · ${esc(fmtDate(x.acceptedAt, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }))}${x.workId ? ` · ${esc(tt('работа', 'work'))} №${x.workId}` : ''}</li>`).join('')}</ul></section>` : ''}
       ${showAll ? group(tt('Отклонённые и снятые', 'Declined and withdrawn'), other) : other.length ? `<p class="small" style="margin:6px 0 0"><a href="${u('/artist?all=1')}">${esc(tt('Показать все работы, включая отклонённые', 'Show all works, including declined'))}</a></p>` : ''}
       <div id="ask"></div>
     </div>`;
   const ask = ctx.main.querySelector('#ask');
+  // полный текст соглашения, снятие работы с рассмотрения, отзыв разрешения на прежнюю версию карты
+  ctx.main.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-full]') && termsEd) { openFull(termsEd); return; }
+    const ww = e.target.closest('[data-wwithdraw]');
+    if (ww) {
+      if (!confirm(tt('Снять работу с рассмотрения? Кураторы перестанут её видеть, изображение будет удалено.', 'Withdraw the work from review? Curators will no longer see it and the image will be deleted.'))) return;
+      try { await api(`/api/artist/works/${ww.dataset.wwithdraw}/withdraw`, { method: 'POST' }); toast(tt('Работа снята с рассмотрения', 'The work was withdrawn from review')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
+      return;
+    }
+    const rv = e.target.closest('[data-revoke]');
+    if (rv) {
+      if (!confirm(tt(`Отозвать разрешение на версию ${rv.dataset.vl} карты ${rv.dataset.revoke}? Эта версия больше не будет использоваться, её файлы будут удалены, фасилитаторы получат уведомление. Текущая версия остаётся в галерее.`, `Withdraw permission for version ${rv.dataset.vl} of card ${rv.dataset.revoke}? This version will no longer be used, its files will be deleted and facilitators will be notified. The current version stays in the gallery.`))) return;
+      try { await api(`/api/artist/cards/${rv.dataset.revoke}/versions/${rv.dataset.vid}/revoke`, { method: 'POST' }); toast(tt('Разрешение на прежнюю версию отозвано', 'Permission for the earlier version withdrawn')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
+    }
+  });
   ctx.main.querySelectorAll('[data-fix]').forEach((f) => f.image.addEventListener('change', async () => {
     if (!f.image.files.length) return;
     const fd = new FormData(); fd.append('image', f.image.files[0]); fd.append('note', f.note.value);
+    if (termsEd) {
+      const cb = f.querySelector(`#fixterms-${f.dataset.fix}`);
+      if (!cb.checked) { toast(termsEd.short.check); f.image.value = ''; cb.focus(); return; }
+      try { fd.append('consentId', String(await accept(termsEd.id, 'resubmit', 'work:' + f.dataset.fix))); } catch (x) { toast(errorText(x)); return; }
+    }
     f.querySelector('label.btn').classList.add('busy');
     try { await api(`/api/artist/works/${f.dataset.fix}/versions`, { method: 'POST', form: fd }); toast(tt('Исправленная версия отправлена кураторам', 'Corrected version sent to curators')); ctx.rerender(); }
     catch (x) { toast(errorText(x)); f.querySelector('label.btn').classList.remove('busy'); f.image.value = ''; }
@@ -71,7 +104,7 @@ export async function cabinet(ctx) {
     const slot = w.closest('.my-card').querySelector('.mc-ask');
     ctx.main.querySelectorAll('.mc-ask').forEach((x) => { if (x !== slot) x.innerHTML = ''; });
     slot.innerHTML = `<div class="notice red stack"><b>${esc(tt(`Убрать карту ${code} с сайта?`, `Remove card ${code} from the site?`))}</b>
-      <span>${esc(tt('Она исчезнет из галереи и из всех подборок фасилитаторов, обсуждение перестанет быть публичным. Одобрение куратора не нужно. Печатное использование регулируется отдельно.', 'It will disappear from the gallery and all facilitator selections; its discussion will no longer be public. No curator approval is needed. Print use is governed separately.'))}</span>
+      <span>${esc(tt('Вы отзываете разрешение на её использование. Карта сразу исчезнет из галереи, игр и подборок, её файлы будут удалены с сайта. Фасилитаторы получат уведомление с номером карты — без вашего имени и без изображения. Копии, ранее сохранённые или распечатанные другими людьми, могут остаться у них.', 'You withdraw permission to use it. The card will disappear from the gallery, games and collections at once, and its files will be deleted from the site. Facilitators will get a notice with the card number — without your name or the image. Copies saved or printed earlier by other people may remain with them.'))}</span>
       <div class="row"><button class="btn danger" type="button" data-yes>${esc(tt('Да, убрать', 'Yes, remove'))}</button><button class="linkbtn" type="button" data-no>${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
     slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
     slot.querySelector('[data-no]').onclick = () => { slot.innerHTML = ''; };
@@ -85,7 +118,7 @@ export async function cabinet(ctx) {
     ask.innerHTML = `<div class="notice stack"><b>${esc(tt(`Новая версия карты ${code}`, `New version of card ${code}`))}</b>
       <span>${esc(tt('Опубликованная версия остаётся видна, пока куратор не одобрит замену. Куратор решит: это исправление той же карты (номер и обсуждение сохранятся) или новая карта (новый номер и своё обсуждение).', 'The published version stays visible until a curator approves the replacement. The curator decides: a fix of the same card (number and discussion kept) or a new card (new number and its own discussion).'))}</span>
       <label class="field">${esc(tt('Что изменилось', 'What changed'))}<input type="text" id="rnote" maxlength="300"></label>
-      <label class="check"><input type="checkbox" id="rterms"> <span>${esc(tt('Я принимаю условия публикации', 'I accept the publication terms'))} (<a href="${u('/terms')}" target="_blank">${esc(tt('условия', 'terms'))}</a>)</span></label>
+      ${termsEd ? miniHtml(termsEd, 'rterms') : `<label class="check"><input type="checkbox" id="rterms"> <span>${esc(tt('Я принимаю условия публикации', 'I accept the publication terms'))} (<a href="${u('/terms')}" target="_blank">${esc(tt('условия', 'terms'))}</a>)</span></label>`}
       <div class="row"><button class="btn dark" type="button" data-send>${esc(tt('Отправить на рассмотрение', 'Send for review'))}</button><button class="linkbtn" type="button" data-no>${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
     ask.scrollIntoView({ behavior: 'smooth', block: 'center' });
     ask.querySelector('[data-no]').onclick = () => { ask.innerHTML = ''; inp.value = ''; };
@@ -93,6 +126,10 @@ export async function cabinet(ctx) {
       const fd = new FormData();
       fd.append('image', inp.files[0]); fd.append('note', ask.querySelector('#rnote').value);
       fd.append('termsAccepted', String(ask.querySelector('#rterms').checked)); fd.append('termsVersion', session.config.termsVersion);
+      if (termsEd) {
+        if (!ask.querySelector('#rterms').checked) { toast(termsEd.short.check); return; }
+        try { fd.append('consentId', String(await accept(termsEd.id, 'replacement', code))); } catch (x) { toast(errorText(x)); return; }
+      }
       try { const r = await api(`/api/artist/cards/${code}/replace`, { method: 'POST', form: fd }); toast(tt('Новая версия отправлена', 'New version sent')); ctx.navigate('/artist/works/' + r.id); } catch (x) { toast(errorText(x)); }
     };
   });
@@ -103,13 +140,25 @@ export async function cabinet(ctx) {
 // Отправка показывает ход загрузки и обработку; при сбое файлы остаются, «Повторить» безопасен — у отправки свой ключ,
 // и повтор не создаёт вторую подачу.
 const TERMS_KEY = 'dc_terms_ok';
-export function submit(ctx) {
+export async function submit(ctx) {
   if (!session.user) return needLogin(ctx.main, tt('Чтобы подать работы, войдите по email: имя и email, без пароля.', 'To submit works, sign in with email: name and email, no password.'));
   let step = 1; let files = []; let guideOk = false; let result = null;
   let accepted = false; try { accepted = localStorage.getItem(TERMS_KEY) === session.config.termsVersion; } catch { /* */ }
+  // Новая редакция соглашения (25.11.2026): включается только после публикации администрацией. Администрация видит
+  // предпросмотр по ?terms=preview — согласие в предпросмотре не записывается.
+  const newTerms = !!(session.config.authorTerms && session.config.authorTerms.active);
+  const preview = !newTerms && ctx.query.get('terms') === 'preview' && hasRole('admin');
+  let ed = null; let consentId = null; let checked = false; let termsMsg = '';
+  if (newTerms || preview) {
+    try {
+      if (newTerms) ed = (await loadTerms()).edition;
+      else { const d = (await api('/api/admin/terms')).drafts; ed = d.find((x) => x.lang === 'ru'); }
+    } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+    if (!ctx.alive()) return;
+  }
   const send = { state: 'idle', progress: 0, error: '', key: null }; // idle | uploading | processing | error
   let gAssets = null; api('/api/guides/artist/assets').then((x) => { gAssets = x; if (step === 2 && !result) draw(); }).catch(() => {});
-  const TITLES = [tt('Условия использования работы', 'Terms of use of the work'), tt('Руководство для автора', 'Guide for the author'), tt('Загрузите изображение', 'Upload the image'), tt('Отправка', 'Sending')];
+  const TITLES = [ed ? ed.short.title : tt('Условия использования работы', 'Terms of use of the work'), tt('Руководство для автора', 'Guide for the author'), tt('Загрузите изображение', 'Upload the image'), tt('Отправка', 'Sending')];
   const urls = new Map(); const urlOf = (f) => { if (!urls.has(f)) urls.set(f, URL.createObjectURL(f)); return urls.get(f); };
   const head = () => `<div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 4`, `Step ${step} of 4`))}</span></div>${stepsBar(step, 4)}<h1>${esc(TITLES[step - 1])}</h1>`;
   const thumbs = (rm) => `<div class="cells" id="prev">${files.map((f, i) => `<div class="cell"><div class="tile" style="cursor:default"><img src="${urlOf(f)}" alt=""></div><small>${esc(f.name)}</small>${rm ? `<button class="mini-btn r" type="button" data-rm="${i}" aria-label="${esc(tt('Убрать', 'Remove'))} ${esc(f.name)}">${ic.x}</button>` : ''}</div>`).join('')}</div>`;
@@ -126,6 +175,13 @@ export function submit(ctx) {
         ])}
         <p class="small" style="margin:0;color:var(--on-navy)">${esc(tt('Статус каждой работы виден в «Моих работах». Если включены уведомления, о решении придёт сообщение на телефон.', 'The status of each work is shown in “My works”. If notifications are on, you will get a message on your phone about the decision.'))}</p>
         <div class="row"><a class="btn yellow" href="${u('/artist')}">${esc(tt('В кабинет', 'To my space'))}</a><a class="btn light" href="${u('/artist#works')}">${esc(tt('Мои работы', 'My works'))}</a></div>`;
+    } else if (step === 1 && ed) {
+      // шаг 1 по новой редакции: тексты — дословно с сервера; галочка не отмечена; кнопка — после галочки
+      body = `<div class="row between"><a href="${u('/artist')}" class="small">← ${esc(tt('Кабинет', 'Back'))}</a><span class="small muted">${esc(tt(`Шаг ${step} из 4`, `Step ${step} of 4`))}</span></div>${stepsBar(step, 4)}
+        ${preview ? `<p class="notice demo small">${esc(tt('Предпросмотр для администрации: новая редакция ещё не включена в приём работ, согласие здесь не записывается.', 'Administration preview: the new version is not yet enabled for submissions; consent is not recorded here.'))}</p>` : ''}
+        <div class="at-step">${stepHtml(ed, { checked })}</div>
+        ${termsMsg ? `<p class="form-error" role="alert">${esc(termsMsg)}</p>` : ''}
+        <div><button class="btn yellow" type="button" id="tnext" ${checked ? '' : 'disabled'}>${esc(ed.short.cta)}</button></div>`;
     } else if (step === 1) {
       body = `${head()}
         <p>${esc(tt('Публикация добровольная. Прочитайте короткое условие и отметьте галочку — согласие запомнится для следующих подач.', 'Publishing is voluntary. Read the short condition and tick the box — your consent is remembered for next submissions.'))}</p>
@@ -171,6 +227,19 @@ export function submit(ctx) {
   };
   const wire = () => {
     const $ = (q) => ctx.main.querySelector(q);
+    const fl = $('[data-full]'); if (fl && ed) fl.onclick = () => openFull(ed);
+    const tn = $('#tnext');
+    if (tn) {
+      const tc = $('#terms'); tc.onchange = () => { checked = tc.checked; tn.disabled = !checked; };
+      tn.onclick = async () => {
+        if (!checked) return;
+        if (preview) { step++; draw(); window.scrollTo(0, 0); return; }
+        tn.disabled = true;
+        try { consentId = await accept(ed.id, 'submit'); termsMsg = ''; step++; draw(); window.scrollTo(0, 0); }
+        catch (x) { tn.disabled = false; termsMsg = errorText(x); if (x.code === 'terms_changed') { resetTermsCache(); ed = (await loadTerms()).edition; checked = false; } draw(); }
+      };
+      return;
+    }
     const t = $('#terms');
     if (t) t.onchange = () => { accepted = t.checked; try { if (accepted) localStorage.setItem(TERMS_KEY, session.config.termsVersion); else localStorage.removeItem(TERMS_KEY); } catch { /* */ } $('#next').disabled = !accepted; };
     const g = $('#gok'); if (g) g.onchange = () => { guideOk = g.checked; $('#next').disabled = !guideOk; };
@@ -190,6 +259,7 @@ export function submit(ctx) {
       const fd = new FormData();
       for (const f of files) fd.append('images', f);
       fd.append('termsAccepted', String(accepted)); fd.append('termsVersion', session.config.termsVersion); fd.append('clientKey', send.key);
+      if (consentId) fd.append('consentId', String(consentId));
       Object.assign(send, { state: 'uploading', progress: 0, error: '' }); draw();
       let last = 0;
       try {
@@ -197,8 +267,12 @@ export function submit(ctx) {
           send.progress = p; if (p >= 1 && send.state === 'uploading') { send.state = 'processing'; draw(); }
           else if (p - last > 0.04) { last = p; draw(); }
         });
-        files = []; urls.forEach((x) => URL.revokeObjectURL(x)); urls.clear(); draw(); window.scrollTo(0, 0);
-      } catch (x) { Object.assign(send, { state: 'error', error: errorText(x) }); draw(); }
+        files = []; consentId = null; checked = false; urls.forEach((x) => URL.revokeObjectURL(x)); urls.clear(); draw(); window.scrollTo(0, 0);
+      } catch (x) {
+        // редакция изменилась или согласие не принято — вернуть к условиям: прежнее согласие к новой редакции не привязывается
+        if (ed && (x.code === 'terms_changed' || x.code === 'terms_required')) { resetTermsCache(); try { ed = (await loadTerms()).edition; } catch { /* */ } consentId = null; checked = false; step = 1; termsMsg = x.code === 'terms_changed' ? tt('Условия обновились — ознакомьтесь и подтвердите их ещё раз.', 'The terms have been updated — please read and confirm them again.') : errorText(x); Object.assign(send, { state: 'idle', error: '' }); draw(); window.scrollTo(0, 0); return; }
+        Object.assign(send, { state: 'error', error: errorText(x) }); draw();
+      }
     };
   };
   draw();

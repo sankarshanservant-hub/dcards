@@ -1704,3 +1704,33 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 @media (min-width: 900px) and (max-height: 860px) { .hero.home { --g-out: clamp(16px, 3.2vh, 30px); } .hero.home .wrap.home-wrap { padding-block: 22px 18px; } }
 .play-rows.gal-acts { flex-wrap: nowrap; }
 @media (max-width: 360px) { .gal-acts .btn { padding-inline: 12px; font-size: .95rem; } .gal-play { padding-inline: 16px; } }
+/* соглашение с авторами (25.11.2026): первый шаг — компактно, единый левый край; полный текст — в окне поверх формы */
+.at-step { display: grid; gap: 14px; }
+.at-title { margin: 6px 0 0; }
+.at-intro { margin: 0; }
+.at-blocks { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 14px; }
+.at-blocks li { padding-left: 14px; border-left: 2px solid var(--border-strong); }
+.at-blocks h2 { margin: 0 0 4px; font-size: 1.02rem; font-weight: 700; }
+.at-blocks p { margin: 0; color: var(--text); line-height: 1.5; }
+.at-link { margin: 2px 0 0; }
+.at-full { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; color: var(--accent-text); }
+.at-check { align-items: flex-start; gap: 10px; }
+.at-check input { margin-top: 3px; flex: none; }
+.at-check span { overflow-wrap: anywhere; }
+.at-pop { position: fixed; inset: 0; z-index: 210; background: rgba(4, 8, 20, .7); display: grid; place-items: center; padding: 12px; }
+.at-pop-in { width: min(760px, 100%); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); color: var(--text); border-radius: 16px; padding: 0 20px 20px; box-shadow: var(--shadow); }
+.at-pop-bar { position: sticky; top: 0; background: var(--surface); padding: 12px 0 8px; z-index: 1; }
+.at-pop-foot { margin-top: 16px; }
+.at-doc { display: grid; gap: 8px; line-height: 1.55; }
+.at-doc h2.at-doc-title { margin: 4px 0 0; font-size: 1.3rem; }
+.at-doc h3 { margin: 14px 0 0; font-size: 1.05rem; }
+.at-doc p { margin: 0; }
+.at-list { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.at-consents { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.mc-vers { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.cc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cc-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.cc-list li.red { border-color: color-mix(in srgb, var(--danger, #e9775f) 55%, var(--border)); }
+.cc-k { font-weight: 600; min-width: 9em; }
+.fac-removed { display: block; text-decoration: none; }
+.rm-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }

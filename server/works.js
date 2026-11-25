@@ -7,6 +7,7 @@
 // Возврат и отклонение куратор делает сам, без подтверждения администратора.
 const { demoWhere } = require('./demo-scope');
 const db = require('./db');
+const terms = require('./terms');
 const config = require('./config');
 const cards = require('./cards');
 const mediaUrl = (kind, file) => `${require('./site').base()}/media/works/${kind}/${file}`;
@@ -58,7 +59,9 @@ const q = {
 };
 
 function versionOut(v) {
-  return { n: v.n, thumb: mediaUrl('thumb', v.image_thumb), full: mediaUrl('full', v.image_full), width: v.width, height: v.height, note: v.note, createdAt: v.created_at };
+  // файлы удалены (отклонена окончательно или снята автором) — без ссылок на изображение
+  if (v.purged_at) return { n: v.n, id: v.id, thumb: null, full: null, purged: true, width: v.width, height: v.height, note: v.note, createdAt: v.created_at };
+  return { n: v.n, id: v.id, thumb: mediaUrl('thumb', v.image_thumb), full: mediaUrl('full', v.image_full), width: v.width, height: v.height, note: v.note, createdAt: v.created_at };
 }
 function decisionOut(d) {
   const crit = criteriaByNumbers(JSON.parse(d.criteria || '[]'));
@@ -85,21 +88,25 @@ function workOut(w, { full = false } = {}) {
     out.history = q.history.all(w.id).map(decisionOut);
     out.votes = q.votes.all(w.id).map((v) => ({ curator: userName(v.curator_id), curatorId: v.curator_id, vote: v.vote, comment: v.comment, createdAt: v.created_at }));
     out.targetCardOldVersions = target ? db.prepare('SELECT * FROM card_versions WHERE card_id = ? ORDER BY id').all(target.id)
-      .map((v) => ({ thumb: cards.mediaUrl('thumb', v.image_thumb), replacedAt: v.replaced_at })) : [];
+      .map((v, i) => ({ id: v.id, label: `v${i + 1}`, thumb: v.revoked_at ? null : cards.mediaUrl('thumb', v.image_thumb), revoked: !!v.revoked_at, replacedAt: v.replaced_at })) : [];
   }
   return out;
 }
 
 // ---------- автор ----------
 /** Отправка: одна или несколько работ, у каждой — свой статус. */
-async function submit(artist, files, { termsAccepted, termsVersion, notes = [], clientKey = '' }) {
-  if (!termsAccepted || termsVersion !== config.termsVersion) return { error: 'terms_required' };
+async function submit(artist, files, { termsAccepted, termsVersion, notes = [], clientKey = '', consentId = null }) {
+  // новая редакция соглашения (опубликована администрацией) — согласие по отдельной записи; иначе — прежние условия
+  let consent = null;
+  if (terms.active()) { const c = terms.check(artist, consentId, 'submit'); if (c.error && !clientKey) return c; consent = c.consent || null; }
+  else if (!termsAccepted || termsVersion !== config.termsVersion) return { error: 'terms_required' };
   const key = String(clientKey || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || null;
   // повтор той же отправки (связь оборвалась после того, как сервер её принял) — возвращаем уже созданные работы
   if (key) {
     const prev = db.prepare('SELECT id FROM submissions WHERE artist_id = ? AND client_key = ?').get(artist.id, key);
     if (prev) return { ids: db.prepare('SELECT id FROM works WHERE submission_id = ? ORDER BY id').all(prev.id).map((x) => x.id), failed: [], repeated: true };
   }
+  if (terms.active() && !consent) return { error: 'terms_required' };
   if (!files.length) return { error: 'no_images' };
   const processed = [];
   const failed = [];
@@ -110,51 +117,60 @@ async function submit(artist, files, { termsAccepted, termsVersion, notes = [], 
   }
   if (!processed.length) return { error: 'bad_images', failed };
   const ids = db.transaction(() => {
+    const ed = consent ? terms.byId(consent.edition_id) : null;
     const sub = db.prepare('INSERT INTO submissions (artist_id, terms_version, terms_accepted_at, is_demo, client_key) VALUES (?, ?, ?, ?, ?)')
-      .run(artist.id, termsVersion, new Date().toISOString(), artist.is_demo ? 1 : 0, key);
-    const out = [];
+      .run(artist.id, ed ? `${ed.doc}-${ed.version}-${ed.lang}` : termsVersion, consent ? consent.accepted_at : new Date().toISOString(), artist.is_demo ? 1 : 0, key);
+    const out = []; const links = [];
     processed.forEach(({ img }, i) => {
       const w = db.prepare('INSERT INTO works (submission_id, artist_id, is_demo) VALUES (?, ?, ?)').run(sub.lastInsertRowid, artist.id, artist.is_demo ? 1 : 0);
-      db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, 1, ?, ?, ?, ?, ?, ?)')
+      const v = db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, 1, ?, ?, ?, ?, ?, ?)')
         .run(w.lastInsertRowid, img.full, img.thumb, img.original, img.width, img.height, String(notes[i] || '').slice(0, 500));
       q.log.run(w.lastInsertRowid, 1, artist.id, 'submitted', '[]', '', null, null);
-      out.push(w.lastInsertRowid);
+      out.push(w.lastInsertRowid); links.push({ submissionId: Number(sub.lastInsertRowid), workId: Number(w.lastInsertRowid), versionId: Number(v.lastInsertRowid) });
     });
+    if (consent) terms.bind(consent, links); // согласие — к фактически отправленным файлам
     return out;
   })();
   return { ids, failed };
 }
 
 /** Новая версия опубликованной карты: опубликованная остаётся видна до решения куратора. */
-async function proposeReplacement(artist, cardCode, file, { termsAccepted, termsVersion, note = '' }) {
+async function proposeReplacement(artist, cardCode, file, { termsAccepted, termsVersion, note = '', consentId = null }) {
   const card = db.prepare('SELECT * FROM cards WHERE code = ?').get(cardCode);
   if (!card || card.artist_id !== artist.id) return { error: 'not_your_card' };
   if (card.status !== 'published') return { error: 'card_not_published' };
-  if (!termsAccepted || termsVersion !== config.termsVersion) return { error: 'terms_required' };
+  let consent = null;
+  if (terms.active()) { const c = terms.check(artist, consentId, 'replacement'); if (c.error) return c; consent = c.consent; }
+  else if (!termsAccepted || termsVersion !== config.termsVersion) return { error: 'terms_required' };
   const img = await cards.processImage(file.buffer, file.originalname, 'works');
   const id = db.transaction(() => {
+    const ed = consent ? terms.byId(consent.edition_id) : null;
     const sub = db.prepare('INSERT INTO submissions (artist_id, terms_version, terms_accepted_at, is_demo) VALUES (?, ?, ?, ?)')
-      .run(artist.id, termsVersion, new Date().toISOString(), artist.is_demo ? 1 : 0);
+      .run(artist.id, ed ? `${ed.doc}-${ed.version}-${ed.lang}` : termsVersion, consent ? consent.accepted_at : new Date().toISOString(), artist.is_demo ? 1 : 0);
     const w = db.prepare(`INSERT INTO works (submission_id, artist_id, kind, target_card_id, is_demo) VALUES (?, ?, 'replacement', ?, ?)`)
       .run(sub.lastInsertRowid, artist.id, card.id, artist.is_demo ? 1 : 0);
-    db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, 1, ?, ?, ?, ?, ?, ?)')
+    const v = db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, 1, ?, ?, ?, ?, ?, ?)')
       .run(w.lastInsertRowid, img.full, img.thumb, img.original, img.width, img.height, String(note).slice(0, 500));
     q.log.run(w.lastInsertRowid, 1, artist.id, 'submitted', '[]', '', null, null);
+    if (consent) terms.bind(consent, [{ submissionId: Number(sub.lastInsertRowid), workId: Number(w.lastInsertRowid), versionId: Number(v.lastInsertRowid), cardId: card.id }]);
     return w.lastInsertRowid;
   })();
   return { id };
 }
 
 /** Исправление загружается в ту же заявку: новая версия той же работы, работа снова на рассмотрении. */
-async function addVersion(artist, workId, file, note = '') {
+async function addVersion(artist, workId, file, note = '', consentId = null) {
   const w = q.work.get(workId);
   if (!w || w.artist_id !== artist.id) return { error: 'not_found' };
   if (!['needs_changes', 'submitted'].includes(w.status)) return { error: 'not_editable', status: w.status };
+  let consent = null;
+  if (terms.active()) { const c = terms.check(artist, consentId, 'resubmit'); if (c.error) return c; consent = c.consent; }
   const img = await cards.processImage(file.buffer, file.originalname, 'works');
   db.transaction(() => {
     const n = q.lastVersion.get(workId).n + 1;
-    db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    const v = db.prepare('INSERT INTO work_versions (work_id, n, image_full, image_thumb, image_original, width, height, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(workId, n, img.full, img.thumb, img.original, img.width, img.height, String(note).slice(0, 500));
+    if (consent) terms.bind(consent, [{ submissionId: w.submission_id, workId, versionId: Number(v.lastInsertRowid) }]);
     q.setStatus.run('submitted', workId);
     db.prepare('UPDATE works SET recommended_at = NULL, recommended_by = NULL, recommended_type = NULL WHERE id = ?').run(workId);
     q.log.run(workId, n, artist.id, 'resubmitted', '[]', String(note).slice(0, 500), null, null);
@@ -170,6 +186,8 @@ function myCards(artistId) {
     ...cards.publicCard(c, { withDetails: true }), status: c.status, removedBy: c.removed_by,
     selectedCount: require('./choices').total(c.id), // тот же счётчик «Выбрали для разговора», что в галерее
     pendingReplacement: !!db.prepare(`SELECT 1 FROM works WHERE target_card_id = ? AND status IN ('submitted','discussion','needs_changes')`).get(c.id),
+    version: `v${(db.prepare('SELECT COUNT(*) AS n FROM card_versions WHERE card_id = ?').get(c.id).n || 0) + 1}`,
+    oldVersions: db.prepare('SELECT * FROM card_versions WHERE card_id = ? ORDER BY id').all(c.id).map((v, i) => ({ id: v.id, label: `v${i + 1}`, revoked: !!v.revoked_at, replacedAt: v.replaced_at })),
   }));
 }
 /** Автор сам убирает свою карту (без одобрения куратора). Обсуждение карты перестаёт быть публичным. */
@@ -177,8 +195,23 @@ function withdrawCard(artist, code) {
   const c = db.prepare('SELECT * FROM cards WHERE code = ?').get(code);
   if (!c || c.artist_id !== artist.id) return { error: 'not_your_card' };
   if (c.status !== 'published') return { error: 'already_removed' };
-  db.prepare(`UPDATE cards SET status = 'removed', removed_by = 'artist', removed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(c.id);
+  // отзыв разрешения: карта сразу недоступна, файлы удаляются, фасилитаторы получают уведомление (collection.js)
+  return require('./collection').removeFinal(c, 'artist');
+}
+/** Автор снимает работу с кураторского рассмотрения: файлы удаляются, фасилитаторам ничего не уходит (карта не публиковалась). */
+function withdrawWork(artist, workId) {
+  const w = q.work.get(workId);
+  if (!w || w.artist_id !== artist.id) return { error: 'not_found' };
+  if (!['submitted', 'discussion', 'needs_changes'].includes(w.status)) return { error: 'not_editable', status: w.status };
+  db.transaction(() => { q.setStatus.run('withdrawn', w.id); q.log.run(w.id, q.lastVersion.get(w.id).n, artist.id, 'withdraw', '[]', '', null, null); })();
+  require('./collection').purgeWorkFiles(w.id);
   return { ok: true };
+}
+/** Отзыв разрешения на прежнюю версию своей опубликованной карты. */
+function revokeOldVersion(artist, code, versionId) {
+  const c = db.prepare('SELECT * FROM cards WHERE code = ?').get(code);
+  if (!c || c.artist_id !== artist.id) return { error: 'not_your_card' };
+  return require('./collection').revokeVersion(c, versionId, 'artist');
 }
 
 // ---------- куратор ----------
@@ -229,17 +262,21 @@ function decide(curator, workId, { action, criteria = [], comment = '', replacem
   if (action === 'recommend' && w.recommended_at) return { error: 'already_recommended' };
   if (action === 'recommend' && w.kind === 'replacement' && !['fix', 'new'].includes(replacementType)) return { error: 'replacement_type_required' };
   const v = q.lastVersion.get(workId);
-  return db.transaction(() => {
+  const rejectedIds = [];
+  const res = db.transaction(() => {
     if (action === 'recommend') {
       db.prepare(`UPDATE works SET recommended_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), recommended_by = ?, recommended_type = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
         .run(curator.id, w.kind === 'replacement' ? replacementType : null, w.id);
     } else {
       q.setStatus.run(action === 'return' ? 'needs_changes' : 'rejected', w.id);
+      if (action === 'reject') rejectedIds.push(w.id); // окончательно отклонена — изображение удаляется (после записи решения)
       db.prepare('UPDATE works SET recommended_at = NULL, recommended_by = NULL, recommended_type = NULL WHERE id = ?').run(w.id);
     }
     const info = q.log.run(w.id, v.n, curator.id, action, JSON.stringify(crit), String(comment).slice(0, 2000), action === 'recommend' ? (replacementType || null) : null, null);
     return { ok: true, decisionId: Number(info.lastInsertRowid), recommended: action === 'recommend' };
   })();
+  for (const id of rejectedIds) require('./collection').purgeWorkFiles(id);
+  return res;
 }
 
 /**
@@ -259,7 +296,8 @@ function adminDecide(admin, workId, { action, criteria = [], comment = '', repla
   const v = q.lastVersion.get(workId);
   const artist = db.prepare('SELECT * FROM users WHERE id = ?').get(w.artist_id);
   const authorName = artist ? (artist.public_name || artist.name) : '';
-  return db.transaction(() => {
+  const after = [];
+  const res = db.transaction(() => {
     let cardCode = null;
     cards.copyWorkImage(v);
     if (w.kind === 'replacement' && type === 'fix') {
@@ -269,17 +307,19 @@ function adminDecide(admin, workId, { action, criteria = [], comment = '', repla
       db.prepare('UPDATE cards SET image_full = ?, image_thumb = ?, image_original = ?, width = ?, height = ? WHERE id = ?')
         .run(v.image_full, v.image_thumb, v.image_original, v.width, v.height, card.id);
       db.prepare('UPDATE works SET card_id = ? WHERE id = ?').run(card.id, w.id);
-      cardCode = card.code;
+      cardCode = card.code; after.push(() => require('./collection').updated(q.card.get(card.id), w.id));
     } else {
       const card = cards.insertCard({ author: authorName, image_full: v.image_full, image_thumb: v.image_thumb, image_original: v.image_original,
         width: v.width, height: v.height, artist_id: w.artist_id, is_demo: w.is_demo, source: 'work' });
       db.prepare('UPDATE works SET card_id = ? WHERE id = ?').run(card.id, w.id);
-      cardCode = card.code;
+      cardCode = card.code; after.push(() => require('./collection').added(q.card.get(card.id)));
     }
     q.setStatus.run('published', w.id);
     const info = q.log.run(w.id, v.n, admin.id, 'approve', '[]', String(comment).slice(0, 2000), type, null);
     return { ok: true, cardCode, decisionId: Number(info.lastInsertRowid) };
   })();
+  after.forEach((f) => { try { f(); } catch (e) { console.error('collection:', e.message); } });
+  return res;
 }
 
 /**
@@ -325,6 +365,6 @@ function workMediaAllowed(file, user, roles) {
 }
 
 module.exports = {
-  criteriaList, setCriteria, submit, proposeReplacement, addVersion, myWorks, myCards, withdrawCard,
+  criteriaList, setCriteria, submit, proposeReplacement, addVersion, myWorks, myCards, withdrawCard, withdrawWork, revokeOldVersion,
   queue, recommendedQueue, decisionsLog, recentDecided, detail, canSee, decide, adminDecide, discuss, vote, curators, workMediaAllowed,
 };

@@ -47,6 +47,8 @@ const routes = [
   [/^\/facilitator\/about\/?$/, pub.facilitatorAbout],
   [/^\/curator\/apply\/?$/, pub.curatorApply],
   [/^\/demo\/?$/, acc.demoRoles],
+  [/^\/terms\/authors\/?$/, pub.termsAuthors],
+  [/^\/terms\/authors\/(\d+)\/?$/, pub.termsAuthors],
   [/^\/terms\/?$/, pub.terms],
   [/^\/s\/([a-z0-9]{4,32})\/?$/, tool.collection],
   [/^\/meetings\/?$/, meet.search],
@@ -63,6 +65,7 @@ const routes = [
   [/^\/curator\/?$/, cur.queue],
   [/^\/curator\/works\/(\d+)\/?$/, cur.review],
   [/^\/facilitator\/?$/, fac.cabinet],
+  [/^\/facilitator\/changes\/?$/, fac.changes],
   [/^\/facilitator\/apply\/?$/, fac.apply],
   [/^\/facilitator\/quiz\/?$/, fac.quiz],
   [/^\/facilitator\/collections\/?$/, coll.list],
@@ -89,7 +92,7 @@ const routes = [
   [/^\/team\/(general|curators|facilitators)\/?$/, team.chat],
   [/^\/print\/?$/, team.print],
   [/^\/admin\/?$/, adm.overview],
-  [/^\/admin\/(users|works|applications|meetings|cards|comments|criteria|guide|letters)\/?$/, adm.section],
+  [/^\/admin\/(users|works|applications|meetings|cards|comments|criteria|guide|letters|terms|removals)\/?$/, adm.section],
 ];
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
@@ -116,6 +119,7 @@ const PARENTS = [
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
   [/^\/admin\/./, '/admin', 'Кабинет администратора', 'Admin space'],
   [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
+  [/^\/facilitator\/changes/, '/facilitator', 'Кабинет фасилитатора', 'Facilitator space'],
 ];
 // Панель «домик / Назад» живёт рядом с <main>, а не внутри (23.11.2026): страницы игр перерисовывают свою область целиком,
 // и прежняя панель внутри исчезала после первого же действия («Запомнил», «Проверить») — выхода не было видно.

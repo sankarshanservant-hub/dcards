@@ -51,7 +51,8 @@ export async function cabinet(ctx) {
   loading(ctx.main);
   let cols; let mts;
   let lv = { sessions: [] };
-  try { [cols, mts, lv] = await Promise.all([api('/api/collections'), api('/api/fac/meetings'), api('/api/fac/live').catch(() => ({ sessions: [] }))]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  let chg = { changes: [], unreadRemoved: 0 };
+  try { [cols, mts, lv, chg] = await Promise.all([api('/api/collections'), api('/api/fac/meetings'), api('/api/fac/live').catch(() => ({ sessions: [] })), api('/api/fac/changes').catch(() => ({ changes: [], unreadRemoved: 0 }))]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   const occ = occurrences(mts.meetings);
   const kpi = (href, n, label) => `<a class="kpi kpi-link" href="${u(href)}"><b>${n}</b><span>${esc(label)}</span></a>`;
@@ -60,7 +61,9 @@ export async function cabinet(ctx) {
     ${lv.sessions.filter((x) => x.status !== 'ended').map((x) => `<a class="notice live-on" href="${u('/facilitator/live/' + x.id)}">${ic.people} <b>${esc(tt('Идёт встреча по телефонам', 'A phone meeting is on'))}: ${esc(x.title)}</b> · ${esc(tt(`участников: ${x.people}`, `participants: ${x.people}`))} · ${esc(tt('открыть пульт', 'open console'))} →</a>`).join('')}
     <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
       <a class="btn" href="${u('/facilitator/collections?new=1')}">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</a></div>
+    ${chg.unreadRemoved ? `<a class="notice red fac-removed" href="${u('/bell')}"><b>${esc(tt(`Карты удалены из коллекции: ${chg.unreadRemoved}`, `Cards removed from the collection: ${chg.unreadRemoved}`))}</b> · ${esc(tt('Пожалуйста, исключите их распечатанные версии из своих материалов', 'Please remove printed copies of them from your materials'))} →</a>` : ''}
     <div><a class="chat-link" href="${u('/team/facilitators')}">${ic.chat}<span>${esc(tt('Написать в чат фасилитаторов', 'Message the facilitators'))}</span></a></div>
+    <div><a class="chat-link" href="${u('/facilitator/changes')}">${ic.cards}<span>${esc(tt('Изменения в коллекции', 'Collection changes'))}</span></a></div>
     <div class="kpis three">
       ${kpi('/facilitator/collections', cols.collections.length, tt('Подборки', 'Selections'))}
       ${kpi('/facilitator/meetings?when=upcoming', occ.upcoming.length, tt('Предстоящие встречи', 'Upcoming meetings'))}
@@ -650,4 +653,22 @@ export async function quiz(ctx) {
     try { await api('/api/fac/application/manual', { method: 'POST', body: fields() }); toast(tt('Отправлено на ручную проверку', 'Sent for manual review')); ctx.rerender(); }
     catch (x) { mb.disabled = false; ctx.main.querySelector('#err').textContent = errorText(x); }
   });
+}
+
+// ---------- «Изменения в коллекции» (25.11.2026): добавленные, обновлённые и удалённые карты ----------
+// У удалённых — только номер, версия и дата (без изображения). Сверка распечатанных карт — по номеру карты и версии.
+export async function changes(ctx) {
+  if (!session.user) return needLogin(ctx.main, tt('Кабинет фасилитатора.', 'Facilitator space.'));
+  if (!hasRole('facilitator')) return noRole(ctx.main, tt('фасилитатор', 'facilitator'));
+  loading(ctx.main);
+  let d; try { d = await api('/api/fac/changes'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  if (!ctx.alive()) return;
+  const KIND = { added: [tt('Добавлена', 'Added'), ''], updated: [tt('Обновлена', 'Updated'), ''], removed: [tt('Удалена', 'Removed'), 'red'], version_revoked: [tt('Версия отозвана', 'Version withdrawn'), 'red'] };
+  ctx.main.innerHTML = `<div class="wrap page narrow stack">
+    <div class="page-head"><h1>${esc(tt('Изменения в коллекции', 'Collection changes'))}</h1>
+      <p class="sub">${esc(tt('Номер карты (DC-…) не меняется при обновлении изображения; версия — v1, v2… Если карта или версия удалена, исключите её распечатанную копию из своих материалов.', 'A card number (DC-…) stays the same when the image is updated; versions are v1, v2… If a card or a version is removed, please remove its printed copy from your materials.'))}</p></div>
+    ${d.changes.length ? `<ul class="cc-list">${d.changes.map((x) => `<li class="${KIND[x.kind][1]}"><span class="cc-k">${esc(KIND[x.kind][0])}</span>
+      <b>${x.current ? `<a href="${u('/library?card=' + encodeURIComponent(x.code))}">${esc(x.code)}</a>` : esc(x.code)}</b>${x.version ? ` <span class="small muted">${esc(x.version)}</span>` : ''}
+      <span class="small muted">${esc(fmtDate(x.at, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></li>`).join('')}</ul>` : `<p class="empty">${esc(tt('Изменений пока нет.', 'No changes yet.'))}</p>`}
+  </div>`;
 }

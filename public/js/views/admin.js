@@ -2,16 +2,16 @@
 // модерация обсуждений, критерии кураторов, журнал писем, демо-данные.
 import { esc, tt, u, api, errorText, toast, fmtDate, storage } from '../util.js';
 import { openViewer } from '../viewer.js';
-import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, rolesText, demoPill, WORK_STATUS, statusPill } from '../ui.js';
+import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, rolesText, demoPill, WORK_STATUS, statusPill, refreshSession } from '../ui.js';
 import { langName, whereText } from './meetings.js';
 
 const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['works', 'Работы', 'Works'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
-  ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters']];
+  ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters'], ['terms', 'Условия для авторов', 'Author terms'], ['removals', 'Удаления карт', 'Card removals']];
 // Разделы сгруппированы по назначению (21.11.2026): обзор, люди, работы и карты, встречи и общение, служебное.
 const GROUPS = [
   ['Обзор', 'Overview', ['']],
   ['Люди', 'People', ['users', 'applications']],
-  ['Работы и карты', 'Works & cards', ['works', 'cards', 'criteria']],
+  ['Работы и карты', 'Works & cards', ['works', 'cards', 'removals', 'criteria', 'terms']],
   ['Встречи и общение', 'Meetings & talk', ['meetings', 'comments']],
   ['Материалы и почта', 'Materials & mail', ['guide', 'letters']],
 ];
@@ -74,6 +74,45 @@ export async function section(ctx, name) {
 
 const ACTION_LABEL = { recommend: () => tt('Рекомендована кураторами', 'Recommended by curators'), approve: () => tt('Опубликована', 'Published'), return: () => tt('Возвращена на доработку', 'Returned for changes'), reject: () => tt('Отклонена', 'Declined') };
 const SECTIONS = {
+  // Условия для авторов (25.11.2026): черновик → предпросмотр → публикация по явному решению администрации
+  async terms(ctx) {
+    const d = await api('/api/admin/terms'); if (!ctx.alive()) return;
+    const ru = d.drafts.find((x) => x.lang === 'ru'); const en = d.drafts.find((x) => x.lang === 'en');
+    const n = (e) => (d.stats.find((x) => x.lang === e.lang && x.version === e.version) || {}).n || 0;
+    const row = (e, label) => `<div class="item"><span class="body"><b>${esc(label)} · ${esc(tt('редакция', 'version'))} ${esc(e.version)}</b>
+      <span class="small">${e.status === 'published' ? esc(tt(`опубликована ${fmtDate(e.publishedAt, { day: 'numeric', month: 'long', year: 'numeric' })} · согласий: ${n(e)}`, `published ${fmtDate(e.publishedAt, { day: 'numeric', month: 'long', year: 'numeric' })} · consents: ${n(e)}`)) : esc(tt('черновик — не показывается авторам', 'draft — not shown to authors'))}</span>
+      <span class="row" style="gap:10px"><a class="small" href="${u('/terms/authors/' + e.id)}">${esc(tt('Читать текст', 'Read the text'))}</a>
+        ${e.status !== 'published' ? `<button class="btn sm ${e.lang === 'ru' ? 'yellow' : 'light'}" type="button" data-pub="${e.lang}">${esc(tt('Опубликовать и включить', 'Publish and enable'))}</button>` : ''}</span></span></div>`;
+    const sec = shell(ctx, 'terms', tt('Условия для авторов', 'Author terms'), `<div class="stack">
+      <p class="small muted" style="margin:0">${esc(d.active ? tt('Новая редакция включена: авторы принимают её на первом шаге подачи работы.', 'The new version is enabled: authors accept it at the first step of submission.') : tt('Сейчас действуют прежние условия. Новая редакция включится только после вашей публикации.', 'The previous terms apply now. The new version is enabled only after you publish it.'))}</p>
+      <div class="row"><a class="btn light sm" href="${u('/artist/submit?terms=preview')}">${esc(tt('Предпросмотр первого шага', 'Preview the first step'))}</a></div>
+      <div class="list">${row(ru, 'Русский')}${row(en, 'English')}</div>
+      <p class="small muted" style="margin:0">${esc(tt('Английский перевод — для проверки. Пока он не опубликован, автор с английским интерфейсом видит русский оригинал с пометкой.', 'The English translation is for review. Until it is published, an author with the English interface sees the Russian original with a note.'))}</p>
+      <div id="ask"></div></div>`);
+    sec.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-pub]'); if (!b) return;
+      const ask = sec.querySelector('#ask');
+      ask.innerHTML = `<div class="notice stack"><b>${esc(b.dataset.pub === 'ru' ? tt('Опубликовать русскую редакцию 1.0?', 'Publish Russian version 1.0?') : tt('Опубликовать английский перевод?', 'Publish the English translation?'))}</b>
+        <span class="small">${esc(tt('С этого момента новые работы принимаются только с согласием по этой редакции. В текст подставится сегодняшняя дата, после публикации текст не меняется. Прежние согласия сохраняются.', 'From now on new works are accepted only with consent to this version. Today’s date is added to the text; it does not change after publishing. Earlier consents are kept.'))}</span>
+        <div class="row"><button class="btn yellow sm" type="button" id="pubyes">${esc(tt('Опубликовать', 'Publish'))}</button><button class="linkbtn" type="button" id="pubno">${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
+      ask.querySelector('#pubno').onclick = () => { ask.innerHTML = ''; };
+      ask.querySelector('#pubyes').onclick = async () => { try { await api('/api/admin/terms/publish', { method: 'POST', body: { lang: b.dataset.pub, confirm: true } }); await refreshSession(); ctx.rerender(); } catch (x) { toast(errorText(x)); } };
+    });
+  },
+  // Удаления карт: письма фасилитаторам и внешние материалы (соцсети, презентации, реклама) — срок 30 дней
+  async removals(ctx) {
+    const d = await api('/api/admin/removals'); if (!ctx.alive()) return;
+    const ITEM = { site: tt('Файлы на сайте', 'Files on the site'), social: tt('Публикации в соцсетях', 'Social media posts'), presentations: tt('Презентации', 'Presentations'), ads: tt('Реклама', 'Advertising') };
+    const MAIL = { sent: tt('отправлено', 'sent'), queued: tt('в очереди', 'queued'), failed: tt('ошибка, повтор', 'failed, retrying'), not_connected: tt('почта не подключена', 'mail not connected') };
+    const sec = shell(ctx, 'removals', tt('Удаления карт', 'Card removals'), `<div class="stack">
+      ${d.mailConnected ? '' : `<p class="notice small">${esc(tt('Почта на сервере не подключена: письма фасилитаторам ждут в очереди и уйдут после подключения. Уведомления в приложении доставлены.', 'Mail is not connected on the server: emails to facilitators wait in the queue and go out once it is connected. In-app notices are delivered.'))}</p>`}
+      ${d.removals.length ? d.removals.map((r) => `<div class="card-ui flat stack" style="gap:6px"><b>${esc(r.code)}${r.version ? ' · ' + esc(r.version) : ''} · ${esc(r.kind === 'removed' ? tt('удалена', 'removed') : tt('версия отозвана', 'version withdrawn'))} · ${esc(fmtDate(r.at, { day: 'numeric', month: 'long' }))}</b>
+        <span class="small muted">${esc(tt('Письма фасилитаторам', 'Emails to facilitators'))}: ${Object.entries(r.mail).map(([k, v]) => `${esc(MAIL[k] || k)} — ${v}`).join(', ') || '—'}</span>
+        <ul class="rm-tasks">${r.tasks.map((t) => `<li><label class="check"><input type="checkbox" data-task="${t.id}" ${t.status !== 'open' ? 'checked' : ''} ${t.item === 'site' ? 'disabled' : ''}> <span>${esc(ITEM[t.item])}${t.status === 'open' ? ` · <span class="muted">${esc(tt('до', 'by'))} ${esc(fmtDate(t.dueAt, { day: 'numeric', month: 'long' }))}</span>` : ''}</span></label></li>`).join('')}</ul></div>`).join('') : `<p class="empty">${esc(tt('Удалений не было.', 'No removals yet.'))}</p>`}
+      ${d.mailConnected ? `<button class="btn light sm" type="button" id="retry">${esc(tt('Повторить отправку писем', 'Retry sending emails'))}</button>` : ''}</div>`);
+    sec.addEventListener('change', async (e) => { const t = e.target.closest('[data-task]'); if (!t) return; try { await api(`/api/admin/removal-tasks/${t.dataset.task}`, { method: 'POST', body: { status: t.checked ? 'done' : 'open' } }); toast(tt('Отмечено', 'Saved')); } catch (x) { toast(errorText(x)); } });
+    const rt = sec.querySelector('#retry'); if (rt) rt.onclick = async () => { await api('/api/admin/removals/retry-mail', { method: 'POST' }); ctx.rerender(); };
+  },
   // Работы: «Одобрено кураторами» — только рекомендации, окончательное решение здесь; ниже — все решения (автор, дата, причины).
   async works(ctx) {
     const d = await api('/api/admin/works');
@@ -203,19 +242,29 @@ const SECTIONS = {
       const k = sortSel.value;
       sorted = [...cards].sort((a, b) => (k === 'popular' ? b.selections - a.selections || a.number - b.number : k === 'rate' ? rate(b) - rate(a) || b.selections - a.selections : a.number - b.number));
       sec.querySelector('#rows').innerHTML = sorted.map((c, i) => `<div class="item" style="align-items:flex-start;${c.status === 'removed' ? 'opacity:.7' : ''}">
-        <button class="thumb" type="button" data-i="${i}" style="border:0;padding:0;cursor:zoom-in"><img src="${esc(c.thumb)}" alt="" loading="lazy"></button>
+        ${c.purged ? `<span class="thumb" aria-hidden="true"></span>` : `<button class="thumb" type="button" data-i="${i}" style="border:0;padding:0;cursor:zoom-in"><img src="${esc(c.thumb)}" alt="" loading="lazy"></button>`}
         <span class="body"><b>${esc(c.code)} ${demoPill(c.isDemo)} ${c.status === 'removed' ? `<span class="pill red">${esc(tt('снята', 'removed'))}${c.removedBy ? ' · ' + esc(c.removedBy) : ''}</span>` : ''}</b>
           <input type="text" value="${esc(c.author)}" data-author="${esc(c.code)}" placeholder="${esc(tt('Автор не указан', 'No author'))}" style="min-height:38px;padding:6px 10px;max-width:320px">
           <span class="small">${esc(tt(`выбрали ${c.selections} · предложена ${c.offers}`, `chosen ${c.selections} · offered ${c.offers}`))}${c.offers ? ` · ${Math.round(rate(c) * 100)}%` : ''}${c.testSelections ? ` · +${c.testSelections} ${esc(tt('в тестовых', 'in test'))}` : ''} · ${esc(tt('в подборках', 'in selections'))}: ${c.inCollections} · ${esc(tt('сообщений', 'messages'))}: ${c.comments}</span>
           <span class="row" style="gap:8px"><select data-print="${esc(c.code)}" style="min-height:36px;padding:4px 8px;max-width:240px">${Object.entries(PRINT).map(([v, l]) => `<option value="${v}" ${c.printPermission === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
-          ${c.status === 'removed' ? `<button class="linkbtn" type="button" data-restore="${esc(c.code)}">${esc(tt('Вернуть в библиотеку', 'Restore'))}</button>` : `<button class="linkbtn danger" type="button" data-remove="${esc(c.code)}">${esc(tt('Снять с публикации', 'Remove'))}</button>`}</span></span></div>`).join('');
+          ${!c.purged ? `<button class="linkbtn danger" type="button" data-exclude="${esc(c.code)}">${esc(tt('Исключить окончательно', 'Exclude permanently'))}</button>` : `<span class="small muted">${esc(tt('удалена окончательно', 'removed permanently'))}</span>`}
+          ${c.purged ? '' : c.status === 'removed' ? `<button class="linkbtn" type="button" data-restore="${esc(c.code)}">${esc(tt('Вернуть в библиотеку', 'Restore'))}</button>` : `<button class="linkbtn danger" type="button" data-remove="${esc(c.code)}">${esc(tt('Снять с публикации', 'Remove'))}</button>`}</span></span></div>`).join('');
     };
     draw();
     sortSel.addEventListener('change', () => { storage.set('dc_admin_sort', sortSel.value); draw(); });
     const ask = sec.querySelector('#ask');
     sec.querySelector('#rows').addEventListener('click', async (e) => {
       const t = e.target.closest('[data-i]'); if (t) { openViewer({ cards: sorted, index: Number(t.dataset.i), mode: 'admin' }); return; }
-      const rm = e.target.closest('[data-remove]'); const rs = e.target.closest('[data-restore]');
+      const rm = e.target.closest('[data-remove]'); const rs = e.target.closest('[data-restore]'); const ex = e.target.closest('[data-exclude]');
+      if (ex) {
+        // последствия — до действия: окончательно, без возврата; всем фасилитаторам уведомление и письмо
+        ask.innerHTML = `<div class="notice red stack" style="position:sticky;bottom:12px"><b>${esc(tt(`Исключить ${ex.dataset.exclude} из коллекции окончательно?`, `Exclude ${ex.dataset.exclude} from the collection permanently?`))}</b>
+          <span class="small">${esc(tt('Карта исчезнет из галереи, игр и подборок, её файлы будут удалены — вернуть её будет нельзя. Всем фасилитаторам уйдёт уведомление и письмо с номером карты. Автору сообщите отдельно. Для временного скрытия используйте «Снять с публикации».', 'The card will disappear from the gallery, games and collections and its files will be deleted — it cannot be restored. All facilitators will get a notice and an email with the card number. Tell the author separately. To hide it temporarily, use “Remove”.'))}</span>
+          <div class="row"><button class="btn danger sm" type="button" id="exyes">${esc(tt('Исключить окончательно', 'Exclude permanently'))}</button><button class="linkbtn" type="button" id="exno">${esc(tt('Отмена', 'Cancel'))}</button></div></div>`;
+        ask.querySelector('#exno').onclick = () => { ask.innerHTML = ''; };
+        ask.querySelector('#exyes').onclick = async () => { try { await api(`/api/admin/cards/${ex.dataset.exclude}/exclude`, { method: 'POST', body: { confirm: true } }); toast(tt('Карта исключена, фасилитаторы уведомлены', 'Card excluded, facilitators notified')); ctx.rerender(); } catch (x) { toast(errorText(x)); } };
+        return;
+      }
       if (rm) {
         ask.innerHTML = `<div class="notice red row" style="position:sticky;bottom:12px"><span class="grow">${esc(tt(`Снять ${rm.dataset.remove}? Карта исчезнет из библиотеки и всех подборок.`, `Remove ${rm.dataset.remove}? It disappears from the library and all selections.`))}</span><button class="btn danger sm" type="button" id="yes">${esc(tt('Снять', 'Remove'))}</button><button class="linkbtn" type="button" id="no">${esc(tt('Отмена', 'Cancel'))}</button></div>`;
         ask.querySelector('#no').onclick = () => { ask.innerHTML = ''; };
