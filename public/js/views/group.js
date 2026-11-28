@@ -6,7 +6,7 @@ import { openViewer } from '../viewer.js';
 import { subscribe, signHtml, unlockSound, soundsReady, play, clock, left, mmss, bellsFor, keepAwake } from '../live-common.js';
 import { QUESTION_FORMATS } from '../content.js';
 import * as personal from '../personal.js';
-import { ONLINE_KEYS, room as onlineRoom, offerHtml, wireOffer, crewBox } from './online.js';
+import { ONLINE_KEYS, room as onlineRoom, offerHtml, declinedHtml, wireOffer, crewBox } from './online.js';
 import { joinButton, wireScan } from '../qr-scan.js';
 
 export const GROUP_FORMATS = [
@@ -109,7 +109,7 @@ export async function room(ctx, code) {
 
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
-      ${offerHtml(ui.offerHidden ? null : s, (k) => fTitle(F(k)))}
+      ${offerHtml(ui.offerHidden ? null : s, (k) => fTitle(F(k)))}${declinedHtml(s, ui.offerHidden, (k) => fTitle(F(k)))}
       <div class="on-next"><a class="btn on-calm" href="${u('/group' + (s.me ? '?from=' + s.code : ''))}">${esc(tt('Выбрать следующую игру', 'Choose the next game'))}</a></div>
       ${s.me ? `<p class="small muted" style="margin:0">${esc(tt('Участники этой игры увидят предложение и сами решат, присоединиться ли.', 'Players of this game will see the suggestion and decide for themselves whether to join.'))}</p>` : ''}`;
     if (!s.me) return `<p class="lead">${esc(fDesc(f))}</p><form class="form" id="gj"><label class="field" for="gjn">${esc(tt('Ваше имя', 'Your name'))}</label><input id="gjn" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}" aria-describedby="gjn-h"><p class="small muted" id="gjn-h" style="margin:0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p><p class="form-error" id="gjerr" role="alert"></p><button class="btn yellow wide big" type="submit">${esc(tt('Войти в игру', 'Join the game'))}</button></form>${people()}`;
@@ -122,7 +122,9 @@ export async function room(ctx, code) {
     if (fmt === 'story') {
       const cs = s.cards || []; cs.forEach(remember); const last = cs[cs.length - 1];
       return `${cs.length > 1 ? `<div class="g-strip">${cs.slice(0, -1).map((c) => `<button type="button" class="live-card-btn" data-zoom="${esc(c.code)}" aria-label="${esc(tt('Рассмотреть карту', 'View card'))} ${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" width="54" height="93"></button>`).join('')}</div>` : ''}${bigCard(last)}
+        ${s.narrator ? `<p class="g-turn" aria-live="polite">${s.me && s.narrator.id === s.me.id ? `<b>${esc(tt('Ваш ход — рассказывайте', 'Your turn — tell the story'))}</b>` : `${esc(tt('Рассказывает', 'Telling now'))}: <b>${esc(s.narrator.name)}</b>`}${s.members.length > 1 ? `<span class="small muted"> · ${esc(tt('следующая карта — ', 'next card — '))}${esc(s.nextNarrator)}</span>` : ''}</p>` : ''}
         <p class="lead">${esc(cs.length === 1 ? tt('Начните историю одной-двумя фразами — с того, что на карте.', 'Start the story in a sentence or two — from what is on the card.') : tt('Продолжите историю, глядя на новую карту.', 'Continue the story, looking at the new card.'))}</p>
+        ${s.host ? `<p class="small muted" style="margin:0">${esc(tt('Когда рассказчик закончит, нажмите «Следующая карта» — ход перейдёт к следующему.', 'When the storyteller is done, tap “Next card” — the turn passes on.'))}</p>` : ''}
         <div class="row">${hostBtn('next_card', tt('Следующая карта', 'Next card'))}${hostBtn('again', tt('Новая история', 'New story'), 'light')}</div>`;
     }
     if (fmt === 'question') {
@@ -137,20 +139,22 @@ export async function room(ctx, code) {
     if (s.phase === 'pick') {
       if (s.gallery) s.gallery.forEach(remember);
       const head = fmt === 'friend' ? tt(`Выберите карту для: ${s.target}`, `Choose a card for: ${s.target}`) : tt('Выберите карту, которая откликается вам сейчас', 'Choose a card that speaks to you now');
-      const all = s.members.length && s.members.every((m) => (s.ready || []).includes(m.id));
+      const plist = s.members.filter((m) => !s.players || s.players.includes(m.id)); // кого ждём в этом круге
+      const all = plist.length && plist.every((m) => (s.ready || []).includes(m.id));
+      if (s.late) return `<h2 class="g-h">${esc(tt('Вы присоединитесь со следующего круга', 'You will join from the next round'))}</h2><p class="lead">${esc(tt('Адресатов в этом круге уже раздали. Посмотрите, как откроются карты, — в следующем круге вы тоже получите своего друга.', 'Recipients for this round are already assigned. Watch the cards open — next round you will get a friend too.'))}</p>`;
       // ведущий видит, кто уже выбрал (без самих карт), и открывает набор, когда выбрали все
-      const ready = `<ul class="g-ready" aria-live="polite">${s.members.map((m) => { const ok = (s.ready || []).includes(m.id); return `<li class="${ok ? 'ok' : ''}">${ok ? ic.check : '<span class="dot" aria-hidden="true"></span>'}<span>${esc(m.name)}</span><span class="sr-only">${esc(ok ? tt('выбрал(а)', 'has chosen') : tt('выбирает', 'choosing'))}</span></li>`; }).join('')}</ul>`;
-      const hostCtl = s.host ? `${all ? hostBtn('reveal', tt('Все выбрали — открыть карты', 'Everyone has chosen — reveal the cards')) : `<button class="btn light" type="button" disabled data-act-wait>${esc(tt(`Ждём выбора: ${s.picked} из ${s.members.length}`, `Waiting: ${s.picked} of ${s.members.length}`))}</button>`}
+      const ready = `<ul class="g-ready" aria-live="polite">${plist.map((m) => { const ok = (s.ready || []).includes(m.id); return `<li class="${ok ? 'ok' : ''}">${ok ? ic.check : '<span class="dot" aria-hidden="true"></span>'}<span>${esc(m.name)}</span><span class="sr-only">${esc(ok ? tt('выбрал(а)', 'has chosen') : tt('выбирает', 'choosing'))}</span></li>`; }).join('')}</ul>`;
+      const hostCtl = s.host ? `${all ? hostBtn('reveal', tt('Все выбрали — открыть карты', 'Everyone has chosen — reveal the cards')) : `<button class="btn light" type="button" disabled data-act-wait>${esc(tt(`Ждём выбора: ${s.picked} из ${plist.length}`, `Waiting: ${s.picked} of ${plist.length}`))}</button>`}
         ${!all && s.picked ? `<button class="linkbtn small" type="button" data-force>${esc(tt('Кто-то не может выбрать? Открыть уже выбранные', 'Someone cannot choose? Reveal the chosen ones'))}</button>` : ''}` : '';
       if (s.myCard && !ui.change) {
         return `<h2 class="g-h">${esc(tt('Ваш выбор принят', 'Your choice is saved'))}</h2>
           <div class="live-chosen"><img src="${esc(s.myCard.thumb)}" alt="" width="54" height="93"><span>${ic.check} ${esc(tt('Карта выбрана. Никому её не показывайте — карты откроются для всех вместе.', 'Card chosen. Do not show it to anyone — the cards open for everyone together.'))}</span></div>
           <button class="linkbtn small" type="button" data-change>${esc(tt('Поменять выбор', 'Change my choice'))}</button>
-          <p class="live-count">${esc(all ? tt('Все выбрали — ведущий сейчас откроет карты.', 'Everyone has chosen — the host will reveal the cards.') : tt(`Ждём остальных: выбрали ${s.picked} из ${s.members.length}`, `Waiting for the others: ${s.picked} of ${s.members.length} have chosen`))}</p>
+          <p class="live-count">${esc(all ? tt('Все выбрали — ведущий сейчас откроет карты.', 'Everyone has chosen — the host will reveal the cards.') : tt(`Ждём остальных: выбрали ${s.picked} из ${plist.length}`, `Waiting for the others: ${s.picked} of ${plist.length} have chosen`))}</p>
           ${ready}${hostCtl}${waitHost(tt('Карты откроет', 'The cards will be revealed by'))}`;
       }
       return `<h2 class="g-h">${esc(head)}</h2><p class="small muted" style="margin:0">${esc(tt('Никому не показывайте — карты откроются, когда ведущий откроет их для всех.', 'Do not show anyone — the cards open when the host reveals them for everyone.'))}</p>
-        <p class="live-count" aria-live="polite">${esc(tt(`Выбрали: ${s.picked} из ${s.members.length}`, `Chosen: ${s.picked} of ${s.members.length}`))}</p>
+        <p class="live-count" aria-live="polite">${esc(tt(`Выбрали: ${s.picked} из ${plist.length}`, `Chosen: ${s.picked} of ${plist.length}`))}</p>
         <div class="live-grid">${(s.gallery || []).map((c) => `<button type="button" class="live-tile" data-pick="${esc(c.code)}" aria-label="${esc(c.code)}"><img src="${esc(c.thumb)}" alt="" loading="lazy" width="${c.width || 910}" height="${c.height || 1560}">${s.myCard && s.myCard.code === c.code ? `<span class="lt-mark">${ic.check}</span>` : ''}</button>`).join('')}</div>
         ${s.host ? ready + hostCtl : ''}${previewHtml()}`;
     }
@@ -212,21 +216,23 @@ export async function room(ctx, code) {
       if (s.role !== 'listener') return `${hostBar()}${round}<h2 class="g-h">${esc(tt('Ваша карта выбрана', 'Your card is chosen'))}</h2>${s.myCard ? `<img class="live-card" src="${esc(s.myCard.thumb)}" alt="">` : ''}<p class="lead">${esc(tt('Собеседники выбирают карты — скоро вы увидите знак своей пары.', 'Partners are choosing — you will see your pair sign soon.'))}</p>`;
       if (s.myCard) return `${hostBar()}${round}<h2 class="g-h">${esc(tt('Карта выбрана', 'Card chosen'))}</h2><p class="lead">${esc(tt('Ждём остальных — сейчас появится знак пары.', 'Waiting for the others — your pair sign will appear.'))}</p>`;
       (s.slots || []).forEach((x) => remember(x.card));
-      return `${hostBar()}${round}<h2 class="g-h">${esc(tt('Выберите карту', 'Choose a card'))}</h2><p class="small muted" style="margin:0">${esc(tt('Это карты, которые выбрали держатели. Кто выбрал карту — ваш собеседник. Занятые карты недоступны.', 'These are the holders’ cards. Whoever chose it is your partner. Taken cards are unavailable.'))}</p>
+      return `${hostBar()}${round}<h2 class="g-h">${esc(tt('Выберите карту', 'Choose a card'))}</h2><p class="small muted" style="margin:0">${esc(tt('Это карты, которые выбрали держатели. Кто выбрал карту — ваш собеседник. Занятые карты недоступны.', 'These are the holders’ cards. Whoever chose it is your partner. Taken cards are unavailable.'))}</p>${(s.progress || {}).listeners > (s.slots || []).length ? `<p class="small" style="margin:0">${esc(tt('Собеседников на одного больше, чем карт: когда все карты заняты, кто-то присоединится к паре третьим.', 'There is one more partner than cards: once all cards are taken, someone joins a pair as a third.'))}</p>` : ''}
         <div class="live-grid">${(s.slots || []).map((x) => `<button type="button" class="live-tile" data-slot="${x.id}" data-code="${esc(x.card.code)}" ${x.taken ? 'disabled aria-disabled="true"' : ''}><img src="${esc(x.card.thumb)}" alt="">${x.taken ? `<span class="lt-taken">${esc(tt('занята', 'taken'))}</span>` : ''}</button>`).join('')}</div>${previewHtml()}`;
     }
     // пары, разговор, перерыв
     if (!s.pair) return `${hostBar()}${recall}<p class="lead">${esc(tt('В этом раунде у вас нет пары — присоединитесь к любой паре третьим.', 'You have no pair this round — join any pair as a third.'))}</p>`;
     const names = s.pair.partners.join(tt(' и ', ' and '));
+    // нечётная компания: один собеседник — третьим в паре (ведущего-фасилитатора здесь нет)
+    const trio = s.pair.partners.length > 1 ? `<span class="small">${esc(tt('Вас трое — нас нечётное число. Говорите втроём: тот, кто выбрал карту, начинает, собеседники отвечают по очереди.', 'There are three of you — the group is odd. Talk as three: the one who chose the card starts, the partners answer in turn.'))}</span>` : '';
     if (s.phase !== 'break' && (!ui.found[s.step] || ui.showSign)) {
-      return `<div class="live-sign">${signHtml(s.pair.sign)}<div class="ls-text"><b>${esc(tt('Найдите человека с таким же знаком', 'Find the person with the same sign'))}</b><span>${esc(s.pair.partners.length > 1 ? tt('Ваши собеседники', 'Your partners') : tt('Ваш собеседник', 'Your partner'))}: ${esc(names)}</span></div>
+      return `<div class="live-sign">${signHtml(s.pair.sign)}<div class="ls-text"><b>${esc(tt('Найдите человека с таким же знаком', 'Find the person with the same sign'))}</b><span>${esc(s.pair.partners.length > 1 ? tt('Ваши собеседники', 'Your partners') : tt('Ваш собеседник', 'Your partner'))}: ${esc(names)}</span>${trio}</div>
         <button class="btn yellow big wide" type="button" data-found>${esc(ui.found[s.step] ? tt('К вопросам', 'To the questions') : tt('Мы нашли друг друга', 'We found each other'))}</button></div>`;
     }
     remember(s.myCard);
     const holder = s.role === 'holder'; const mk = holder ? 'holder' : 'partner'; const cur = ui.list || mk;
     const time = s.phase === 'talk' ? `<div class="live-timer" data-timer>${esc(mmss(left(s.talkEndsAt, skew)))}</div>` : s.phase === 'break' ? `<div class="live-timer done">${esc(tt('Раунд закончен', 'Round over'))}</div>` : `<div class="live-timer wait">${esc(tt('Ведущий скоро запустит время', 'The host will start the timer soon'))}</div>`;
     return `${hostBar()}${recall}<div class="live-talk-head">${time}<button class="sign-btn" type="button" data-sign aria-label="${esc(tt('Показать знак пары', 'Show pair sign'))}">${signHtml(s.pair.sign, { big: false })}</button></div>
-      <p class="small muted" style="margin:0">${esc(s.pair.partners.length > 1 ? tt('Собеседники', 'Partners') : tt('Собеседник', 'Partner'))}: <b>${esc(names)}</b></p>
+      <p class="small muted" style="margin:0">${esc(s.pair.partners.length > 1 ? tt('Собеседники', 'Partners') : tt('Собеседник', 'Partner'))}: <b>${esc(names)}</b></p>${trio ? `<p class="small" style="margin:0">${trio}</p>` : ''}
       ${bigCard(s.myCard)}
       <p class="lead live-role">${esc(holder ? tt('Вы выбрали эту карту первым. Расскажите, почему она привлекла ваше внимание, потом спросите собеседника.', 'You chose this card first. Tell why it caught your attention, then ask your partner.') : tt('Сначала послушайте, почему собеседника привлекла эта карта, и задавайте вопросы.', 'First listen to why the card caught your partner’s attention, and ask questions.'))}</p>
       <div class="qtabs" role="tablist">${['partner', 'holder'].map((k) => `<button type="button" role="tab" aria-selected="${k === cur}" data-list="${k}">${esc(qTitle(k))}${k === mk ? ` · ${esc(tt('вы', 'you'))}` : ''}</button>`).join('')}</div>
@@ -251,7 +257,7 @@ export async function room(ctx, code) {
     if (!root || !ctx.main.contains(root)) { ctx.main.innerHTML = '<div class="live" id="groot"></div>'; root = ctx.main.querySelector('#groot'); lastHtml = ''; }
     const html = `<div class="live-in">
       <p class="eyebrow">${esc(tt('Играть компанией', 'Play with friends'))} · ${esc(fTitle(f))}</p>
-      ${s.status !== 'ended' ? offerHtml(ui.offerHidden ? null : s, (k) => fTitle(F(k))) : ''}${body()}
+      ${s.status !== 'ended' ? offerHtml(ui.offerHidden ? null : s, (k) => fTitle(F(k))) + declinedHtml(s, ui.offerHidden, (k) => fTitle(F(k))) : ''}${body()}
       ${s.me && s.status !== 'ended' && s.status !== 'lobby' ? invite() : ''}
       ${s.me && s.status !== 'ended' ? `<div class="row between">${s.host ? `<button class="linkbtn" type="button" data-end>${esc(tt('Завершить игру', 'End the game'))}</button>` : `<button class="linkbtn" type="button" data-leave>${esc(tt('Выйти', 'Leave'))}</button>`}</div>` : ''}
     </div>`;
@@ -261,7 +267,7 @@ export async function room(ctx, code) {
   }
   function wire() {
     const $ = (q) => ctx.main.querySelector(q);
-    wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); });
+    wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); }, () => { ui.offerHidden = false; lastHtml = ''; draw(); });
     root.querySelectorAll('details[data-k]').forEach((d) => listen(d, 'toggle', () => { ui.open[d.dataset.k] = d.open; lastHtml = ''; }));
     const ch = $('[data-change]'); if (ch) ch.onclick = () => { ui.change = true; draw(); };
     const fo = $('[data-force]'); if (fo) fo.onclick = () => { if (confirm(tt('Открыть карты тех, кто уже выбрал? Остальные увидят их без своей.', 'Reveal the cards of those who have chosen? The others will see them without theirs.'))) act('reveal', { force: true }); };

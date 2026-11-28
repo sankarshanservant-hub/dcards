@@ -46,18 +46,29 @@ const PITCH = {
 };
 export const pitchOf = (key) => { const p = PITCH[key]; return p ? tt(p[0], p[1]) : ''; };
 /** Предложение продолжить: участник сам решает, присоединиться ли (22.11.2026). */
+// отказ «Не сейчас» помнится в этой вкладке и после перезагрузки (предложение не всплывает снова)
+const NO = 'dc_offer_no:';
+const declined = (code) => { try { return sessionStorage.getItem(NO + code) === '1'; } catch { return false; } };
+const setDeclined = (code, on) => { try { if (on) sessionStorage.setItem(NO + code, '1'); else sessionStorage.removeItem(NO + code); } catch { /* */ } };
 export function offerHtml(s, titleOf) {
-  const n = s && s.next; if (!n || n.joined) return '';
+  const n = s && s.next; if (!n || n.joined || declined(n.code)) return '';
   return `<div class="card-ui on-offer" role="region" aria-label="${esc(tt('Предложение продолжить', 'Suggestion to continue'))}"><b>${esc(tt(`${n.byName} предлагает продолжить: «${titleOf(n.format)}»`, `${n.byName} suggests continuing: “${titleOf(n.format)}”`))}</b>
     <div class="row wrap"><button class="btn yellow" type="button" data-offer-join="${esc(n.code)}">${esc(tt('Присоединиться', 'Join'))}</button><button class="btn light" type="button" data-offer-no>${esc(tt('Не сейчас', 'Not now'))}</button></div></div>`;
 }
-export function wireOffer(root, s, navigate, hide) {
+/** После «Не сейчас»: понятно, что произошло, и можно передумать (аудит 28.11). */
+export function declinedHtml(s, hidden, titleOf) {
+  const n = s && s.next; if (!n || n.joined || !(hidden || declined(n.code))) return '';
+  return `<p class="small muted on-declined" role="status">${esc(tt(`Вы не присоединились к игре «${titleOf(n.format)}» — компания играет без вас.`, `You did not join “${titleOf(n.format)}” — the group plays without you.`))} <button class="link-btn" type="button" data-offer-undo>${esc(tt('Передумали? Присоединиться', 'Changed your mind? Join'))}</button></p>`;
+}
+export function wireOffer(root, s, navigate, hide, undo) {
+  const code = s && s.next && s.next.code;
+  root.querySelectorAll('[data-offer-undo]').forEach((b) => b.onclick = () => { if (code) setDeclined(code, false); undo(); });
   root.querySelectorAll('[data-offer-join]').forEach((b) => b.onclick = async () => {
     b.disabled = true;
     try { await api(`/api/group/${b.dataset.offerJoin}/join`, { method: 'POST', body: { deviceId: visitorId(), name: (s.me && s.me.name) || storage.get('dc_live_name') || '' } }); navigate('/g/' + b.dataset.offerJoin); }
     catch (x) { b.disabled = false; toast(errorText(x)); }
   });
-  root.querySelectorAll('[data-offer-no]').forEach((b) => b.onclick = hide);
+  root.querySelectorAll('[data-offer-no]').forEach((b) => b.onclick = () => { if (code) setDeclined(code, true); hide(); });
 }
 export const gameTitle = (k) => { const g = ONLINE_GAMES.find((x) => x.key === k); return g ? title(g) : k; };
 const G = (k) => ONLINE_GAMES.find((g) => g.key === k) || ONLINE_GAMES[0];
@@ -200,7 +211,8 @@ export async function room(ctx, code, first) {
   function whose() {
     const theme = `<p class="on-q">${esc(s.theme || THEMES()[0])}</p>`;
     if (s.phase === 'pick') {
-      const total = s.members.length; const n = (s.ready || []).length;
+      const total = (s.players || s.members).length; const n = (s.ready || []).length;
+      if (s.late) return theme + `<p>${esc(tt('Ты зашёл(а) после начала раунда — подожди следующего.', 'You joined after the round started — wait for the next one.'))}</p>` + progress(n, total, tt('Выбрали', 'Chosen'));
       const body = s.myCard && !ui.edit.p
         ? `<div class="card-ui flat on-mine"><span class="small muted">${esc(tt('Ты выбрал(а)', 'You chose'))}</span><div class="on-cardbox sm">${img(s.myCard)}</div><p>${esc(s.myText || '')}</p><button class="link-btn" type="button" data-edit="p">${esc(tt('Изменить', 'Edit'))}</button></div>`
         : `<p class="small muted" style="margin:0">${esc(tt('Твои карты — их видишь только ты. Выбери одну.', 'Your cards — only you can see them. Choose one.'))}</p>${pickGrid(s.hand || [], 'p', tt('Твои карты', 'Your cards'))}
@@ -211,7 +223,7 @@ export async function room(ctx, code, first) {
       const others = (s.choices || []).filter((m) => !s.me || m.id !== s.me.id);
       return theme + `<p class="small muted" style="margin:0">${esc(tt('Карты без имён. Отметь, кто, по-твоему, выбрал каждую.', 'The cards have no names. Mark who you think chose each one.'))}</p>
         <ul class="on-slots">${(s.slots || []).map((x) => `<li>${img(x.card)}<div class="stack">${x.mine ? `<span class="small muted">${esc(tt('Твоя карта', 'Your card'))}</span>` : `<span class="small muted">${esc(tt('Чья это карта?', 'Whose card is it?'))}</span><div class="chips">${others.map((m) => `<button type="button" class="chip ${x.myGuess === m.id ? 'on' : ''}" aria-pressed="${x.myGuess === m.id}" data-guess="${x.slot}" data-who="${m.id}" ${dis()}>${esc(m.name)}</button>`).join('')}</div>`}</div></li>`).join('')}</ul>`
-        + progress((s.guessed || []).length, s.members.length, tt('Отметили догадки', 'Guesses marked')) + (s.host ? hostBtn('reveal', tt('Открыть авторов', 'Reveal the authors'), (s.guessed || []).length >= s.members.length ? 'yellow' : 'light') : '');
+        + progress((s.guessed || []).length, (s.players || s.members).length, tt('Отметили догадки', 'Guesses marked')) + (s.host ? hostBtn('reveal', tt('Открыть авторов', 'Reveal the authors'), (s.guessed || []).length >= (s.players || s.members).length ? 'yellow' : 'light') : '');
     }
     return theme + `<ul class="on-slots">${(s.slots || []).map((x) => `<li>${img(x.card)}<div class="stack"><b>${esc(x.author)}</b><p style="margin:0">${esc(x.why || '')}</p>${x.guesses.length ? `<ul class="small muted on-guesses">${x.guesses.map((y) => `<li>${esc(y.who)}: ${esc(y.said)}</li>`).join('')}</ul>` : ''}</div></li>`).join('')}</ul>
       <p class="small muted">${esc(tt('Расскажите друг другу, почему выбрали свою карту.', 'Tell each other why you chose your card.'))}</p>${roundOpts()}<div class="row">${startBtn(true)}</div>${waitHost(tt('Ждём новую тему', 'Waiting for a new theme'))}`;
@@ -231,7 +243,7 @@ export async function room(ctx, code, first) {
   }
   function gift() {
     if (s.phase === 'pick') {
-      const total = s.members.length; const n = (s.ready || []).length;
+      const total = (s.players || s.members).length; const n = (s.ready || []).length;
       if (!s.target) return `<p>${esc(tt('Ты зашёл(а) после начала раунда — подожди следующего.', 'You joined after the round started — wait for the next one.'))}</p>` + progress(n, total, tt('Готово', 'Ready'));
       const body = s.myCard && !ui.edit.g
         ? `<div class="card-ui flat on-mine"><span class="small muted">${esc(tt(`Твоя карта · для: ${s.target}`, `Your card · for: ${s.target}`))}</span><div class="on-cardbox sm">${img(s.myCard)}</div><p>${esc(s.myText || '')}</p><button class="link-btn" type="button" data-edit="g">${esc(tt('Изменить', 'Edit'))}</button></div>`
@@ -285,7 +297,7 @@ export async function room(ctx, code, first) {
 
   function body() {
     if (s.status === 'ended') return `<h1>${esc(tt('Игра закончена', 'The game is over'))}</h1><p class="lead">${esc(tt('Спасибо за разговор!', 'Thank you for the conversation!'))}</p>
-      ${offerHtml(ui.offerHidden ? null : s, gameTitle)}
+      ${offerHtml(ui.offerHidden ? null : s, gameTitle)}${declinedHtml(s, ui.offerHidden, gameTitle)}
       ${s.me ? `<div class="on-next"><a class="btn on-calm" href="${u('/group/online?from=' + s.code)}">${esc(tt('Продолжить этой компанией', 'Continue with this group'))}</a><a class="btn on-calm" href="${u('/group/online')}">${esc(tt('Собрать новую компанию', 'Gather a new group'))}</a></div>` : `<div class="on-next"><a class="btn on-calm" href="${u('/group/online')}">${esc(tt('Собрать новую компанию', 'Gather a new group'))}</a></div>`}`;
     const h = `<h1 class="on-title">${esc(title(g))}</h1>`;
     if (!s.me) return `${h}<p class="lead">${esc(desc(g))}</p><form class="form" id="oj"><label class="field" for="ojn">${esc(tt('Ваше имя', 'Your name'))}</label><input id="ojn" maxlength="40" required value="${esc(storage.get('dc_live_name') || '')}" autocomplete="given-name"><p class="small muted" style="margin:0">${esc(tt('Это имя увидят другие игроки.', 'Other players will see this name.'))}</p><p class="form-error" id="ojerr" role="alert"></p><button class="btn yellow wide big" type="submit">${esc(tt('Войти в игру', 'Join the game'))}</button></form>${people()}`;
@@ -293,7 +305,7 @@ export async function room(ctx, code, first) {
       <p class="small muted" style="margin:0">${esc(tt('Говорить можно в любом созвоне или переписке. Можно сказать «пас» — объяснять не нужно.', 'Talk on any call or chat. You can say “pass” — no explanation needed.'))}</p>
       ${roundOpts()}<div class="row">${startBtn(false)}</div>${waitHost(tt('Ждём начала', 'Waiting to start'))}`;
     const game = { see, bridge, whose, chain, gift, eagle }[s.format];
-    return h + offerHtml(ui.offerHidden ? null : s, gameTitle) + game() + (s.format === 'eagle' ? eaglePeople() : people());
+    return h + offerHtml(ui.offerHidden ? null : s, gameTitle) + declinedHtml(s, ui.offerHidden, gameTitle) + game() + (s.format === 'eagle' ? eaglePeople() : people());
   }
 
   function draw() {
@@ -314,7 +326,7 @@ export async function room(ctx, code, first) {
   }
   const $ = (q) => root.querySelector(q);
   function wire() {
-    wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); });
+    wireOffer(root, s, ctx.navigate, () => { ui.offerHidden = true; lastHtml = ''; draw(); }, () => { ui.offerHidden = false; lastHtml = ''; draw(); });
     root.querySelectorAll('[data-draft]').forEach((t) => listen(t, 'input', () => { ui.draft[t.dataset.draft] = t.value; const b = t.dataset.draft === 'e' && root.querySelector('[data-esend]'); if (b) b.disabled = !t.value.trim() || ui.busy; }));
     root.querySelectorAll('[data-invite]').forEach((b) => b.onclick = () => sendRoomInvite(url, pitchOf(g.key)));
     root.querySelectorAll('[data-round]').forEach((b) => b.onclick = () => act(b.dataset.round, roundBody()));

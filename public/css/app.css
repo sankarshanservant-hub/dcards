@@ -1879,3 +1879,7 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .pc-got .pc-stage canvas { width: min(360px, 86vw); height: auto; }
 .pc-got-acts { display: grid; gap: 8px; justify-items: center; }
 .pc-got-acts .btn { min-width: min(300px, 100%); text-decoration: none; }
+/* аудит 28.11 C */
+.g-turn { margin: 4px 0 0; font-size: 1.05rem; }
+.on-declined { margin: 4px 0 0; }
+.on-declined .link-btn { font-weight: 600; }

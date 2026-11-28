@@ -76,9 +76,19 @@ module.exports = function makeOnline(h) {
     return { ok: true, id: r.id };
   }
 
-  /** Все ли (из тех, кто сейчас в комнате) уже сделали ход — тогда игра идёт дальше сама. */
+  /**
+   * Кто играет в текущем раунде (аудит 28.11): в «Карте для соседа» — те, кому раздали адресата, в «Чьей это карте?» — у кого
+   * есть карты на руках; опоздавший играет со следующего раунда и не задерживает остальных. В остальных играх — все в комнате.
+   */
+  function players(r, d = dataOf(r)) {
+    const ids = members(r).map((m) => m.id);
+    if (r.format === 'gift') { const t = new Set(picks(r).filter((p) => p.target_id).map((p) => p.member_id)); return ids.filter((id) => t.has(id)); }
+    if (r.format === 'whose' && d.hands) return ids.filter((id) => (d.hands[id] || []).length);
+    return ids;
+  }
+  /** Все ли (из тех, кто сейчас в комнате и играет в этом раунде) уже сделали ход — тогда игра идёт дальше сама. */
   function advance(r) {
-    r = fresh(r); const d = dataOf(r); const ids = members(r).map((m) => m.id); const ps = picks(r);
+    r = fresh(r); const d = dataOf(r); const ids = players(r, d); const ps = picks(r);
     const done = (pred) => ids.length > 0 && ids.every((id) => ps.some((p) => p.member_id === id && pred(p)));
     if (['see', 'bridge'].includes(r.format) && d.phase === 'write' && done((p) => p.text)) save(r, { phase: 'open' });
     if (r.format === 'whose' && d.phase === 'pick' && done((p) => p.code)) toGuess(r);
@@ -232,6 +242,7 @@ module.exports = function makeOnline(h) {
     const mine = me ? ps.find((p) => p.member_id === me.id) : null;
     if (r.format === 'eagle') return eagleState(r, me, out, d, ps, ms);
     out.ready = ps.filter((p) => (r.format === 'whose' ? p.code : r.format === 'gift' ? p.code && p.text : p.text)).map((p) => p.member_id);
+    out.players = players(r, d); if (me && !out.players.includes(me.id)) out.late = true;
     if (r.format === 'see' || r.format === 'bridge') {
       if (r.format === 'see') { out.card = cardOut(d.card); out.question = d.question || null; out.defaultQuestion = DEFAULT_SEE; }
       else out.cards = (d.cards || []).map(cardOut).filter(Boolean);
@@ -256,7 +267,7 @@ module.exports = function makeOnline(h) {
             guesses: Object.entries(g[owner] || {}).map(([who, said]) => ({ who: name(Number(who)), said: name(Number(said)) })) };
         }).filter(Boolean);
         out.choices = ms.map((m) => ({ id: m.id, name: m.name }));
-        if (d.phase === 'guess') out.guessed = ids.filter((id) => (d.order || []).every((o) => o === id || (g[o] && g[o][id])));
+        if (d.phase === 'guess') out.guessed = out.players.filter((id) => (d.order || []).every((o) => o === id || (g[o] && g[o][id])));
       }
     }
     if (r.format === 'gift') {
