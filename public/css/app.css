@@ -738,8 +738,12 @@ body.has-choice-bar .demo-pill { bottom: calc(96px + var(--safe-b)); }
 @media (max-width: 899px) {
   .room-side { position: sticky; top: var(--head-h); z-index: 5; background: var(--bg); padding: 6px 0; display: flex; align-items: center; gap: 8px; }
   .room-side h2 { margin: 0; flex: none; font-size: .78rem; }
-  .room-list { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-  .room-list a { white-space: nowrap; padding: 6px 12px; min-height: 40px; border-color: var(--border); }
+  /* 26.11: без minmax(0,1fr) и min-width:0 ряд комнат (white-space: nowrap) распирал колонку сетки — вся страница чата
+     становилась шире телефона. Теперь ряд комнат прокручивается сам внутри ширины экрана. */
+  .chat-layout { grid-template-columns: minmax(0, 1fr); }
+  .room-side { min-width: 0; }
+  .room-list { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; overscroll-behavior-x: contain; }
+  .room-list a { white-space: nowrap; padding: 6px 12px; min-height: 40px; border-color: var(--border); flex: none; }
 }
 .chat-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; }
 .chat-tools select { min-height: 38px; padding: 4px 10px; border-radius: 12px; }
@@ -1807,3 +1811,24 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .join-game svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 /* «Получать все уведомления» */
 .switch-row.all-row { border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px; }
+
+/* 26.11 фасилитаторы, чаты */
+.chat-btn { gap: 8px; }
+.chat-btn svg { width: 18px; height: 18px; }
+.btn.y-line { border-color: var(--accent); background: transparent; color: var(--text); }
+.seg > a, .seg > button, .seg > [role="tab"] { display: inline-flex; align-items: center; justify-content: center; line-height: 1.2; text-decoration: none; }
+.fac-changes { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); color: var(--text); text-decoration: none; }
+@media (hover: hover) { .fac-changes:hover { background: var(--surface-3); } }
+.fac-changes > svg { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.fac-changes .fc-t { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.fc-dot { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: .78rem; font-weight: 700; display: inline-grid; place-items: center; flex: none; }
+.pr-sum { display: grid; gap: 2px; }
+.pr-done p { margin: 0 0 10px; }
+.pr-done p:last-child { margin-bottom: 4px; }
+.ic-h { display: flex; align-items: center; gap: 8px; }
+.ic-h svg { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.cc-list .cc-n a { text-decoration: none; }
+.cc-list .cc-h { flex-basis: 100%; color: var(--text-2); }
+.cc-list .cc-d { margin-left: auto; }
+@media (max-width: 380px) { .cf-main .btn { padding-inline: 12px; } .cf-photo { width: 44px; } }
+.chat-layout .page-head h1, .msg b { overflow-wrap: anywhere; }

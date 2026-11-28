@@ -329,7 +329,7 @@ export const ACTION_LABEL = {
 };
 export function historyRow(h) {
   const [ru, en] = ACTION_LABEL[h.action] || [h.action, h.action];
-  const rt = h.replacementType === 'fix' ? tt(' · исправление той же карты', ' · fix of the same card') : h.replacementType === 'new' ? tt(' · новая карта', ' · new card') : '';
+  const rt = h.replacementType === 'fix' ? tt(' · новая версия', ' · new version') : h.replacementType === 'new' ? tt(' · новая карта', ' · new card') : '';
   return `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(tt(ru, en))}${esc(rt)}</b>
     <span class="small">${esc(h.actor)} · ${esc(tt('версия', 'version'))} ${h.versionN} · ${esc(fmtDate(h.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${h.toUser ? ' → ' + esc(h.toUser) : ''}</span>
     ${h.criteria.length ? `<ul class="reasons">${h.criteria.map(critHtml).join('')}</ul>` : ''}
