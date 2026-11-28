@@ -170,7 +170,7 @@ export async function cardPage(ctx, code) {
         <h1>${esc(card.code)} ${card.isDemo ? '<span class="pill demo">демо</span>' : ''}</h1>
         <div class="card-ui flat"><dl class="sheet-list" style="margin:0">
           <div><dt>${esc(tt('Автор', 'Author'))}</dt><dd>${esc(card.author || tt('будет указан', 'to be added'))}</dd></div>
-          <div><dt>${esc(tt('В галерее с', 'In the gallery since'))}</dt><dd>${esc(fmtDate(card.publishedAt))}</dd></div>
+          <div><dt>${esc(tt('Добавлена', 'Added'))}</dt><dd>${esc(fmtDate(card.publishedAt))}</dd></div>
           <div><dt>${esc(tt('Выбрали для разговора', 'Chosen for a conversation'))}</dt><dd>${esc(tt(`${card.selectedCount} ${ruPlural(card.selectedCount, 'раз', 'раза', 'раз')}`, `${card.selectedCount} ${card.selectedCount === 1 ? 'time' : 'times'}`))}</dd></div>
         </dl></div>
         <h2>${esc(tt('Комментарии', 'Comments'))} <span class="muted" style="font-size:1rem">(${comments.length})</span></h2>
