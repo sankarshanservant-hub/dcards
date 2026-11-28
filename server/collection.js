@@ -31,15 +31,19 @@ const vcols = db.prepare('PRAGMA table_info(card_versions)').all().map((c) => c.
 if (!vcols.includes('revoked_at')) db.exec('ALTER TABLE card_versions ADD COLUMN revoked_at TEXT');
 const wcols = db.prepare('PRAGMA table_info(work_versions)').all().map((c) => c.name);
 if (!wcols.includes('purged_at')) db.exec('ALTER TABLE work_versions ADD COLUMN purged_at TEXT');
+// 26.11: у обновления — прежняя версия («было v1 → стало v2»); что фасилитатор уже видел — для точки/счётчика в кабинете
+const ccols = db.prepare('PRAGMA table_info(collection_changes)').all().map((c) => c.name);
+if (!ccols.includes('prev_label')) db.exec("ALTER TABLE collection_changes ADD COLUMN prev_label TEXT NOT NULL DEFAULT ''");
+db.exec('CREATE TABLE IF NOT EXISTS collection_seen (user_id INTEGER PRIMARY KEY, last_id INTEGER NOT NULL DEFAULT 0)');
 
 const num = (code) => String(code || '').replace(/^DC-/, '');
 /** Номер версии карты: v1 — первое изображение, текущая — число прежних + 1. */
 function versionOf(cardId) { return (db.prepare('SELECT COUNT(*) AS n FROM card_versions WHERE card_id = ?').get(cardId).n || 0) + 1; }
 const facilitators = (demo) => db.prepare(`SELECT u.id, u.email, u.lang FROM users u JOIN user_roles r ON r.user_id = u.id AND r.role = 'facilitator' WHERE u.is_demo = ?`).all(demo ? 1 : 0);
 
-function record(kind, card, { versionLabel = '', by = '', key }) {
-  const info = db.prepare('INSERT OR IGNORE INTO collection_changes (kind, card_id, code, version_label, by, is_demo, event_key) VALUES (?,?,?,?,?,?,?)')
-    .run(kind, card.id, card.code, versionLabel, by, card.is_demo ? 1 : 0, key);
+function record(kind, card, { versionLabel = '', prevLabel = '', by = '', key }) {
+  const info = db.prepare('INSERT OR IGNORE INTO collection_changes (kind, card_id, code, version_label, prev_label, by, is_demo, event_key) VALUES (?,?,?,?,?,?,?,?)')
+    .run(kind, card.id, card.code, versionLabel, prevLabel, by, card.is_demo ? 1 : 0, key);
   if (!info.changes) return null; // это событие уже обработано — без дублей
   return db.prepare('SELECT * FROM collection_changes WHERE id = ?').get(Number(info.lastInsertRowid));
 }
@@ -134,7 +138,8 @@ function revokeVersion(card, versionId, by) {
 function added(card) { if (card) record('added', card, { versionLabel: 'v1', key: `added:${card.id}` }); }
 /** Одобрена и опубликована новая версия — обычное уведомление (не в момент загрузки и не при рассмотрении). */
 function updated(card, workId) {
-  const ch = record('updated', card, { versionLabel: `v${versionOf(card.id)}`, key: `updated:${card.id}:${workId}` });
+  const v = versionOf(card.id);
+  const ch = record('updated', card, { versionLabel: `v${v}`, prevLabel: v > 1 ? `v${v - 1}` : '', key: `updated:${card.id}:${workId}` });
   if (ch) notifyUpdated(ch);
 }
 /** Файлы непубликовавшейся работы (окончательно отклонена или снята автором с рассмотрения) удаляются; уведомлений фасилитаторам нет. */
@@ -150,7 +155,17 @@ function purgeWorkFiles(workId) {
 function history(showDemo, limit = 300) {
   return db.prepare(`SELECT ch.*, c.status AS card_status FROM collection_changes ch LEFT JOIN cards c ON c.id = ch.card_id
     WHERE ${showDemo ? '1=1' : 'ch.is_demo = 0'} ORDER BY ch.id DESC LIMIT ?`).all(limit)
-    .map((x) => ({ id: x.id, kind: x.kind, code: x.code, number: num(x.code), version: x.version_label, at: x.created_at, current: ['added', 'updated'].includes(x.kind) && x.card_status === 'published' }));
+    .map((x) => ({ id: x.id, kind: x.kind, code: x.code, number: num(x.code), version: x.version_label, prevVersion: x.prev_label || '', at: x.created_at, current: ['added', 'updated'].includes(x.kind) && x.card_status === 'published' }));
+}
+/** Непросмотренные изменения для точки/счётчика в кабинете фасилитатора (сбрасываются при открытии «Изменений в коллекции»). */
+function unseen(userId, showDemo) {
+  const last = (db.prepare('SELECT last_id FROM collection_seen WHERE user_id = ?').get(userId) || {}).last_id || 0;
+  return db.prepare(`SELECT COUNT(*) AS n FROM collection_changes WHERE id > ? AND ${showDemo ? '1=1' : 'is_demo = 0'}`).get(last).n;
+}
+function markSeen(userId) {
+  const max = (db.prepare('SELECT MAX(id) AS n FROM collection_changes').get() || {}).n || 0;
+  db.prepare('INSERT INTO collection_seen (user_id, last_id) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET last_id = MAX(last_id, excluded.last_id)').run(userId, max);
+  return { ok: true };
 }
 /** Для администрации: удаления, состояние писем и внешние задачи. */
 function adminRemovals(showDemo) {
@@ -167,4 +182,4 @@ function setTask(id, status, note, adminId) {
   return x.changes ? { ok: true } : { error: 'not_found' };
 }
 
-module.exports = { removeFinal, revokeVersion, added, updated, purgeWorkFiles, history, adminRemovals, setTask, processMail, versionOf, num };
+module.exports = { unseen, markSeen, removeFinal, revokeVersion, added, updated, purgeWorkFiles, history, adminRemovals, setTask, processMail, versionOf, num };

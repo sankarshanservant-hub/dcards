@@ -248,17 +248,18 @@ export function aboutFlow(ctx) { ctx.navigate('/start#flow', { replace: true });
 export function facilitatorAbout(ctx) {
   const steps = [
     [tt('Войдите по email', 'Sign in with email'), tt('Простой вход без пароля.', 'A simple sign-in, no password.')],
-    [tt('Прочитайте руководство фасилитатора', 'Read the facilitator guide'), tt('Познакомьтесь с форматом, ролью фасилитатора и подготовкой встречи.', 'Learn about the format, the facilitator’s role and preparing a meeting.')],
-    [tt('Пройдите проверку знаний и подайте заявку', 'Take the quiz and apply'), tt('Несколько вопросов по руководству и пара слов о себе.', 'A few questions on the guide and a few words about yourself.')],
+    [tt('Прочитайте руководство фасилитатора', 'Read the facilitator guide'), tt('Формат встреч, роль фасилитатора и подготовка встречи.', 'The meeting format, the facilitator’s role and preparing a meeting.')],
+    [tt('Пройдите проверку знаний', 'Take the knowledge check'), tt('Несколько вопросов по руководству.', 'A few questions on the guide.')],
+    [tt('Подайте заявку', 'Apply'), tt('Пара слов о себе и о городе, где хотите проводить встречи.', 'A few words about yourself and the city where you want to host meetings.')],
     [tt('Дождитесь одобрения заявки', 'Wait for approval'), tt('После одобрения вы сможете создавать встречи и подборки карт для них.', 'Once approved, you can create meetings and card selections for them.')],
   ];
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Проводите встречи Dialogue Flow в своём городе', 'Host Dialogue Flow meetings in your city'))}</h1></div>
-    <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого диалога. Участники выбирают карты и беседуют в парах: карта помогает начать разговор, а дальше он идёт сам.', 'Bring people together for a living dialogue. Participants choose cards and talk in pairs: the card helps start the conversation, and then it flows on its own.'))}</p>
-    <p class="callout">${esc(tt('Опыт проведения встреч не нужен.', 'No experience of hosting meetings is needed.'))}</p>
+    <p class="lead" style="margin:0">${esc(tt('Соберите людей для живого диалога. Участники выбирают карты и беседуют в парах. Карты помогают начать разговор, а дальше он развивается свободно.', 'Bring people together for a living dialogue. Participants choose cards and talk in pairs. The cards help start the conversation, and then it develops freely.'))}</p>
+    <p class="callout">${esc(tt('Опыт проведения встреч не нужен', 'No experience of hosting meetings is needed'))}</p>
     <section class="become card-ui stack" aria-labelledby="bf">
-      <h2 id="bf" style="margin:0">${esc(tt('Как стать фасилитатором', 'How to become a facilitator'))}</h2>
-      <p class="muted" style="margin:0">${esc(tt('Фасилитатор — человек, который проводит встречу и помогает участникам начать диалог.', 'A facilitator is the person who hosts the meeting and helps participants start a dialogue.'))}</p>
+      <h2 id="bf" style="margin:0">${esc(tt('Как стать фасилитатором?', 'How to become a facilitator?'))}</h2>
+      <p class="muted" style="margin:0">${esc(tt('Фасилитатор — человек, который проводит встречи и помогает участникам начать диалог.', 'A facilitator is a person who hosts meetings and helps participants start a dialogue.'))}</p>
       <ol class="path">${steps.map(([t1, t2]) => `<li><b>${esc(t1)}</b><span>${esc(t2)}</span></li>`).join('')}</ol>
       <div><a class="btn yellow big" href="${u('/facilitator/apply')}">${esc(tt('Начать путь фасилитатора', 'Start the facilitator path'))}</a></div>
     </section>

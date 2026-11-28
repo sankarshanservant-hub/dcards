@@ -90,7 +90,11 @@ function copyWorkImage(version) {
 }
 
 const insertCard = db.transaction((row) => {
-  const number = stmt.maxNumber.get().n + 1;
+  // Номер удалённой карты не переиспользуется: учитываются и карты, и история изменений коллекции (её строки остаются
+  // и после удаления записи карты, например демо-карты).
+  let used = stmt.maxNumber.get().n;
+  try { used = Math.max(used, db.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(code, 4) AS INTEGER)), 0) AS n FROM collection_changes WHERE code LIKE 'DC-%'").get().n); } catch { /* таблицы ещё нет */ }
+  const number = used + 1;
   const full = { code: codeFor(number), number, source: 'upload', published_at: new Date().toISOString(), artist_id: null, is_demo: 0, image_original: null, author: '', ...row };
   stmt.insert.run(full);
   return stmt.byCode.get(full.code);

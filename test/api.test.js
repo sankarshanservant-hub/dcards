@@ -790,10 +790,12 @@ test('Заявка куратора доходит до администрато
   assert.equal((await call('GET', '/api/curator/application', null, { cookie: cand.cookie })).json.isCurator, true);
   // запрос печатной колоды: фасилитатор отправляет, видит администратор; печатный отбор фасилитатору недоступен
   assert.equal((await call('POST', '/api/fac/print-request', { note: '2 колоды' }, { cookie: cand.cookie })).status, 403, 'только фасилитатор');
-  assert.equal((await call('POST', '/api/fac/print-request', { note: '2 колоды для встречи в Казани' }, { cookie: facil.cookie })).status, 201);
-  assert.equal((await call('POST', '/api/fac/print-request', { note: 'ещё' }, { cookie: facil.cookie })).json.already, true, 'повторно не дублируется');
+  // 26.11.2026: предварительная заявка — количество, страна и город доставки обязательны; повтор исправляет ту же заявку
+  assert.equal((await call('POST', '/api/fac/print-request', { note: '2 колоды' }, { cookie: facil.cookie })).status, 400, 'без количества и адреса — нельзя');
+  assert.equal((await call('POST', '/api/fac/print-request', { count: 2, country: 'Россия', city: 'Казань', comment: '2 колоды для встречи в Казани' }, { cookie: facil.cookie })).status, 201);
+  assert.equal((await call('POST', '/api/fac/print-request', { count: 3, country: 'Россия', city: 'Казань', comment: '2 колоды для встречи в Казани' }, { cookie: facil.cookie })).json.updated, true, 'повторно не дублируется');
   const reqs = (await call('GET', '/api/admin/print-requests', null, { cookie: owner.cookie })).json.requests;
-  assert.ok(reqs.some((r) => r.note === '2 колоды для встречи в Казани'));
+  assert.ok(reqs.some((r) => r.comment === '2 колоды для встречи в Казани' && r.count === 3 && r.city === 'Казань'));
   assert.equal((await call('GET', '/api/print', null, { cookie: facil.cookie })).status, 403, 'фасилитатор не отбирает карты для печати');
   assert.equal((await call('GET', '/api/print', null, { cookie: artist.cookie })).status, 200, 'доступ художника сохранён');
 });

@@ -119,7 +119,7 @@ const PARENTS = [
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
   [/^\/admin\/./, '/admin', 'Кабинет администратора', 'Admin space'],
   [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
-  [/^\/facilitator\/changes/, '/facilitator', 'Кабинет фасилитатора', 'Facilitator space'],
+  [/^\/facilitator\/(changes|meetings)/, '/facilitator', 'Кабинет фасилитатора', 'Facilitator space'],
 ];
 // Панель «домик / Назад» живёт рядом с <main>, а не внутри (23.11.2026): страницы игр перерисовывают свою область целиком,
 // и прежняя панель внутри исчезала после первого же действия («Запомнил», «Проверить») — выхода не было видно.

@@ -51,8 +51,10 @@ export async function cabinet(ctx) {
   loading(ctx.main);
   let cols; let mts;
   let lv = { sessions: [] };
-  let chg = { changes: [], unreadRemoved: 0 };
-  try { [cols, mts, lv, chg] = await Promise.all([api('/api/collections'), api('/api/fac/meetings'), api('/api/fac/live').catch(() => ({ sessions: [] })), api('/api/fac/changes').catch(() => ({ changes: [], unreadRemoved: 0 }))]); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  let chg = { changes: [], unreadRemoved: 0, unseen: 0 };
+  let pr = { request: null };
+  try { [cols, mts, lv, chg] = await Promise.all([api('/api/collections'), api('/api/fac/meetings'), api('/api/fac/live').catch(() => ({ sessions: [] })), api('/api/fac/changes').catch(() => ({ changes: [], unreadRemoved: 0, unseen: 0 }))]);
+    pr = await api('/api/fac/print-request').catch(() => ({ request: null })); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
   const occ = occurrences(mts.meetings);
   const kpi = (href, n, label) => `<a class="kpi kpi-link" href="${u(href)}"><b>${n}</b><span>${esc(label)}</span></a>`;
@@ -62,26 +64,66 @@ export async function cabinet(ctx) {
     <div class="row"><a class="btn yellow" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a>
       <a class="btn" href="${u('/facilitator/collections?new=1')}">${ic.plus} ${esc(tt('Создать подборку', 'Create a selection'))}</a></div>
     ${chg.unreadRemoved ? `<a class="notice red fac-removed" href="${u('/bell')}"><b>${esc(tt(`Карты удалены из коллекции: ${chg.unreadRemoved}`, `Cards removed from the collection: ${chg.unreadRemoved}`))}</b> · ${esc(tt('Пожалуйста, исключите их распечатанные версии из своих материалов', 'Please remove printed copies of them from your materials'))} →</a>` : ''}
-    <div><a class="chat-link" href="${u('/team/facilitators')}">${ic.chat}<span>${esc(tt('Написать в чат фасилитаторов', 'Message the facilitators'))}</span></a></div>
-    <div><a class="chat-link" href="${u('/facilitator/changes')}">${ic.cards}<span>${esc(tt('Изменения в коллекции', 'Collection changes'))}</span></a></div>
+    <div class="row"><a class="btn light sm chat-btn" href="${u('/team/facilitators')}">${ic.chat}<span>${esc(tt('Чат фасилитаторов', 'Facilitators’ chat'))}</span></a></div>
+    <a class="fac-changes" href="${u('/facilitator/changes')}">${ic.cards}<span class="fc-t"><b>${esc(tt('Изменения в коллекции', 'Collection changes'))}</b><span class="small muted">${esc(tt('Новые карты, версии и удалённые карты', 'New cards, versions and removed cards'))}</span></span>${chg.unseen ? `<span class="fc-dot" aria-label="${esc(tt(`Непросмотренных: ${chg.unseen}`, `Unseen: ${chg.unseen}`))}">${chg.unseen > 99 ? '99+' : chg.unseen}</span>` : ''}<span aria-hidden="true">→</span></a>
     <div class="kpis three">
       ${kpi('/facilitator/collections', cols.collections.length, tt('Подборки', 'Selections'))}
       ${kpi('/facilitator/meetings?when=upcoming', occ.upcoming.length, tt('Предстоящие встречи', 'Upcoming meetings'))}
       ${kpi('/facilitator/meetings?when=past', occ.past.length, tt('Прошедшие встречи', 'Past meetings'))}</div>
-    <div class="card-ui flat stack" id="print-box"><b>${esc(tt('Нужна печатная колода?', 'Need a printed deck?'))}</b>
-      <span class="small muted">${esc(tt('Если вам нужна печатная колода для встреч Dialogue Flow, отправьте запрос команде проекта.', 'If you need a printed deck for Dialogue Flow meetings, send a request to the project team.'))}</span>
-      <div id="print-ui"><button class="linkbtn" type="button" id="print-open">${esc(tt('Запросить печатную колоду', 'Request a printed deck'))}</button></div></div>
+    <section class="card-ui flat stack" id="print-box" aria-labelledby="print-h"></section>
   </div>`;
-  ctx.main.querySelector('#print-open').addEventListener('click', () => {
-    const box = ctx.main.querySelector('#print-ui');
-    box.innerHTML = `<form class="form" id="pf"><label class="field">${esc(tt('Комментарий', 'Note'))} <span class="hint">${esc(tt('по желанию: сколько колод, для какой встречи, как с вами связаться', 'optional: how many decks, for which meeting, how to reach you'))}</span><textarea name="note" maxlength="1000" rows="3"></textarea></label>
-      <div class="row"><button class="btn dark sm" type="submit">${esc(tt('Отправить запрос', 'Send request'))}</button><button class="linkbtn" type="button" id="pc">${esc(tt('Отмена', 'Cancel'))}</button></div></form>`;
-    box.querySelector('#pc').onclick = () => ctx.rerender();
-    box.querySelector('#pf').addEventListener('submit', async (e) => {
+  printBox(ctx, ctx.main.querySelector('#print-box'), pr.request, ctx.query.get('print') === '1');
+}
+
+// ---------- предварительная заявка на печатные колоды (26.11.2026): колод пока нет, собираем спрос ----------
+const PRINT_INTRO = () => tt('Сейчас мы собираем предварительные заявки. Печатных колод пока нет, а сроки печати ещё не определены. Когда появится возможность заказать колоды, мы проверим возможность доставки в ваш город и свяжемся с вами в приложении.',
+  'We are currently collecting preliminary requests. There are no printed decks yet, and printing dates have not been set. When decks become available to order, we will check whether delivery to your city is possible and contact you in the app.');
+const decksText = (n) => (lang === 'en' ? `${n} ${n === 1 ? 'deck' : 'decks'}` : `${n} ${ruPlural(n, 'колода', 'колоды', 'колод')}`);
+function printBox(ctx, box, req, open) {
+  const contact = `<p class="small muted" style="margin:0">${esc(tt('Вопросы по заявке', 'Questions about the request'))} — <a href="${u('/me/messages')}">${esc(tt('написать администрации', 'contact the administration'))}</a></p>`;
+  const summary = (r) => `<div class="pr-sum"><b>${esc(tt('Ваша заявка', 'Your request'))}</b>
+      <span>${esc(decksText(r.count || 0))} · ${esc([r.city, r.country].filter(Boolean).join(', '))}</span>
+      ${r.comment ? `<span class="small muted">${esc(r.comment)}</span>` : ''}
+      <span class="small muted">${esc(tt('Отправлена', 'Sent'))} ${esc(fmtDate(r.createdAt, { day: 'numeric', month: 'long', year: 'numeric' }))} · ${esc(r.status === 'new' ? tt('предварительная заявка', 'preliminary request') : tt('обработана', 'processed'))}</span></div>`;
+  const closed = () => {
+    box.innerHTML = `<h2 id="print-h" class="h3" style="margin:0">${esc(tt('Нужна печатная колода?', 'Need a printed deck?'))}</h2>
+      ${req ? summary(req) : `<p class="small muted" style="margin:0">${esc(tt('Печатных колод пока нет. Можно оставить предварительную заявку.', 'There are no printed decks yet. You can leave a preliminary request.'))}</p>`}
+      <div class="row"><button class="btn light sm" type="button" id="print-open">${esc(req && req.status === 'new' ? tt('Изменить заявку', 'Edit the request') : tt('Оставить заявку', 'Leave a request'))}</button></div>
+      ${req ? contact : ''}`;
+    box.querySelector('#print-open').addEventListener('click', form);
+  };
+  const form = () => {
+    const cur = req && req.status === 'new' ? req : {};
+    box.innerHTML = `<h2 id="print-h" class="h3" style="margin:0">${esc(tt('Заявка на печатные колоды', 'Request for printed decks'))}</h2>
+      <p style="margin:0">${esc(PRINT_INTRO())}</p>
+      <form class="form" id="pf" novalidate>
+        <label class="field">${esc(tt('Количество колод', 'Number of decks'))}<input name="count" type="number" inputmode="numeric" min="1" step="1" required value="${esc(cur.count != null ? String(cur.count) : '')}"></label>
+        <label class="field">${esc(tt('Страна доставки', 'Delivery country'))}<input name="country" required autocomplete="country-name" maxlength="100" value="${esc(cur.country || '')}"></label>
+        <label class="field">${esc(tt('Город доставки', 'Delivery city'))}<input name="city" required autocomplete="address-level2" maxlength="100" value="${esc(cur.city || '')}"></label>
+        <label class="field">${esc(tt('Комментарий', 'Comment'))} <span class="hint">${esc(tt('необязательно: пожелания и вопросы', 'optional: wishes and questions'))}</span><textarea name="comment" rows="3" maxlength="2000">${esc(cur.comment || '')}</textarea></label>
+        <p class="small err" id="pf-err" role="alert" hidden></p>
+        <div class="row"><button class="btn yellow" type="submit">${esc(tt('Оставить заявку', 'Leave a request'))}</button><button class="linkbtn" type="button" id="pc">${esc(tt('Отмена', 'Cancel'))}</button></div></form>`;
+    box.querySelector('#pc').onclick = closed;
+    const f = box.querySelector('#pf'); const err = box.querySelector('#pf-err');
+    f.count.focus({ preventScroll: true });
+    f.addEventListener('submit', async (e) => {
       e.preventDefault();
-      try { const r = await api('/api/fac/print-request', { method: 'POST', body: { note: e.target.note.value } }); box.innerHTML = `<p class="small" style="margin:0"><b>${esc(r.already ? tt('Ваш запрос уже у команды проекта.', 'Your request is already with the project team.') : tt('Запрос отправлен команде проекта.', 'Request sent to the project team.'))}</b></p>`; } catch (x) { toast(errorText(x)); }
+      const n = f.count.value.trim(); const bad = (m, el) => { err.textContent = m; err.hidden = false; el.focus(); };
+      if (!/^\d+$/.test(n) || Number(n) < 1) return bad(tt('Укажите количество колод — целое число от 1.', 'Enter the number of decks — a whole number from 1.'), f.count);
+      if (!f.country.value.trim()) return bad(tt('Укажите страну доставки.', 'Enter the delivery country.'), f.country);
+      if (!f.city.value.trim()) return bad(tt('Укажите город доставки.', 'Enter the delivery city.'), f.city);
+      const btn = f.querySelector('[type=submit]'); btn.disabled = true; err.hidden = true;
+      try {
+        const r = await api('/api/fac/print-request', { method: 'POST', body: { count: Number(n), country: f.country.value, city: f.city.value, comment: f.comment.value } });
+        req = r.request;
+        box.innerHTML = `<div class="pr-done" role="status"><p><b>${esc(tt('Спасибо, ваша заявка принята!', 'Thank you, your request has been received!'))}</b></p>
+          <p>${esc(tt('Мы сообщим вам в этом приложении, когда появится возможность заказать печатные колоды, и уточним наличие доставки в ваш город.', 'We will let you know in this app when printed decks become available to order and will check delivery to your city.'))}</p>
+          <p>${esc(tt('Оставайтесь на связи!', 'Stay in touch!'))}</p></div>${summary(req)}<div class="row"><button class="btn light sm" type="button" id="print-open">${esc(tt('Изменить заявку', 'Edit the request'))}</button></div>${contact}`;
+        box.querySelector('#print-open').addEventListener('click', form);
+      } catch (x) { btn.disabled = false; err.textContent = errorText(x); err.hidden = false; }
     });
-  });
+  };
+  if (open) form(); else closed();
 }
 
 // ---------- Мои встречи: предстоящие и прошедшие проведения ----------
@@ -100,11 +142,10 @@ export async function meetingsList(ctx) {
       <span class="small">${esc(fmtTz(d.startsAt, d.m.timezone, { weekday: 'long', hour: '2-digit', minute: '2-digit' }))} · ${esc(whereText(d.m))}</span>
       <span class="small">${esc(tt(`${d.taken} из ${d.capacity} мест занято`, `${d.taken} of ${d.capacity} seats taken`))}</span></span><span aria-hidden="true">→</span></a>`;
   ctx.main.innerHTML = `<div class="wrap page stack">
-    <a class="small" href="${u('/facilitator')}">← ${esc(tt('Кабинет фасилитатора', 'Facilitator space'))}</a>
     <div class="page-head"><h1>${esc(tt('Мои встречи', 'My meetings'))}</h1></div>
     <div class="row between"><div class="seg" role="tablist">${[['upcoming', tt(`Предстоящие · ${occ.upcoming.length}`, `Upcoming · ${occ.upcoming.length}`)], ['past', tt(`Прошедшие · ${occ.past.length}`, `Past · ${occ.past.length}`)]].map(([k, lab]) => `<a role="tab" aria-selected="${k === when}" href="${u('/facilitator/meetings?when=' + k)}" style="text-decoration:none;padding:8px 14px;border-radius:999px;font-weight:600;font-size:.9rem;${k === when ? 'background:var(--accent);color:var(--on-accent)' : ''}">${esc(lab)}</a>`).join('')}</div>
-      <a class="btn yellow sm" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a></div>
-    ${list.length ? `<div class="list">${list.map(row).join('')}</div>` : `<div class="empty stack" style="justify-items:center"><span>${esc(when === 'upcoming' ? tt('Предстоящих встреч нет.', 'No upcoming meetings.') : tt('Прошедших встреч пока нет.', 'No past meetings yet.'))}</span>${when === 'upcoming' ? `<a class="btn sm" href="${u('/facilitator/m/new')}">${esc(tt('Создать встречу', 'Create a meeting'))}</a>` : ''}</div>`}
+      <a class="btn sm y-line" href="${u('/facilitator/m/new')}">${ic.plus} ${esc(tt('Создать встречу', 'Create a meeting'))}</a></div>
+    ${list.length ? `<div class="list">${list.map(row).join('')}</div>` : `<div class="empty stack" style="justify-items:center"><span>${esc(when === 'upcoming' ? tt('Предстоящих встреч пока нет', 'No upcoming meetings yet') : tt('Прошедших встреч пока нет.', 'No past meetings yet.'))}</span></div>`}
     ${mts.meetings.length ? `<details class="more card-ui flat"><summary>${esc(tt(`Все мои встречи (с датами) · ${mts.meetings.length}`, `All my meetings (with dates) · ${mts.meetings.length}`))}</summary>
       <div class="list" style="margin-top:8px">${mts.meetings.map((m) => `<a class="item" href="${u('/facilitator/m/' + m.id)}"><span class="ic">${ic.calendar}</span><span class="body"><b>${esc(m.title)} ${demoPill(m.isDemo)}</b>${nextDateLine(m, new Date().toISOString())}</span>${mPill(m.status)}</a>`).join('')}</div></details>` : ''}
   </div>`;
@@ -540,7 +581,7 @@ export async function apply(ctx) {
           <div class="ch-body">${audioHtml(i)}${d.chapters ? d.chapters[i].map(block).join('') : `<p class="muted">${esc(tt('Текст этой главы пока не загружен.', 'This chapter’s text is not uploaded yet.'))}</p>`}
             <div class="row" style="margin-top:10px"><button class="btn ${done.has(i) ? 'light' : 'yellow'} sm" type="button" data-read="${i}" aria-pressed="${done.has(i)}">${esc(done.has(i) ? tt('Отметить как непрочитанную', 'Mark as unread') : tt('Я прочитал(а)', 'I have read it'))}</button></div></div></details>`).join('')}
           ${d.extra.map((x) => `<details class="chapter optional"><summary><span class="state" aria-hidden="true"></span><span class="grow"><b>${esc(x.title)}</b><br><span class="small muted">${esc(tt('Приложение · необязательно, на проверку не влияет', 'Appendix · optional, not part of the quiz'))}</span></span></summary><div class="ch-body">${x.blocks.map(block).join('')}</div></details>`).join('')}</div></section>
-      ${allRead ? `<section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" style="margin:0">${icons.check} ${esc(tt('Всё прочитано', 'All read'))}</h2>
+      ${allRead ? `<section class="card-ui stack" aria-labelledby="s2"><h2 id="s2" class="ic-h" style="margin:0">${icons.check}<span>${esc(tt('Всё прочитано', 'All read'))}</span></h2>
         <p class="muted" style="margin:0">${esc(a.quiz && a.quiz.passed ? tt('Проверка пройдена — осталось отправить заявку.', 'The quiz is passed — now send the application.') : tt('Теперь пройдите короткую проверку знаний по руководству. После неё — заявка.', 'Now take a short quiz on the guide. The application comes after it.'))}</p>
         <div><a class="btn yellow" href="${u('/facilitator/quiz')}">${esc(a.quiz && a.quiz.passed ? tt('К заявке', 'To the application') : tt('Пройти проверку', 'Take the quiz'))}</a></div></section>` : ''}`;
   } else body = facStatusBody(a);
@@ -663,12 +704,25 @@ export async function changes(ctx) {
   loading(ctx.main);
   let d; try { d = await api('/api/fac/changes'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
   if (!ctx.alive()) return;
-  const KIND = { added: [tt('Добавлена', 'Added'), ''], updated: [tt('Обновлена', 'Updated'), ''], removed: [tt('Удалена', 'Removed'), 'red'], version_revoked: [tt('Версия отозвана', 'Version withdrawn'), 'red'] };
+  api('/api/fac/changes/seen', { method: 'POST' }).catch(() => {}); // просмотрено — точка в кабинете гаснет
+  // Три вида событий (26.11.2026): новая карта — можно включить в подборку; новое изображение — новая версия той же карты
+  // (прежняя версия этим не запрещается); удалена карта или версия — печатную копию больше не использовать.
+  const KIND = {
+    added: [tt('Добавлена новая карта', 'New card added'), tt('Можно включить в подборку.', 'You can add it to a selection.'), ''],
+    updated: [tt('Обновлено изображение', 'Image updated'), tt('Новая версия той же карты. Прежняя версия при этом не запрещена.', 'A new version of the same card. The previous version is not withdrawn by this.'), ''],
+    removed: [tt('Карта удалена', 'Card removed'), tt('Прекратите использование её печатной копии.', 'Stop using its printed copy.'), 'red'],
+    version_revoked: [tt('Версия удалена', 'Version removed'), tt('Прекратите использование печатной копии этой версии.', 'Stop using the printed copy of this version.'), 'red'],
+  };
+  const ver = (x) => (x.kind === 'updated' && x.prevVersion ? `${esc(tt('было', 'was'))} ${esc(x.prevVersion)} → ${esc(tt('стало', 'now'))} ${esc(x.version)}` : x.version ? `${esc(tt('версия', 'version'))} ${esc(x.version)}` : '');
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
     <div class="page-head"><h1>${esc(tt('Изменения в коллекции', 'Collection changes'))}</h1>
-      <p class="sub">${esc(tt('Номер карты (DC-…) не меняется при обновлении изображения; версия — v1, v2… Если карта или версия удалена, исключите её распечатанную копию из своих материалов.', 'A card number (DC-…) stays the same when the image is updated; versions are v1, v2… If a card or a version is removed, please remove its printed copy from your materials.'))}</p></div>
-    ${d.changes.length ? `<ul class="cc-list">${d.changes.map((x) => `<li class="${KIND[x.kind][1]}"><span class="cc-k">${esc(KIND[x.kind][0])}</span>
-      <b>${x.current ? `<a href="${u('/library?card=' + encodeURIComponent(x.code))}">${esc(x.code)}</a>` : esc(x.code)}</b>${x.version ? ` <span class="small muted">${esc(x.version)}</span>` : ''}
-      <span class="small muted">${esc(fmtDate(x.at, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></li>`).join('')}</ul>` : `<p class="empty">${esc(tt('Изменений пока нет.', 'No changes yet.'))}</p>`}
+      <p class="sub">${esc(tt('Новые карты и версии, а также карты и версии, печатные копии которых больше нельзя использовать.', 'New cards and versions, and cards and versions whose printed copies can no longer be used.'))}</p></div>
+    <p class="notice">${esc(tt('Если карта или её версия удалена, исключите печатную копию из используемых материалов.', 'If a card or its version has been removed, take the printed copy out of the materials you use.'))}</p>
+    <p class="small muted" style="margin:0">${esc(tt('При небольших доработках изображения номер карты сохраняется. Новая работа получает новый номер.', 'Small refinements of the image keep the card number. A new work gets a new number.'))}</p>
+    ${d.changes.length ? `<ul class="cc-list">${d.changes.map((x) => { const k = KIND[x.kind] || [x.kind, '', '']; return `<li class="${k[2]}">
+      <span class="cc-k">${esc(k[0])}</span>
+      <b class="cc-n">${x.current ? `<a href="${u('/library?card=' + encodeURIComponent(x.code))}">№${esc(x.number)}</a>` : `№${esc(x.number)}`}</b>${ver(x) ? ` <span class="small">${ver(x)}</span>` : ''}
+      <span class="small muted cc-d">${esc(fmtDate(x.at, { day: 'numeric', month: 'long', year: 'numeric' }))}</span>
+      <span class="small cc-h">${esc(k[1])}${x.current ? ` <a href="${u('/library?card=' + encodeURIComponent(x.code))}">${esc(tt('Открыть карту →', 'Open the card →'))}</a>` : ''}</span></li>`; }).join('')}</ul>` : `<p class="empty">${esc(tt('Изменений пока нет.', 'No changes yet.'))}</p>`}
   </div>`;
 }
