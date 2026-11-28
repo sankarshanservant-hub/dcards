@@ -279,10 +279,16 @@ r.get('/api/c/:slug/qr.:fmt(svg|png)', wrap(async (req, res) => {
 }));
 
 // ---------- встречи (публично) ----------
+// Справочник городов для подписки на новые встречи — открытый, только названия (без пояса и координат).
+r.get('/api/places/search', (req, res) => res.json({ places: places.search(String(req.query.q || '').slice(0, 80), String(req.query.country || '').slice(0, 80)) }));
 r.get('/api/meetings/places', (req, res) => res.json({ places: meetings.places(req.showDemo) }));
 r.get('/api/meetings', (req, res) => res.json({ dates: meetings.upcoming({ country: req.query.country, city: req.query.city, mode: req.query.mode, language: req.query.language, from: req.query.from }, req.showDemo) }));
 // Подписки на новые встречи (22.11.2026): аккаунт или гость (этот браузер)
 const msubs = require('./meeting-subs');
+// Предварительные заявки на онлайн-занятия (28.11.2026): без регистрации; повтор — та же заявка.
+const workshops = require('./workshops');
+r.get('/api/workshops/mine', (req, res) => res.json({ request: workshops.mine(req.user, req.visitor) }));
+r.post('/api/workshops', (req, res) => { if (!req.user && !req.visitor) return bad(res, 'bad_visitor'); out(res, workshops.submit(req.user, req.visitor, req.body || {}), 201); });
 const subWho = (req, res) => { if (!req.user && !req.visitor) { bad(res, 'bad_visitor'); return false; } return true; };
 r.get('/api/meeting-subs', (req, res) => res.json({ subs: msubs.list(req.user, req.visitor) }));
 r.post('/api/meeting-subs', (req, res) => { if (subWho(req, res)) out(res, msubs.create(req.user, req.visitor, req.body || {}), 201); });
@@ -376,6 +382,12 @@ async function chatImage(buf) {
 }
 const roomGuard = (req, res, next) => {
   const room = req.params.room;
+  const owner = community.dmOwner(room);
+  if (owner) { // личная переписка с администрацией: сам участник или администратор
+    if (owner !== req.user.id && !req.has('admin')) return bad(res, 'forbidden', 403);
+    if (!db.prepare('SELECT id FROM users WHERE id = ?').get(owner)) return bad(res, 'not_found', 404);
+    return next();
+  }
   if (!community.ROOMS[room]) return bad(res, 'not_found', 404);
   if (!community.canRoom(room, req.has)) return bad(res, 'forbidden', 403);
   next();
@@ -386,7 +398,10 @@ r.get('/guide/dialogue-flow-guide.docx', (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.download(f, 'Dialogue Flow — руководство фасилитатора.docx');
 });
-r.get('/api/chats', auth.requireUser, (req, res) => res.json({ rooms: community.rooms(req.has, req.user.id, req.showDemo) }));
+r.get('/api/chats', auth.requireUser, (req, res) => res.json({ rooms: community.rooms(req.has, req.user.id, req.showDemo),
+  direct: { unread: community.dmUnread(req.user.id), ...(req.has('admin') ? { adminThreads: community.dmUnreadAdmin(req.user.id, req.showDemo) } : {}) } }));
+// Личная переписка с администрацией (28.11.2026): участник видит свою; сообщения администрации подписаны «Администрация».
+r.get('/api/messages', auth.requireUser, (req, res) => res.json({ room: 'dm-' + req.user.id, messages: community.dmForOwner(req.user.id, req.showDemo), unread: community.dmUnread(req.user.id) }));
 r.get('/api/chats/:room', auth.requireUser, roomGuard, (req, res) => res.json({
   messages: community.chat(req.params.room, req.showDemo, { id: req.user.id, isAdmin: req.has('admin') }),
   members: community.members(req.params.room), people: community.people(req.params.room, req.showDemo),
@@ -408,7 +423,7 @@ r.get('/api/admin/chat-log', auth.requireUser, (req, res) => (req.has('admin') ?
 r.get('/api/push', auth.requireUser, (req, res) => res.json({ ...push.status(req.user), demo: !!req.user.is_demo }));
 r.post('/api/push/subscribe', auth.requireUser, (req, res) => out(res, push.subscribe(req.user, (req.body || {}).subscription, req.get('user-agent') || '')));
 r.post('/api/push/unsubscribe', auth.requireUser, (req, res) => out(res, push.unsubscribe(req.user, (req.body || {}).endpoint)));
-r.put('/api/push/prefs', auth.requireUser, (req, res) => { const b = req.body || {}; const v = (x) => (typeof x === 'boolean' ? x : undefined); res.json({ prefs: push.setPrefs(req.user.id, { enabled: v(b.enabled), replies: v(b.replies), mentions: v(b.mentions), works: v(b.works) }) }); });
+r.put('/api/push/prefs', auth.requireUser, (req, res) => { const b = req.body || {}; const patch = {}; for (const k of ['enabled', ...push.CATS]) if (typeof b[k] === 'boolean') patch[k] = b[k]; res.json({ prefs: push.setPrefs(req.user.id, patch) }); });
 r.post('/api/push/test', auth.requireUser, wrap(async (req, res) => { const sent = await push.test(req.user); res.json({ sent }); }));
 r.post('/api/chats/:room', auth.requireUser, roomGuard, chatUpload.array('images', 6), wrap(async (req, res) => {
   const b = req.body || {};
@@ -775,6 +790,31 @@ admin.get('/overview', (req, res) => {
     comments: count('SELECT COUNT(*) AS n FROM comments WHERE deleted_at IS NULL'),
     mailConnected: mail.connected(), demoMode: config.demoMode,
   });
+});
+admin.get('/workshops', (req, res) => res.json(workshops.list(req.showDemo || !!req.user.is_demo)));
+admin.post('/workshops/:id/status', (req, res) => out(res, workshops.setStatus(req.params.id, String((req.body || {}).status || ''), req.user.id)));
+// «Требует внимания»: только то, что ждёт решения администратора, — счётчики для стартового экрана и меню разделов.
+admin.get('/attention', (req, res) => {
+  const sc = demoScope(req); const demo = sc !== false; const dw = (col) => (sc === false ? `${col} = 0` : sc === 'only' ? `${col} = 1` : '1=1');
+  const n = (sql) => db.prepare(sql).get().n;
+  res.json({
+    works: n(`SELECT COUNT(*) AS n FROM works WHERE recommended_at IS NOT NULL AND status IN ('submitted','discussion','recommended') AND ${dw('is_demo')}`),
+    facApps: n(`SELECT COUNT(*) AS n FROM fac_applications WHERE status = 'submitted' AND manual_review = 0 AND ${dw('is_demo')}`),
+    facManual: n(`SELECT COUNT(*) AS n FROM fac_applications WHERE status = 'submitted' AND manual_review = 1 AND ${dw('is_demo')}`),
+    curApps: n(`SELECT COUNT(*) AS n FROM curator_applications WHERE status = 'submitted' AND ${dw('is_demo')}`),
+    decks: n(`SELECT COUNT(*) AS n FROM print_requests WHERE status = 'new' AND ${dw('is_demo')}`),
+    messages: community.dmUnreadAdmin(req.user.id, demo),
+    workshops: workshops.newCount(demo),
+  });
+});
+// «Сообщения»: личные переписки участников с администрацией. Сам текст — через /api/chats/dm-<id> (общие механизмы чата).
+admin.get('/messages', (req, res) => res.json({ threads: community.dmThreads(req.user.id, req.showDemo || !!req.user.is_demo).filter((t) => (req.user.is_demo ? t.isDemo : true)) }));
+admin.get('/messages/:uid', (req, res) => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(req.params.uid));
+  if (!u || (req.user.is_demo && !u.is_demo)) return bad(res, 'not_found', 404);
+  const room = 'dm-' + u.id;
+  res.json({ user: { id: u.id, name: u.public_name || u.name, roles: community.ROOMS && db.prepare('SELECT role FROM user_roles WHERE user_id = ?').all(u.id).map((x) => x.role), email: u.email, createdAt: u.created_at },
+    room, messages: community.chat(room, true, { id: req.user.id, isAdmin: true }).map((m) => ({ ...m, fromAdmin: m.userId !== u.id })) });
 });
 admin.get('/users', (req, res) => {
   const rows = db.prepare(`SELECT * FROM users WHERE ${req.user.is_demo ? 'is_demo = 1' : req.showDemo ? '1=1' : 'is_demo = 0'} ORDER BY is_demo, id`).all();

@@ -21,6 +21,8 @@ import * as xch from './views/exchange.js';
 import * as personal from './personal.js';
 import * as pc from './views/postcard.js';
 import * as solo from './views/solo.js';
+import * as msgs from './views/messages.js';
+import * as ws from './views/workshops.js';
 
 const main = document.getElementById('app');
 let renderToken = 0;
@@ -92,7 +94,10 @@ const routes = [
   [/^\/team\/(general|curators|facilitators)\/?$/, team.chat],
   [/^\/print\/?$/, team.print],
   [/^\/admin\/?$/, adm.overview],
-  [/^\/admin\/(users|works|applications|meetings|cards|comments|criteria|guide|letters|terms|removals)\/?$/, adm.section],
+  [/^\/admin\/(users|works|applications|meetings|cards|comments|criteria|guide|letters|terms|removals|messages|workshops|decks|settings)\/?$/, adm.section],
+  [/^\/admin\/messages\/(\d+)\/?$/, (ctx, id) => adm.section(ctx, 'messages', id)],
+  [/^\/me\/messages\/?$/, msgs.mine],
+  [/^\/workshops\/?$/, ws.page],
 ];
 
 const appPath = () => location.pathname.slice(BASE.length) || '/';
@@ -117,7 +122,10 @@ const PARENTS = [
   [/^\/me\/(exchanges|collections)/, '/me', 'Профиль', 'Profile'],
   [/^\/cards\//, '/library', 'Галерея', 'Gallery'],
   [/^\/m\/\d/, '/meetings', 'Ко встречам', 'To meetings'],
+  [/^\/admin\/messages\/\d/, '/admin/messages', 'Сообщения', 'Messages'],
   [/^\/admin\/./, '/admin', 'Кабинет администратора', 'Admin space'],
+  [/^\/me\/messages/, '/me', 'Профиль', 'Profile'],
+  [/^\/workshops/, '/artist/about', 'Для авторов', 'For authors'],
   [/^\/facilitator\/apply/, '/facilitator/about', 'Провести встречу', 'Host a meeting'],
   [/^\/facilitator\/changes/, '/facilitator', 'Кабинет фасилитатора', 'Facilitator space'],
 ];
@@ -127,12 +135,19 @@ const backBar = (() => { const el = document.createElement('div'); el.id = 'back
 function addBackLink(path, ctx) {
   backBar.innerHTML = '';
   if (!ctx.alive() || path === '/' || document.body.classList.contains('live-mode') || main.querySelector('[data-back], [data-home], [data-local]')) return;
-  // у страницы своя ссылка «← …» наверху — её не дублируем стрелкой, остаётся домик
-  const own = [...main.querySelectorAll('a, button')].slice(0, 4).some((x) => x.textContent.trim().startsWith('←'));
+  // Единая стрелка «Назад» (26.11.2026): своя ссылка страницы «← …» наверху заменяется стандартной стрелкой без подписи
+  // (подпись остаётся для экранного диктора) и ведёт туда же; при переходе внутри приложения — шаг назад по истории.
+  const ownEl = [...main.querySelectorAll('a, button')].slice(0, 4).find((x) => x.tagName === 'A' && x.textContent.trim().startsWith('←'));
+  const own = !!ownEl;
   const par = PARENTS.find(([re]) => re.test(path));
   let back = '';
-  if (!own && depth() > 0) back = `<a class="nav-ic" data-back href="${u(par ? par[1] : '/')}" aria-label="${esc(tt('Назад', 'Back'))}" title="${esc(tt('Назад', 'Back'))}">${ic.arrowLeft}</a>`;
-  else if (!own && par) back = `<a class="nav-ic" data-local href="${u(par[1])}" aria-label="${esc(tt(par[2], par[3]))}" title="${esc(tt(par[2], par[3]))}">${ic.arrowLeft}</a>`;
+  if (ownEl) {
+    const label = ownEl.textContent.trim().replace(/^←\s*/, '') || tt('Назад', 'Back');
+    back = `<a class="nav-ic" ${depth() > 0 ? 'data-back' : 'data-local'} href="${esc(ownEl.getAttribute('href'))}" aria-label="${esc(label)}">${ic.arrowLeft}</a>`;
+    const host = ownEl.parentElement; ownEl.remove();
+    if (host && host !== main && !host.textContent.trim() && !host.querySelector('img, button, input')) host.remove();
+  } else if (depth() > 0) back = `<a class="nav-ic" data-back href="${u(par ? par[1] : '/')}" aria-label="${esc(tt('Назад', 'Back'))}">${ic.arrowLeft}</a>`;
+  else if (par) back = `<a class="nav-ic" data-local href="${u(par[1])}" aria-label="${esc(tt(par[2], par[3]))}">${ic.arrowLeft}</a>`;
   // «Назад» ведёт туда же, куда домик (на главную), — оставляем только «Назад» (22.11.2026)
   const backHome = back && (back.includes('data-back') ? prevPath === '/' : par && par[1] === '/');
   const home = backHome ? '' : `<a class="nav-ic" data-home href="${u('/')}" aria-label="${esc(tt('На главную', 'Home'))}" title="${esc(tt('На главную', 'Home'))}">${ic.home}</a>`;
@@ -228,7 +243,7 @@ export async function refreshUnread(force = false) {
   if (!force && Date.now() - unreadAt < 30000) return;
   if (navigator.onLine === false) return;
   unreadAt = Date.now();
-  try { const d = await api('/api/chats'); session.unread = d.rooms.reduce((n, r) => n + (r.unread || 0), 0); } catch { /* без счётчика */ }
+  try { const d = await api('/api/chats'); session.unread = d.rooms.reduce((n, r) => n + (r.unread || 0), 0); session.dmUnread = (d.direct && d.direct.unread) || 0; session.adminAttention = (d.direct && d.direct.adminThreads) || 0; } catch { /* без счётчика */ }
   draw();
 }
 window.dcRefreshUnread = refreshUnread;
@@ -336,33 +351,35 @@ function openMenu() {
   // Рабочие кабинеты — только те, что доступны этому человеку. Администратор входит через обычный вход; в демо его кнопка — на экране «Демо-роли».
   const cabinets = [];
   if (s) {
+    // администратору — его кабинет первым (26.11.2026)
+    if (s.roles.includes('admin')) cabinets.push(mi('/admin', ic.shield, 'Кабинет администратора', 'Admin space', '', '', true, session.adminAttention ? String(session.adminAttention) : ''));
     if (hasRole('artist')) cabinets.push(mi('/artist', ic.brush, 'Кабинет автора', 'Author space'));
     if (hasRole('facilitator')) cabinets.push(mi('/facilitator', ic.qr, 'Кабинет фасилитатора', 'Facilitator space'));
     if (hasRole('curator')) cabinets.push(mi('/curator', ic.check, 'Кабинет куратора', 'Curator space'));
-    if (s.roles.includes('admin')) cabinets.push(mi('/admin', ic.shield, 'Кабинет администратора', 'Admin space', '', '', true));
   }
   const demoRoles = [['guest', 'Участник', 'Participant'], ['artist', 'Автор', 'Author'], ['curator', 'Куратор', 'Curator'], ['facilitator', 'Фасилитатор', 'Facilitator']];
   el.innerHTML = `<div class="panel" aria-label="${esc(tt('Меню', 'Menu'))}">
     <div class="head">
       ${s ? `<span class="ava">${avatar(s.publicName)}</span><div class="who"><b>${esc(s.publicName)}</b><span>${esc(rolesText(s.roles))}${s.isDemo ? ' · ' + esc(tt('демо', 'demo')) : ''}</span></div>`
-        : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Иллюстрации для живого разговора', 'Illustrations for real conversation'))}</span></div>`}
+        : `<div class="who"><b>Dialogue Cards</b><span>${esc(tt('Гость', 'Guest'))}</span></div>`}
       <button class="icon-btn" type="button" data-close aria-label="${esc(tt('Закрыть', 'Close'))}">${ic.close}</button>
     </div>
-    ${mi('/start', ic.book || ic.cards, 'Знакомство с проектом', 'Discover the project')}
     ${mi('/library', ic.cards, 'Галерея карт', 'Card gallery')}
     ${mi('/games', ic.cube, 'Играть', 'Play')}
     ${mi('/meetings', ic.calendar, 'Встречи Dialogue Flow', 'Dialogue Flow meetings')}
-    ${mi('/start#join', ic.people, 'Участвовать', 'Take part')}
-    ${mi('/chats', ic.chats, 'Общение в чатах', 'Chats', '', '', false, session.unread ? String(session.unread) : '')}
-    ${s ? `${cabinets.length ? `<div class="sec">${esc(tt('Мои кабинеты', 'My spaces'))}</div>${cabinets.join('')}` : ''}
-      <div class="sec">${esc(tt('Аккаунт', 'Account'))}</div>
-      ${mi('/me', ic.user, 'Профиль', 'Profile')}
+    ${mi('/about', ic.book || ic.cards, 'О проекте', 'About the project')}
+    ${mi('/start#join', ic.people, 'Участвовать в проекте', 'Take part in the project')}
+    ${s ? `<div class="sec">${esc(tt('Моё', 'Mine'))}</div>
       ${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}
       ${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
+      ${mi('/chats', ic.chats, 'Общение в чатах', 'Chats', '', '', false, session.unread ? String(session.unread) : '')}
+      ${cabinets.length ? `<div class="sec">${esc(tt('Мои кабинеты', 'My spaces'))}</div>${cabinets.join('')}` : ''}
+      <div class="sec">${esc(tt('Аккаунт', 'Account'))}</div>
+      ${mi('/me', ic.user, 'Профиль', 'Profile')}
       ${mi('/me/notifications', ic.bell, 'Уведомления', 'Notifications')}
-`
+      ${mi('/me/messages', ic.mail, 'Написать администрации', 'Contact the administration', '', '', false, session.dmUnread ? String(session.dmUnread) : '')}`
     : `<div class="sec">${esc(tt('Этот браузер', 'This browser'))}</div>${mi('/me/exchanges', ic.chats, 'Мои обмены', 'My exchanges')}${mi('/me/collections', ic.cards, 'Мои подборки', 'My collections')}
-      <div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}`}
+      <div class="sec">${esc(tt('Вход', 'Sign in'))}</div>${mi('/login', ic.user, 'Войти', 'Sign in', '', '', true)}${mi('/me/messages', ic.mail, 'Написать администрации', 'Contact the administration')}`}
     ${session.config.demoMode ? `<div class="demo-box">
       <p>${esc(tt('Демо-режим прототипа: войдите под тестовой ролью, чтобы пройти её путь. Права проверяются на сервере. Демо-данные помечены и не смешиваются с настоящими.', 'Prototype demo mode: sign in as a test role to walk through its path. Permissions are checked on the server. Demo data is labelled and kept apart from real data.'))}</p>
       <div class="chips">${demoRoles.map(([k, ru, en]) => `<button class="chip" type="button" data-demo="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>

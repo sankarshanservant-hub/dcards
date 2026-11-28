@@ -410,6 +410,8 @@ addColumn('works', 'recommended_at', 'TEXT');
 addColumn('works', 'recommended_by', 'INTEGER REFERENCES users(id)');
 addColumn('works', 'recommended_type', 'TEXT');
 addColumn('notify_prefs', 'works', 'INTEGER NOT NULL DEFAULT 1');
+// категории уведомлений (26.11.2026): сообщения администрации, обмены, встречи, заявки, коллекция, кураторам, администратору
+for (const c of ['direct', 'exchanges', 'meetings', 'applications', 'collection', 'curation', 'admin']) addColumn('notify_prefs', c, 'INTEGER NOT NULL DEFAULT 1');
 addColumn('chat_messages', 'forward_of', 'INTEGER');
 addColumn('registrations', 'user_id', 'INTEGER REFERENCES users(id)');
 addColumn('registrations', 'visitor_id', 'TEXT'); // пересланное из общего чата: ссылка на оригинал

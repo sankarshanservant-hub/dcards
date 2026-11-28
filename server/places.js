@@ -112,4 +112,16 @@ function suggest(k, cc) {
   return out;
 }
 
-module.exports = { resolve, countryCode, load };
+/**
+ * Город для подписки «сообщить о встрече в моём городе» — во всём справочнике, а не только среди городов со встречами.
+ * Название — как ввёл человек (справочник местами хранит устаревшие русские имена); страна — из справочника.
+ * → [{ city, country }] (несколько — если такой город есть в разных странах).
+ */
+function search(city, country = '') {
+  const r = resolve({ city, country });
+  const list = r.status === 'ok' ? [r.place] : (r.options || []);
+  const seen = new Set();
+  return list.map((p) => ({ city: p.city, country: p.country })).filter((p) => { const k = p.city + '|' + p.country; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+module.exports = { resolve, countryCode, load, search };

@@ -1734,3 +1734,76 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .cc-k { font-weight: 600; min-width: 9em; }
 .fac-removed { display: block; text-decoration: none; }
 .rm-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+/* 28.11 главная, галерея, стрелка «Назад», кабинет администратора, сообщения, онлайн-занятия */
+/* под строкой «Назад / На главную» — меньший верхний отступ страницы: заголовок и подсказка ближе к стрелке */
+#backbar:not(:empty) + main > .page:first-child { padding-top: 8px; }
+#backbar:not(:empty) + main > .page:first-child > #pick > .pick-mode { margin-top: 0; }
+/* главная: вопрос, подсказка и три карты — одним блоком; две кнопки чуть уже, с полями от краёв телефона */
+.hero.home .home-axis .trio { margin-top: calc(var(--g-out) * .32); padding-top: 14px; }
+.home-acts { max-width: 340px; }
+@media (max-width: 420px) { .home-acts { width: calc(100% - 28px); } }
+/* единая стрелка: одинаковый размер и цвет на всех экранах */
+.back-bar .nav-ic { color: var(--text-2); }
+/* кабинет администратора: меню разделов слева (компьютер) / строка сверху (телефон) */
+.adm-layout { display: grid; gap: 16px; }
+.adm-main { min-width: 0; }
+.adm-main > h1 { margin-top: 0; }
+.adm-side { min-width: 0; }
+.adm-groups { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; flex-wrap: wrap; }
+.adm-gl { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; text-decoration: none; color: var(--text); font-weight: 600; font-size: .95rem; white-space: nowrap; }
+.adm-gl.on { border-color: var(--accent); color: var(--accent-text); }
+.adm-subs { display: none; }
+.adm-subs a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; text-decoration: none; color: var(--text-2); font-size: .92rem; white-space: nowrap; }
+.adm-subs a.on { color: var(--text); background: var(--surface-3); font-weight: 600; }
+.adm-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: #1a1a1a; font-size: .75rem; font-weight: 700; display: inline-grid; place-items: center; }
+.adm-badge[hidden] { display: none; }
+@media (max-width: 899px) {
+  .adm-groups { flex-wrap: nowrap; }
+  .adm-subs.open { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; order: 99; flex: 0 0 100%; }
+  .adm-groups { flex-wrap: wrap; }
+}
+@media (min-width: 900px) {
+  .adm-layout { grid-template-columns: 230px minmax(0, 1fr); align-items: start; gap: 28px; }
+  .adm-side { position: sticky; top: 76px; }
+  .adm-groups { flex-direction: column; flex-wrap: nowrap; gap: 2px; overflow: visible; }
+  .adm-gl { border: 0; border-radius: 10px; padding: 9px 12px; justify-content: space-between; }
+  .adm-gl.on { background: var(--surface-3); color: var(--text); }
+  .adm-subs.open { display: grid; gap: 1px; padding: 2px 0 8px 12px; }
+  .adm-subs a { justify-content: space-between; }
+}
+.adm-rows .item { align-items: center; }
+.adm-rows .item.unread { border-color: var(--accent); }
+.adm-count { min-width: 40px; height: 40px; border-radius: 12px; background: var(--surface-3); display: grid; place-items: center; font-weight: 800; font-size: 1.1rem; }
+/* переписка с администрацией */
+.dm-page { gap: 12px; }
+.dm-list { display: grid; gap: 10px; max-height: min(60vh, 620px); overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.dm-empty { margin: 4px 0; }
+.dm-msg { justify-self: start; max-width: min(560px, 88%); background: var(--surface); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 8px 12px; overflow-wrap: anywhere; }
+.dm-msg.me { justify-self: end; background: var(--surface-3); border-radius: 14px 14px 4px 14px; }
+.dm-msg p { margin: 4px 0 0; white-space: pre-wrap; }
+.dm-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: .85rem; }
+.dm-head time { color: var(--text-2); }
+.dm-form { display: grid; gap: 8px; }
+.dm-form textarea { width: 100%; font-size: 16px; }
+.dm-acts { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.dm-attach svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.dm-files { display: flex; gap: 8px; flex-wrap: wrap; }
+.dm-file { position: relative; }
+.dm-file img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
+.dm-file .icon-btn { position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; }
+/* онлайн-занятия */
+.ws-page { gap: 14px; }
+.ws-page h2 { margin: 6px 0 0; }
+.ws-page p { margin: 0; line-height: 1.55; }
+.ws-list { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; line-height: 1.5; }
+.ws-cta { display: grid; gap: 8px; justify-items: start; margin-top: 4px; }
+.ws-form { display: grid; gap: 12px; }
+.ws-form input, .ws-form textarea { font-size: 16px; }
+.ws-invite { margin: 4px 0 0; }
+/* «Сообщить о встрече в моём городе» */
+.city-alert { gap: 10px; text-align: left; width: 100%; max-width: 560px; }
+.city-hit { gap: 8px; align-items: center; flex-wrap: wrap; }
+.join-row { display: flex; }
+.join-game svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+/* «Получать все уведомления» */
+.switch-row.all-row { border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px; }

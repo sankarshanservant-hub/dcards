@@ -5,6 +5,7 @@ import { esc, tt, u, api, upload, errorText, toast, fmtDate } from '../util.js';
 import { openViewer } from '../viewer.js';
 import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill, timeline, stepsBar, ic, hasRole } from '../ui.js';
 import { loadTerms, resetTermsCache, stepHtml, miniHtml, openFull, accept, fullHtml } from '../author-terms.js';
+import { inviteHtml } from './workshops.js';
 
 const critHtml = (c) => `<li><b>${c.number}.</b>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временная формулировка', 'placeholder wording'))}</span>` : ''}</li>`;
 const reasonsHtml = (d) => (d && d.criteria.length ? `<ul class="reasons">${d.criteria.map(critHtml).join('')}</ul>` : '')
@@ -198,7 +199,7 @@ export async function submit(ctx) {
             <li>${esc(tt('Вертикальное изображение, соотношение сторон 7:12.', 'A vertical image with a 7:12 aspect ratio.'))}</li>
             <li>${esc(tt('Формат печатной карты — 70 × 120 мм.', 'The printed card is 70 × 120 mm.'))}</li></ul>
           <p class="small muted" style="margin:0">${esc(tt('Имя автора под картами берётся из профиля. Его можно изменить там.', 'The author name under the cards comes from your profile. You can change it there.'))}</p>
-          <label class="check"><input type="checkbox" id="gok" ${guideOk ? 'checked' : ''}> <span>${esc(tt('Я ознакомился(ась) с кратким руководством', 'I have read the short guide'))}</span></label></section>
+          ${inviteHtml()}<label class="check"><input type="checkbox" id="gok" ${guideOk ? 'checked' : ''}> <span>${esc(tt('Я ознакомился(ась) с кратким руководством', 'I have read the short guide'))}</span></label></section>
         <section class="card-ui flat stack" aria-labelledby="g-full"><h2 id="g-full" style="margin:0">${esc(tt('Полное руководство', 'Full guide'))}</h2>
           ${gAssets && gAssets.pdf ? `<p style="margin:0"><a class="btn sm light" href="${u('/guides/artist/guide.pdf')}" target="_blank" rel="noopener">${esc(tt('Открыть полное руководство (PDF)', 'Open the full guide (PDF)'))}</a></p>` : `<p class="small muted" style="margin:0">${esc(tt('Появится здесь, когда владелец проекта его передаст.', 'It will appear here once the project owner provides it.'))}</p>`}</section>
         <div class="row"><button class="btn light" type="button" id="back">${esc(tt('Назад', 'Back'))}</button><button class="btn yellow" type="button" id="next" ${guideOk ? '' : 'disabled'}>${esc(tt('Дальше', 'Next'))}</button></div>`;
@@ -356,5 +357,6 @@ export function about(ctx) {
       <li>${esc(tt('Статус каждой работы виден в кабинете автора.', 'The status of each work is shown in the author space.'))}</li>
     </ol>
     <div class="row"><a class="btn yellow" href="${u('/artist/submit')}">${esc(tt('Предложить иллюстрацию', 'Suggest an illustration'))}</a></div>
+    ${inviteHtml()}
   </div>`;
 }

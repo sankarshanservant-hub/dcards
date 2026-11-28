@@ -4,6 +4,10 @@ import { session, needLogin, loading, failed, ic } from '../ui.js';
 import { pushSupport, currentSubscription, enablePush, disablePush } from '../push.js';
 
 const ROOM_TITLE = { general: ['Общий чат', 'General chat'], curators: ['Чат кураторов', 'Curators’ chat'], facilitators: ['Чат фасилитаторов', 'Facilitators’ chat'] };
+/** Категории уведомлений — сервер присылает только применимые человеку (по ролям). */
+const CAT_LABEL = { replies: ['Ответы на мои сообщения', 'Replies to my messages'], mentions: ['Упоминания меня', 'Mentions of me'], direct: ['Сообщения администрации', 'Messages from the team'],
+  exchanges: ['Ответы друзей и сторис', 'Friends’ answers and Stories'], meetings: ['Встречи и записи', 'Meetings and sign-ups'], applications: ['Мои заявки', 'My applications'],
+  works: ['Решения по моим работам', 'Decisions on my works'], collection: ['Изменения в коллекции', 'Collection changes'], curation: ['Работы на рассмотрении', 'Works in review'], admin: ['Задачи администратора', 'Administrator tasks'] };
 export const MODE_LABEL = { all: ['Все сообщения', 'All messages'], mentions: ['Ответы и упоминания', 'Replies and mentions'], none: ['Без уведомлений', 'No notifications'] };
 
 export async function settings(ctx) {
@@ -25,26 +29,24 @@ export async function settings(ctx) {
         <li>${esc(tt('Нажмите «Поделиться» и выберите «На экран “Домой”».', 'Tap Share and choose “Add to Home Screen”.'))}</li>
         <li>${esc(tt('Откройте D-Cards с иконки на экране «Домой», войдите и включите уведомления на этой странице.', 'Open D-Cards from the Home Screen icon, sign in and turn on notifications on this page.'))}</li></ol>
       <span class="small muted">${esc(tt('Нужна iOS или iPadOS 16.4 или новее. Открытая вкладка Safari сама по себе уведомления не получает.', 'Requires iOS or iPadOS 16.4 or later. A Safari tab on its own does not receive notifications.'))}</span></div>`;
-    else if (support === 'unsupported') status = `<div class="notice">${esc(tt('Этот браузер не поддерживает push-уведомления. Общение работает и без них: непрочитанные сообщения видны в разделе «Общение».', 'This browser does not support push notifications. Chats work without them: unread messages are shown in Community.'))}</div>`;
-    else if (support === 'denied') status = `<div class="notice">${esc(tt('Уведомления для этого сайта запрещены в настройках браузера. Разрешите их там, затем вернитесь на эту страницу. Сами мы запрос повторять не будем.', 'Notifications for this site are blocked in your browser settings. Allow them there and come back to this page. We will not ask again on our own.'))}</div>`;
+    else if (support === 'unsupported') status = `<div class="notice">${esc(tt('Этот браузер не поддерживает уведомления на устройство. События видны в колокольчике.', 'This browser does not support device notifications. Events are shown under the bell.'))}</div>`;
+    else if (support === 'denied') status = `<div class="notice">${esc(tt('Разрешите уведомления в настройках браузера или устройства', 'Allow notifications in your browser or device settings'))}</div>`;
     else if (onHere) status = `<div class="notice green stack" style="gap:8px"><b>${ic.check} ${esc(tt('Уведомления включены на этом устройстве', 'Notifications are on for this device'))}</b>
       <div class="row"><button class="btn sm" type="button" id="ptest" ${busy ? 'disabled' : ''}>${esc(tt('Отправить проверочное', 'Send a test'))}</button><button class="btn light sm" type="button" id="poff" ${busy ? 'disabled' : ''}>${esc(tt('Выключить на этом устройстве', 'Turn off on this device'))}</button></div></div>`;
     else status = `<div class="card-ui flat stack" style="gap:10px"><p style="margin:0">${esc(tt('Включите уведомления, чтобы не пропустить ответ на своё сообщение или упоминание. Браузер спросит разрешение — подтвердите его.', 'Turn on notifications so you do not miss a reply or a mention. Your browser will ask for permission — please allow it.'))}</p>
       <div><button class="btn yellow" type="button" id="pon" ${busy ? 'disabled aria-busy="true"' : ''}>${ic.bell} ${esc(busy ? tt('Включаем…', 'Turning on…') : tt('Включить уведомления', 'Turn on notifications'))}</button></div></div>`;
-    const p = st.prefs;
-    const sw = (k, ru, en, dis = false) => `<label class="switch-row"><span>${esc(tt(ru, en))}</span><input type="checkbox" role="switch" data-pref="${k}" ${p[k] ? 'checked' : ''} ${dis ? 'disabled' : ''}></label>`;
+    const p = st.prefs; const cats = st.categories || [];
+    const isOn = (k) => !!p.enabled && !!p[k];
+    const onN = cats.filter(isOn).length;
+    const sw = (k) => `<label class="switch-row"><span>${esc(tt(...CAT_LABEL[k]))}</span><input type="checkbox" role="switch" data-pref="${k}" ${isOn(k) ? 'checked' : ''}></label>`;
     ctx.main.innerHTML = `<div class="wrap page narrow stack">
-      <div class="page-head"><h1>${esc(tt('Уведомления', 'Notifications'))}</h1><p class="sub">${esc(tt('Уведомления о сообщениях приходят на телефон или компьютер. По email о сообщениях мы не пишем.', 'Message notifications come to your phone or computer. We do not email you about messages.'))}</p></div>
+      <div class="page-head"><h1>${esc(tt('Уведомления', 'Notifications'))}</h1></div>
       ${status}
       <p class="form-error" role="alert" id="perr">${esc(msg)}</p>
       ${st.devices && !onHere ? `<p class="small muted" style="margin:0">${esc(tt(`Включено на других устройствах: ${st.devices}.`, `On for other devices: ${st.devices}.`))}</p>` : ''}
       <section class="card-ui flat stack" style="gap:4px"><h2 style="margin:0 0 6px;font-size:1.1rem">${esc(tt('Что присылать', 'What to send'))}</h2>
-        ${sw('enabled', 'Получать уведомления', 'Receive notifications')}
-        ${sw('replies', 'Ответы на мои сообщения', 'Replies to my messages', !p.enabled)}
-        ${sw('mentions', 'Упоминания меня', 'Mentions of me', !p.enabled)}
-        ${sw('works', 'Решения по моим работам', 'Decisions on my works', !p.enabled)}
-        <label class="switch-row muted"><span>${esc(tt('Личные сообщения', 'Direct messages'))}<small>${esc(tt('Личной переписки пока нет — это следующий этап.', 'There are no direct messages yet — this is the next stage.'))}</small></span><input type="checkbox" role="switch" disabled></label>
-        <p class="small muted" style="margin:6px 0 0">${esc(tt('Если сообщение — и ответ, и упоминание, придёт одно уведомление. Настройки действуют, когда уведомления включены на устройстве.', 'A message that is both a reply and a mention sends one notification. Settings apply once notifications are on for a device.'))}</p></section>
+        <label class="switch-row all-row"><span><b>${esc(tt('Получать все уведомления', 'Receive all notifications'))}</b></span><input type="checkbox" id="pall" ${onN === cats.length && cats.length ? 'checked' : ''}></label>
+        ${cats.map(sw).join('')}</section>
       <section class="card-ui flat stack" style="gap:8px"><h2 style="margin:0 0 4px;font-size:1.1rem">${esc(tt('Чаты', 'Chats'))}</h2>
         ${rooms.map((r) => `<label class="field small">${r.closed ? ic.lock : ''} ${esc(tt(...ROOM_TITLE[r.room]))}<select data-room="${r.room}">${Object.entries(MODE_LABEL).map(([k, v]) => `<option value="${k}" ${r.notify === k ? 'selected' : ''}>${esc(tt(...v))}</option>`).join('')}</select></label>`).join('')}
         <p class="small muted" style="margin:0">${esc(tt('По умолчанию — ответы и упоминания; «Все сообщения» включайте для чатов, где важно каждое сообщение.', 'Default: replies and mentions. Choose “All messages” for chats where every message matters.'))}</p></section>
@@ -73,9 +75,12 @@ export async function settings(ctx) {
       try { const r = await api('/api/push/test', { method: 'POST' }); toast(r.sent ? tt('Отправлено. Уведомление должно появиться в течение минуты.', 'Sent. The notification should appear within a minute.') : tt('Не удалось доставить: подписка не принята сервисом уведомлений.', 'Could not deliver: the notification service did not accept the subscription.')); }
       catch (e) { toast(errorText(e)); }
     });
-    ctx.main.querySelectorAll('[data-pref]').forEach((c) => c.addEventListener('change', async () => {
-      try { ({ prefs: st.prefs } = await api('/api/push/prefs', { method: 'PUT', body: { [c.dataset.pref]: c.checked } })); draw(); }
-      catch (e) { c.checked = !c.checked; toast(errorText(e)); }
+    const all = $('#pall'); const cats = st.categories || [];
+    if (all) { const n = cats.filter((k) => st.prefs.enabled && st.prefs[k]).length; all.indeterminate = n > 0 && n < cats.length; }
+    const save = async (body, revert) => { try { ({ prefs: st.prefs } = await api('/api/push/prefs', { method: 'PUT', body })); draw(); } catch (e) { revert(); toast(errorText(e)); } };
+    if (all) all.addEventListener('change', () => { const v = all.checked; save({ enabled: true, ...Object.fromEntries(cats.map((k) => [k, v])) }, () => { all.checked = !v; }); });
+    ctx.main.querySelectorAll('[data-pref]').forEach((c) => c.addEventListener('change', () => {
+      save({ enabled: true, ...Object.fromEntries(cats.map((k) => [k, st.prefs.enabled && st.prefs[k]])), [c.dataset.pref]: c.checked }, () => { c.checked = !c.checked; });
     }));
     ctx.main.querySelectorAll('[data-room]').forEach((s) => s.addEventListener('change', async () => {
       try { await api(`/api/chats/${s.dataset.room}/notify`, { method: 'PUT', body: { mode: s.value } }); toast(tt('Сохранено', 'Saved')); } catch (e) { toast(errorText(e)); }

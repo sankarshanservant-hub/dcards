@@ -8,7 +8,7 @@ import { openViewer } from '../viewer.js';
 import * as personal from '../personal.js';
 
 export const SOLO_GAMES = [
-  { key: 'story', path: '/group/solo/story', ru: 'История из трёх карт', en: 'A story from three cards', dru: 'Три карты по очереди: первая начинает историю, вторая меняет её ход, третья помогает закончить.', den: 'Three cards in turn: the first starts a story, the second changes its course, the third helps end it.' },
+  { key: 'story', path: '/group/solo/story', ru: 'История из трёх карт', en: 'A story from three cards', dru: 'Открой три разные карты одну за другой и сочини по ним историю.', den: 'Open three different cards one after another and make up a story from them.' },
   { key: 'connect', path: '/group/solo/connect', ru: 'Что их связывает?', en: 'What connects them?', dru: 'Две карты рядом. Найди между ними связь — а потом ещё одну.', den: 'Two cards side by side. Find a connection between them — and then another one.' },
   { key: 'eagle', path: '/group/solo/eagle', ru: 'Глаз-алмаз', en: 'Eagle Eye', dru: 'Рассмотри карту. Когда она скроется, ответь на вопрос и проверь свою наблюдательность.', den: 'Look at the card. When it disappears, answer the question and test how observant you are.' },
   { key: 'imagine', path: '/group/solo/imagine', ru: 'Придумай ассоциации', en: 'Find associations', dru: 'Найди на карте две детали, придумай к ним ассоциации и соедини по одной в новый образ.', den: 'Find two details on the card, come up with associations and combine one from each into a new image.' },

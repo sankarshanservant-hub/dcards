@@ -685,32 +685,14 @@ export function openViewer(opts) {
           <div><dt>${esc(t('viewer.code'))}</dt><dd>${esc(code)}</dd></div>
           <div><dt>${esc(t('viewer.author'))}</dt><dd>${author}</dd></div>
           ${info && info.publishedAt ? `<div><dt>${esc(t('viewer.published'))}</dt><dd>${esc(dateLabel(info.publishedAt))}</dd></div>` : ''}
-          ${info && info.version ? `<div><dt>${esc(tt('Версия', 'Version'))}</dt><dd>${esc(info.version)}</dd></div>` : ''}
         </dl>
         ${countLine}
-        ${session.user && (session.user.roles || []).some((r) => r === 'facilitator' || r === 'admin') ? `<button class="btn light sm" type="button" data-printnum>${esc(tt('Сохранить для печати с номером', 'Save for printing with the number'))}</button>
-          <p class="small muted" style="margin:4px 0 0">${esc(tt('Номер карты и версия — на поле под иллюстрацией, сам файл не меняется.', 'The card number and version go on a margin below the illustration; the file itself is unchanged.'))}</p>` : ''}
 `;
-      const pb = sheet.querySelector('[data-printnum]'); if (pb) pb.onclick = () => printWithNumber(c, info);
     };
     draw(d || c);
     if (!d && opts.mode !== 'admin') {
       try { d = await fetchDetails(code); draw(d); } catch { /* показываем то, что есть */ }
     }
-  }
-  // изображение из галереи с номером карты и версией на поле под иллюстрацией (для распечатки фасилитатором)
-  async function printWithNumber(c, info) {
-    try {
-      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = c.full || c.thumb; });
-      const W = img.naturalWidth; const H = img.naturalHeight; const band = Math.max(48, Math.round(W * 0.07));
-      const cv = document.createElement('canvas'); cv.width = W; cv.height = H + band; const g = cv.getContext('2d');
-      g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H + band); g.drawImage(img, 0, 0, W, H);
-      g.fillStyle = '#333333'; g.font = `600 ${Math.round(band * 0.42)}px system-ui, sans-serif`; g.textBaseline = 'middle';
-      g.fillText(`${c.code}${info && info.version ? ' · ' + info.version : ''}`, Math.round(band * 0.4), H + band / 2);
-      const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
-      const { saveImage } = await import('./share.js');
-      await saveImage(blob, `${c.code}${info && info.version ? '-' + info.version : ''}.png`);
-    } catch { toast(tt('Не получилось подготовить файл', 'Could not prepare the file')); }
   }
   let sheetCtl = null;
   function toggleSheet(force) {

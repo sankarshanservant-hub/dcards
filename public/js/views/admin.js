@@ -5,35 +5,77 @@ import { openViewer } from '../viewer.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, rolesText, demoPill, WORK_STATUS, statusPill, refreshSession } from '../ui.js';
 import { langName, whereText } from './meetings.js';
 
-const TABS = [['', 'Обзор', 'Overview'], ['users', 'Люди и роли', 'People & roles'], ['works', 'Работы', 'Works'], ['applications', 'Заявки', 'Applications'], ['meetings', 'Встречи', 'Meetings'],
-  ['cards', 'Карты и статистика', 'Cards & statistics'], ['comments', 'Обсуждения', 'Discussions'], ['criteria', 'Критерии', 'Criteria'], ['guide', 'Руководство', 'Guide'], ['letters', 'Письма', 'Letters'], ['terms', 'Условия для авторов', 'Author terms'], ['removals', 'Удаления карт', 'Card removals']];
-// Разделы сгруппированы по назначению (21.11.2026): обзор, люди, работы и карты, встречи и общение, служебное.
+// Разделы кабинета (28.11.2026, согласовано с владельцем): «Требует внимания» — стартовый; затем Карты, Участники, Встречи,
+// Общение, Настройки. На компьютере — меню слева, на телефоне — строка разделов и подразделов сверху.
+const TABS = [['', 'Требует внимания', 'Needs attention'],
+  ['works', 'Работы', 'Works'], ['cards', 'Карты и статистика', 'Cards & statistics'], ['decks', 'Печатные колоды', 'Printed decks'], ['removals', 'Удаления карт', 'Card removals'], ['criteria', 'Критерии', 'Criteria'], ['terms', 'Условия для авторов', 'Author terms'],
+  ['users', 'Люди и роли', 'People & roles'], ['applications', 'Заявки на роли', 'Role applications'], ['workshops', 'Онлайн-занятия', 'Online workshops'],
+  ['meetings', 'Встречи', 'Meetings'],
+  ['messages', 'Сообщения', 'Messages'], ['comments', 'Обсуждения и модерация', 'Discussions & moderation'],
+  ['settings', 'Подключения и данные', 'Connections & data'], ['guide', 'Материалы', 'Materials'], ['letters', 'Письма', 'Letters']];
 const GROUPS = [
-  ['Обзор', 'Overview', ['']],
-  ['Люди', 'People', ['users', 'applications']],
-  ['Работы и карты', 'Works & cards', ['works', 'cards', 'removals', 'criteria', 'terms']],
-  ['Встречи и общение', 'Meetings & talk', ['meetings', 'comments']],
-  ['Материалы и почта', 'Materials & mail', ['guide', 'letters']],
+  ['Требует внимания', 'Needs attention', ['']],
+  ['Карты', 'Cards', ['works', 'cards', 'decks', 'removals', 'criteria', 'terms']],
+  ['Участники', 'People', ['users', 'applications', 'workshops']],
+  ['Встречи', 'Meetings', ['meetings']],
+  ['Общение', 'Communication', ['messages', 'comments']],
+  ['Настройки', 'Settings', ['settings', 'guide', 'letters']],
 ];
-const tabs = (cur) => `<nav class="adm-nav" aria-label="${esc(tt('Разделы администрирования', 'Administration sections'))}">${GROUPS.map(([gru, gen, keys]) => `<div class="adm-group"><span class="adm-g">${esc(tt(gru, gen))}</span><div class="adm-links">${keys.map((k) => { const t = TABS.find((x) => x[0] === k); return `<a class="${cur === k ? 'on' : ''}" ${cur === k ? 'aria-current="page"' : ''} href="${u('/admin' + (k ? '/' + k : ''))}">${esc(tt(t[1], t[2]))}</a>`; }).join('')}</div></div>`).join('')}</nav>`;
+// Счётчики «ждёт решения» у разделов (обновляются при каждом открытии раздела).
+const BADGE = { '': (a) => (a.works + a.facApps + a.facManual + a.curApps + a.decks + a.messages + a.workshops), works: (a) => a.works, applications: (a) => a.facApps + a.facManual + a.curApps, decks: (a) => a.decks, messages: (a) => a.messages, workshops: (a) => a.workshops };
+const groupOf = (k) => GROUPS.find((g) => g[2].includes(k)) || GROUPS[0];
+const tabs = (cur) => {
+  const g = groupOf(cur); const lbl = (k) => { const t = TABS.find((x) => x[0] === k); return tt(t[1], t[2]); };
+  const href = (k) => u('/admin' + (k ? '/' + k : ''));
+  return `<nav class="adm-side" aria-label="${esc(tt('Разделы администрирования', 'Administration sections'))}">
+    <div class="adm-groups">${GROUPS.map(([ru, en, keys]) => `<a class="adm-gl ${g[2] === keys ? 'on' : ''}" ${g[2] === keys ? 'aria-current="true"' : ''} href="${href(keys[0])}">${esc(tt(ru, en))}<span class="adm-badge" data-badge-group="${keys.join(',')}" hidden></span></a>
+      ${keys.length > 1 ? `<div class="adm-subs ${g[2] === keys ? 'open' : ''}">${keys.map((k) => `<a class="${cur === k ? 'on' : ''}" ${cur === k ? 'aria-current="page"' : ''} href="${href(k)}">${esc(lbl(k))}<span class="adm-badge" data-badge="${k}" hidden></span></a>`).join('')}</div>` : ''}`).join('')}</div></nav>`;
+};
+async function fillBadges(root) {
+  let a; try { a = await api('/api/admin/attention'); } catch { return; }
+  root.querySelectorAll('[data-badge]').forEach((b) => { const n = BADGE[b.dataset.badge] ? BADGE[b.dataset.badge](a) : 0; b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n); });
+  root.querySelectorAll('[data-badge-group]').forEach((b) => { const keys = b.dataset.badgeGroup.split(','); const n = keys.reduce((s, k) => s + (BADGE[k] && k !== '' ? BADGE[k](a) : 0), 0) || (keys[0] === '' ? BADGE[''](a) : 0); b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n); });
+  return a;
+}
 const guard = (ctx) => {
   if (!session.user) { needLogin(ctx.main, tt('Раздел администратора.', 'Administrator section.')); return false; }
   if (!hasRole('admin') || !session.user.roles.includes('admin')) { noRole(ctx.main, ROLE_LABEL.admin()); return false; }
   return true;
 };
 const shell = (ctx, cur, title, inner) => {
-  ctx.main.innerHTML = `<div class="wrap page"><p class="eyebrow">${esc(tt('Администрирование', 'Administration'))}</p><h1>${esc(title)}</h1>${tabs(cur)}<div id="sec">${inner}</div></div>`;
+  ctx.main.innerHTML = `<div class="wrap page adm-page"><p class="eyebrow">${esc(tt('Кабинет администратора', 'Admin space'))}</p>
+    <div class="adm-layout">${tabs(cur)}<div class="adm-main"><h1>${esc(title)}</h1><div id="sec">${inner}</div></div></div></div>`;
+  fillBadges(ctx.main);
   return ctx.main.querySelector('#sec');
 };
 
+// «Требует внимания»: только то, что ждёт решения, со счётчиками; пустые группы не показываются.
 export async function overview(ctx) {
   if (!guard(ctx)) return;
   loading(ctx.main);
+  let a;
+  try { a = await api('/api/admin/attention'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  if (!ctx.alive()) return;
+  const items = [
+    [a.works, '/admin/works', 'Работы к публикации', 'Works to publish', 'Кураторы рекомендовали — ждут вашего решения', 'Recommended by curators — awaiting your decision'],
+    [a.messages, '/admin/messages', 'Новые сообщения', 'New messages', 'Переписки с непрочитанными сообщениями участников', 'Conversations with unread messages from members'],
+    [a.facApps, '/admin/applications', 'Заявки фасилитаторов', 'Facilitator applications', 'Курс и проверка пройдены', 'Course and quiz completed'],
+    [a.facManual, '/admin/applications', 'Заявки на ручной проверке ответов', 'Applications for manual review', 'Ответы проверки — на ваше решение', 'Quiz answers — for your decision'],
+    [a.curApps, '/admin/applications', 'Заявки кураторов', 'Curator applications', '', ''],
+    [a.workshops, '/admin/workshops', 'Заявки на онлайн-занятия', 'Online workshop requests', 'Новые, ещё не просмотренные', 'New, not yet reviewed'],
+    [a.decks, '/admin/decks', 'Заявки на печатные колоды', 'Printed deck requests', 'Новые предварительные заявки', 'New preliminary requests'],
+  ].filter((x) => x[0] > 0);
+  shell(ctx, '', tt('Требует внимания', 'Needs attention'), items.length
+    ? `<div class="list adm-rows">${items.map(([n, href, ru, en, hru, hen]) => `<a class="item" href="${u(href)}"><span class="adm-count">${n}</span><span class="body"><b>${esc(tt(ru, en))}</b>${hru ? `<span class="small muted">${esc(tt(hru, hen))}</span>` : ''}</span><span aria-hidden="true">→</span></a>`).join('')}</div>`
+    : `<div class="card-ui flat"><b>${esc(tt('Всё разобрано', 'All done'))}</b><p class="small muted" style="margin:4px 0 0">${esc(tt('Новых работ, заявок и сообщений нет.', 'No new works, applications or messages.'))}</p></div>`);
+}
+
+async function settingsSection(ctx) {
   let o;
-  try { o = await api('/api/admin/overview'); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
+  try { o = await api('/api/admin/overview'); } catch (e) { throw e; }
   if (!ctx.alive()) return;
   const k = (n, ru, en) => `<div class="kpi"><b>${n ?? 0}</b><span>${esc(tt(ru, en))}</span></div>`;
-  const sec = shell(ctx, '', tt('Обзор проекта', 'Project overview'), `
+  const sec = shell(ctx, 'settings', tt('Подключения и данные', 'Connections & data'), `
     <div class="kpis">${k(o.cards.published, 'карт опубликовано', 'cards published')}${k(o.cards.removed, 'карт снято', 'cards removed')}
       ${k((o.works.submitted || 0) + (o.works.discussion || 0), 'работ в очереди', 'works in queue')}${k(o.works.needs_changes, 'на доработке', 'returned for changes')}
       ${k(o.meetings.published, 'встреч опубликовано', 'meetings published')}${k(o.meetings.removed, 'встреч снято', 'meetings taken down')}
@@ -66,14 +108,57 @@ export async function overview(ctx) {
   }
 }
 
-export async function section(ctx, name) {
+
+export async function section(ctx, name, arg) {
   if (!guard(ctx)) return;
   loading(ctx.main);
-  try { await SECTIONS[name](ctx); } catch (e) { if (ctx.alive()) failed(ctx.main, e, ctx.rerender); }
+  try { await SECTIONS[name](ctx, arg); } catch (e) { if (ctx.alive()) failed(ctx.main, e, ctx.rerender); }
 }
 
 const ACTION_LABEL = { recommend: () => tt('Рекомендована кураторами', 'Recommended by curators'), approve: () => tt('Опубликована', 'Published'), return: () => tt('Возвращена на доработку', 'Returned for changes'), reject: () => tt('Отклонена', 'Declined') };
 const SECTIONS = {
+  settings: settingsSection,
+  // Личные переписки участников с администрацией: список и переписка с одним человеком (/admin/messages/<id>)
+  async messages(ctx, uid) {
+    const msgs = await import('./messages.js');
+    const sec = shell(ctx, 'messages', tt('Сообщения', 'Messages'), `<p class="muted">${esc(tt('Загрузка…', 'Loading…'))}</p>`);
+    if (uid) await msgs.adminThread(ctx, sec, uid); else await msgs.adminList(ctx, sec);
+    fillBadges(ctx.main);
+  },
+  // Предварительные заявки на онлайн-занятия: число уникальных, новых; статусы «Новая» / «Просмотрена»
+  async workshops(ctx) {
+    const d = await api('/api/admin/workshops'); if (!ctx.alive()) return;
+    const ST = { new: tt('Новая', 'New'), seen: tt('Просмотрена', 'Reviewed') };
+    const sec = shell(ctx, 'workshops', tt('Заявки на онлайн-занятия', 'Online workshop requests'), `
+      <p class="muted" style="margin-top:0">${esc(tt(`Заявок: ${d.total} · новых: ${d.fresh}`, `Requests: ${d.total} · new: ${d.fresh}`))}</p>
+      <p class="small muted">${esc(tt('Предварительные заявки: дат и программы ещё нет. Рассылки заявителям нет — о расписании сообщите сами по указанному контакту.', 'Preliminary requests: no dates or programme yet. Nothing is sent to applicants automatically — contact them yourself when the schedule is ready.'))}</p>
+      ${d.requests.length ? `<div class="list adm-rows">${d.requests.map((r) => `<div class="item ${r.status === 'new' ? 'unread' : ''}" style="align-items:flex-start"><span class="body">
+        <b>${esc(r.name)} ${demoPill(r.isDemo)} <span class="pill ${r.status === 'new' ? 'yellow' : ''}">${esc(ST[r.status])}</span></b>
+        <span class="small">${esc(fmtDate(r.createdAt, { day: 'numeric', month: 'short', year: 'numeric' }))} · ${r.contactKind === 'email' ? `<a href="mailto:${esc(r.contact)}">${esc(r.contact)}</a>` : `<a href="https://t.me/${esc(r.contact.slice(1))}" target="_blank" rel="noopener">${esc(r.contact)}</a>`}
+          ${r.userId ? ` · <a href="${u('/admin/messages/' + r.userId)}">${esc(tt('аккаунт', 'account'))}: ${esc(r.account || '')}</a>` : ` · ${esc(tt('без аккаунта', 'no account'))}`}</span>
+        ${r.interest ? `<p class="small" style="margin:4px 0 0;white-space:pre-wrap">${esc(r.interest)}</p>` : ''}</span>
+        <button class="btn light sm" type="button" data-ws="${r.id}" data-to="${r.status === 'new' ? 'seen' : 'new'}">${esc(r.status === 'new' ? tt('Просмотрена', 'Mark reviewed') : tt('Вернуть в новые', 'Mark as new'))}</button></div>`).join('')}</div>`
+      : `<p class="empty">${esc(tt('Заявок пока нет.', 'No requests yet.'))}</p>`}`);
+    sec.addEventListener('click', async (e) => { const b = e.target.closest('[data-ws]'); if (!b) return; b.disabled = true;
+      try { await api(`/api/admin/workshops/${b.dataset.ws}/status`, { method: 'POST', body: { status: b.dataset.to } }); ctx.rerender(); } catch (x) { b.disabled = false; toast(errorText(x)); } });
+  },
+  // Предварительные заявки фасилитаторов на печатные колоды: сколько, куда; связь — в приложении
+  async decks(ctx) {
+    const { requests } = await api('/api/admin/print-requests'); if (!ctx.alive()) return;
+    const total = requests.reduce((n, r) => n + (Number(r.count) || 0), 0);
+    const sec = shell(ctx, 'decks', tt('Заявки на печатные колоды', 'Printed deck requests'), `
+      <p class="muted" style="margin-top:0">${esc(tt(`Заявок: ${requests.length}${total ? ` · колод всего: ${total}` : ''}`, `Requests: ${requests.length}${total ? ` · decks in total: ${total}` : ''}`))}</p>
+      <p class="small muted">${esc(tt('Предварительные заявки: печатных колод пока нет, сроки не определены. Ответить заявителю — через «Сообщения».', 'Preliminary requests: there are no printed decks yet and no dates. Reply to an applicant via “Messages”.'))}</p>
+      ${requests.length ? `<div class="list adm-rows">${requests.map((r) => `<div class="item ${r.status === 'new' ? 'unread' : ''}" style="align-items:flex-start"><span class="body">
+        <b>${esc(r.name)} ${demoPill(r.isDemo)}${r.count ? ` · ${esc(tt(`колод: ${r.count}`, `decks: ${r.count}`))}` : ''}</b>
+        <span class="small">${esc([r.country, r.city].filter(Boolean).join(', ') || '—')} · ${esc(fmtDate(r.createdAt, { day: 'numeric', month: 'short', year: 'numeric' }))} · ${esc(r.status === 'new' ? tt('новая', 'new') : tt('обработана', 'done'))}</span>
+        ${r.comment || r.note ? `<p class="small" style="margin:4px 0 0;white-space:pre-wrap">${esc(r.comment || r.note)}</p>` : ''}
+        <div class="row" style="margin-top:6px">${r.userId || r.user_id ? `<a class="btn light sm" href="${u('/admin/messages/' + (r.userId || r.user_id))}">${esc(tt('Написать', 'Message'))}</a>` : ''}
+          ${r.status === 'new' ? `<button class="btn light sm" type="button" data-pdone="${r.id}">${esc(tt('Отметить обработанной', 'Mark as done'))}</button>` : ''}</div></span></div>`).join('')}</div>`
+      : `<p class="empty">${esc(tt('Заявок пока нет.', 'No requests yet.'))}</p>`}`);
+    sec.addEventListener('click', async (e) => { const pd = e.target.closest('[data-pdone]'); if (!pd) return;
+      try { await api(`/api/admin/print-requests/${pd.dataset.pdone}/done`, { method: 'POST' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });
+  },
   // Условия для авторов (25.11.2026): черновик → предпросмотр → публикация по явному решению администрации
   async terms(ctx) {
     const d = await api('/api/admin/terms'); if (!ctx.alive()) return;
@@ -168,12 +253,12 @@ const SECTIONS = {
   },
 
   async applications(ctx) {
-    const [{ applications }, { applications: curApps }, { requests }] = await Promise.all([api('/api/admin/applications'), api('/api/admin/curator-applications'), api('/api/admin/print-requests')]);
+    const [{ applications }, { applications: curApps }] = await Promise.all([api('/api/admin/applications'), api('/api/admin/curator-applications')]);
     if (!ctx.alive()) return;
     const ST = { in_progress: tt('проходит курс', 'taking the course'), submitted: tt('ждёт решения', 'awaiting decision'), approved: tt('одобрена', 'approved'), rejected: tt('не одобрена', 'not approved') };
     const decide = (kind, a, grant) => `${a.status === 'submitted' ? `<div class="row" style="margin-top:8px"><input type="text" placeholder="${esc(tt('Комментарий (по желанию)', 'Note (optional)'))}" data-note="${kind}${a.userId}" style="max-width:280px">
           <button class="btn dark sm" type="button" data-ok="${kind}${a.userId}">${esc(grant)}</button><button class="btn sm danger" type="button" data-no="${kind}${a.userId}">${esc(tt('Отклонить', 'Decline'))}</button></div>` : ''}`;
-    const sec = shell(ctx, 'applications', tt('Заявки', 'Applications'), `
+    const sec = shell(ctx, 'applications', tt('Заявки на роли', 'Role applications'), `
       <h3>${esc(tt('Заявки на роль куратора', 'Curator applications'))}</h3>
       ${curApps.length ? `<div class="list">${curApps.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
         <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.contact)}${a.accountName !== a.name ? ' · ' + esc(tt('аккаунт', 'account')) + ': ' + esc(a.accountName) : ''}</span>
@@ -185,14 +270,8 @@ const SECTIONS = {
         ${a.manualReview ? `<span class="pill demo" style="justify-self:start;margin-top:4px">${esc(tt('ручная проверка ответов', 'manual review of answers'))}</span>
           <ol class="small" style="margin:6px 0 0;padding-left:1.3em">${(a.answers || []).map((x) => `<li>${esc(x.text)}<br><span class="${x.right ? '' : 'warn'}">${x.right ? '✓' : '✗'} ${esc(x.chosen || tt('нет ответа', 'no answer'))}</span></li>`).join('')}</ol>` : ''}
         ${a.about ? `<p class="small" style="margin:4px 0 0">${esc(a.about)}</p>` : ''}
-        ${decide('f', a, tt('Одобрить и выдать роль', 'Approve and grant role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль фасилитатора нет.', 'No facilitator applications.'))}</p>`}
-      <h3 style="margin-top:22px">${esc(tt('Запросы печатной колоды', 'Printed deck requests'))}</h3>
-      ${requests.length ? `<div class="list">${requests.map((r) => `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(r.name)} ${demoPill(r.isDemo)}</b><span class="small">${esc(r.email || '—')} · ${esc(fmtDate(r.createdAt, { day: 'numeric', month: 'short' }))} · ${r.status === 'new' ? esc(tt('новый', 'new')) : esc(tt('обработан', 'done'))}</span>
-        ${r.note ? `<p class="small" style="margin:4px 0 0;white-space:pre-wrap">${esc(r.note)}</p>` : ''}
-        ${r.status === 'new' ? `<div class="row" style="margin-top:8px"><button class="btn sm" type="button" data-pdone="${r.id}">${esc(tt('Отметить обработанным', 'Mark as done'))}</button></div>` : ''}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Запросов нет.', 'No requests.'))}</p>`}`);
+        ${decide('f', a, tt('Одобрить и выдать роль', 'Approve and grant role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль фасилитатора нет.', 'No facilitator applications.'))}</p>`}`);
     sec.addEventListener('click', async (e) => {
-      const pd = e.target.closest('[data-pdone]');
-      if (pd) { try { await api(`/api/admin/print-requests/${pd.dataset.pdone}/done`, { method: 'POST' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } return; }
       const ok = e.target.closest('[data-ok]'); const no = e.target.closest('[data-no]'); const key = (ok || no)?.dataset.ok || (ok || no)?.dataset.no;
       if (!key) return;
       const kind = key[0]; const id = key.slice(1);
@@ -293,7 +372,7 @@ const SECTIONS = {
       <p class="small muted">${esc(tt('Скрыть чужое сообщение можно в самом чате («Скрыть (модерация)»); там же — «Восстановить». Текст не переписывается, автор и время сохраняются.', 'Hide someone’s message in the chat itself (“Hide (moderation)”); restore it there too. Text is never rewritten; author and time are kept.'))}</p>
       ${log.length ? `<div class="list">${log.map((l) => `<div class="comment"><header><b>${esc(l.action === 'hide' ? tt('Скрыто', 'Hidden') : tt('Восстановлено', 'Restored'))}</b><a href="${esc(u('/team/' + encodeURIComponent(l.room) + '?m=' + encodeURIComponent(l.messageId)))}">${esc(ROOM[l.room] || l.room)} · №${l.messageId}</a><span>${esc(fmtDate(l.at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span></header>
         <p class="small">${esc(tt('Автор сообщения', 'Message author'))}: ${esc(l.author)} · ${esc(tt('модератор', 'moderator'))}: ${esc(l.by)}${l.reason ? ` · ${esc(tt('причина', 'reason'))}: ${esc(l.reason)}` : ''}</p></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Действий модерации пока не было.', 'No moderation actions yet.'))}</p>`}`;
-    const sec = shell(ctx, 'comments', tt('Обсуждения', 'Discussions'), `<p class="small muted">${esc(tt('Последние сообщения под картами. Жалобы и правила модерации ещё уточняются; удалять может администратор и сам автор сообщения.', 'Latest messages under cards. Reports and moderation rules are being agreed; an admin or the author can delete a message.'))}</p>
+    const sec = shell(ctx, 'comments', tt('Обсуждения и модерация', 'Discussions & moderation'), `<p class="small muted">${esc(tt('Последние сообщения под картами. Жалобы и правила модерации ещё уточняются; удалять может администратор и сам автор сообщения.', 'Latest messages under cards. Reports and moderation rules are being agreed; an admin or the author can delete a message.'))}</p>
       <div class="list">${comments.map((c) => `<div class="comment"><header><b>${esc(c.author)}</b><a href="${u('/cards/' + c.code)}">${esc(c.code)}</a><span>${esc(fmtDate(c.createdAt, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>${demoPill(c.isDemo)}
         <button class="linkbtn danger" type="button" data-del="${c.id}">${esc(tt('Удалить', 'Delete'))}</button></header><p>${esc(c.text)}</p></div>`).join('') || `<p class="empty">${esc(tt('Сообщений нет.', 'No messages.'))}</p>`}</div>${logHtml}`);
     sec.addEventListener('click', async (e) => { const d = e.target.closest('[data-del]'); if (!d) return; try { await api(`/api/comments/${d.dataset.del}`, { method: 'DELETE' }); ctx.rerender(); } catch (x) { toast(errorText(x)); } });

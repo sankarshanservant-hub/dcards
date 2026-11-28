@@ -6,6 +6,7 @@ import { morph, listen, esc, tt, u, shareLink, api, errorText, toast, visitorId,
 import { ic, loading, failed } from '../ui.js';
 import { openViewer } from '../viewer.js';
 import { subscribe } from '../live-common.js';
+import { joinButton, wireScan } from '../qr-scan.js';
 import { sendRoomInvite, saveImage } from '../share.js';
 import * as personal from '../personal.js';
 
@@ -78,8 +79,10 @@ export async function choose(ctx) {
         <p class="game-lead">${esc(tt(`На расстоянии · до ${ROOM_MAX} участников · друзья подключаются по ссылке`, `At a distance · up to ${ROOM_MAX} players · friends join by link`))}</p>
         <div class="game-how"><p>${esc(tt('Выберите игру, затем создайте комнату и отправьте приглашение. Говорить можно в любом созвоне или переписке — ответы видны прямо в игре. Регистрация не нужна.', 'Choose a game, then create a room and send an invitation. Talk on any call or chat — the answers are shown right in the game. No sign-up needed.'))}</p></div></div>
       ${from ? await crewBox(from) : ''}
+      <div class="join-row">${joinButton(ic.qr)}</div>
       <div class="list">${ONLINE_GAMES.map((g) => `<a class="item group-format" href="${u('/group/online?g=' + g.key + (from ? '&from=' + encodeURIComponent(from) : ''))}"><span class="body"><b>${esc(title(g))}</b><span class="small">${esc(desc(g))}</span><span class="small muted">${esc(limitText(g))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
     </div>`;
+    wireScan(ctx.main, ctx.navigate);
     return;
   }
   const name = storage.get('dc_live_name') || '';

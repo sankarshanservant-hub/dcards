@@ -7,7 +7,7 @@ import { subscribe, signHtml, unlockSound, soundsReady, play, clock, left, mmss,
 import { QUESTION_FORMATS } from '../content.js';
 import * as personal from '../personal.js';
 import { ONLINE_KEYS, room as onlineRoom, offerHtml, wireOffer, crewBox } from './online.js';
-import { scanButton, wireScan } from '../qr-scan.js';
+import { joinButton, wireScan } from '../qr-scan.js';
 
 export const GROUP_FORMATS = [
   { key: 'one', ru: 'Одна карта на всех', en: 'One card for everyone', dru: 'Все смотрят на одну карту и по кругу говорят, что заметили и о чём она напоминает. Самый простой формат.', den: 'Everyone looks at one card and takes turns saying what they notice and what it reminds them of. The simplest format.' },
@@ -39,10 +39,11 @@ export async function choose(ctx) {
   const picked = GROUP_FORMATS.find((f) => f.key === ctx.query.get('f'));
   if (!picked) {
     ctx.main.innerHTML = `<div class="wrap page narrow stack">
-      <div class="page-head"><div class="head-with-tool"><h1>${esc(tt('Играть компанией на встрече', 'Play together at a meeting'))}</h1>${scanButton(ic.qr)}</div>
+      <div class="page-head"><h1>${esc(tt('Играть компанией на встрече', 'Play together at a meeting'))}</h1>
         <p class="game-lead">${esc(tt('2–20 участников · каждый со своего телефона', '2–20 players · everyone on their own phone'))}</p>
         <div class="game-how"><p>${esc(tt('Выберите игру. Один участник создаёт комнату и показывает QR-код — остальные заходят по нему. Регистрация не нужна.', 'Choose a game. One player creates a room and shows the QR code — the others join with it. No sign-up needed.'))}</p></div></div>
       ${crew}
+      <div class="join-row">${joinButton(ic.qr)}</div>
       <div class="list">${GROUP_FORMATS.map((f) => `<a class="item group-format" href="${u('/group?f=' + f.key + (pre ? '&collection=' + encodeURIComponent(pre) : '') + fromQ)}"><span class="body"><b>${esc(fTitle(f))}</b><span class="small">${esc(fDesc(f))}</span></span><span aria-hidden="true">→</span></a>`).join('')}</div>
       <p class="small"><a href="${u('/library')}">${esc(tt('Один телефон на всех? Откройте карту и вопросы', 'One phone for everyone? Open a card and its questions'))}</a></p>
     </div>`;
@@ -384,7 +385,7 @@ export async function solo(ctx) { // «История из трёх карт» (
     st.codes[k] = cards[i].code; save();
     const box = ctx.main.querySelector('#s3card'); if (box) box.innerHTML = img(cards[i]);
   };
-  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => `${i + 1}. ${t2.trim() || '—'}`).join('\n')}\n\n${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${location.origin}${u('/group/solo/story')}`;
+  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => `${i + 1}. ${t2.trim() || '—'}`).join('\n')}\n\n${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${shareLink('/group/solo/story')}`;
   ctx.main.innerHTML = `<div class="live"><div class="live-in"><p class="eyebrow">${esc(tt('Играть одному', 'Play solo'))}</p><h1 style="margin:0">${esc(tt('История из трёх карт', 'A story from three cards'))}</h1><div class="live-in" id="solo" style="max-width:none"></div></div></div>`;
   ctx.main.querySelector('#solo').addEventListener('click', async (e) => {
     const go = e.target.closest('[data-go]'); if (go && !go.disabled) { st.step = Number(go.dataset.go); st.reached = Math.max(st.reached || 0, Math.min(3, st.step)); save(); draw(); window.scrollTo({ top: 0 }); return; }

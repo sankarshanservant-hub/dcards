@@ -53,7 +53,8 @@ export const ROLE_LABEL = {
   artist: () => tt('Автор', 'Author'), curator: () => tt('Куратор', 'Curator'),
   facilitator: () => tt('Фасилитатор', 'Facilitator'), admin: () => tt('Администратор', 'Administrator'),
 };
-export const rolesText = (roles) => (roles && roles.length ? roles.map((r) => ROLE_LABEL[r]()).join(' · ') : tt('Участник', 'Member'));
+// Подпись ролей (26.11.2026): администратору — только «Администратор»; остальным — полученные роли; без ролей — «Участник».
+export const rolesText = (roles) => (roles && roles.includes('admin') ? ROLE_LABEL.admin() : roles && roles.length ? roles.filter((r) => ROLE_LABEL[r]).map((r) => ROLE_LABEL[r]()).join(' · ') : tt('Участник', 'Member'));
 
 export const WORK_STATUS = {
   submitted: () => [tt('На рассмотрении', 'In review'), 'yellow'],

@@ -98,10 +98,19 @@ export async function search(ctx, country, city) {
   const subOffer = mode === 'online' ? (language ? { mode: 'online', language } : null) : city ? { mode: 'live', country, city, language } : null;
   const hasSame = subOffer && subs.some((x) => x.mode === subOffer.mode && (x.mode === 'online' ? x.language === subOffer.language : x.city === subOffer.city && (x.language || '') === (subOffer.language || '')));
   const langOpts = (sel) => `<option value="">${esc(tt('Любой язык', 'Any language'))}</option>${Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(langName(k))}</option>`).join('')}`;
-  const emptyActions = () => `<div class="row wrap" style="justify-content:center">
-      ${subOffer ? (hasSame ? `<span class="pill mint">${esc(tt('Вы подписаны — сообщим о новой встрече', 'Subscribed — we will let you know'))}</span>` : `<button class="btn yellow" type="button" data-sub-add>${ic.bell || ''}<span>${esc(tt('Сообщить, когда появится встреча', 'Notify me when a meeting appears'))}</span></button>`)
-        : `<span class="small muted">${esc(mode === 'online' ? tt('Выберите язык — и мы сообщим о новой онлайн-встрече.', 'Choose a language — and we will tell you about a new online meeting.') : tt('Выберите город — и мы сообщим о новой встрече в нём.', 'Choose a city — and we will tell you about a new meeting there.'))}</span>`}
-      <a class="btn light" href="${u('/library?play=friend')}">${esc(tt('Попробовать игру с другом', 'Try a game with a friend'))}</a></div>`;
+  // Кнопка подписки на выбранный фильтром город (или язык онлайн-встреч).
+  const subBtn = () => (subOffer ? (hasSame ? `<span class="pill mint">${esc(tt('Вы подписаны — сообщим о новой встрече', 'Subscribed — we will let you know'))}</span>`
+    : `<button class="btn yellow" type="button" data-sub-add>${ic.bell || ''}<span>${esc(tt('Сообщить о новых встречах', 'Notify me about new meetings'))}</span></button>`) : '');
+  const emptyActions = () => `<div class="row wrap" style="justify-content:center">${subBtn()}</div>`;
+  // «Сообщить о встрече в моём городе» (26.11.2026): любой город из справочника, а не только те, где уже были встречи.
+  const cityAlert = (asEmpty) => `<section class="card-ui flat city-alert stack" id="calert">
+      ${asEmpty ? '' : `<h2 class="h3" style="margin:0">${esc(tt('Сообщить о встрече в моём городе', 'Tell me about a meeting in my city'))}</h2>`}
+      <div class="row wrap" id="cpick-open"><button class="btn ${asEmpty ? 'yellow' : 'light'}" type="button" data-cpick>${esc(tt('Выбрать город', 'Choose a city'))}</button></div>
+      <form class="stack" id="cpick" hidden style="gap:8px" novalidate>
+        <label class="field" for="cp-city">${esc(tt('Город', 'City'))}</label>
+        <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="cp-city" type="text" maxlength="80" autocomplete="address-level2" placeholder="${esc(tt('Например, Казань', 'For example, Lisbon'))}" style="flex:1;min-width:0"><button class="btn light" type="submit">${esc(tt('Найти', 'Find'))}</button></div>
+        <div id="cp-res" class="stack" style="gap:6px"></div>
+      </form></section>`;
   const subsBlock = () => (subs.length ? `<details class="card-ui flat msubs" ${sessionStorage.getItem(SUB_KEY) ? 'open' : ''}><summary><b>${esc(tt('Мои подписки на встречи', 'My meeting alerts'))}</b> · ${subs.length}</summary>
       <ul class="msubs-list">${subs.map((x) => `<li data-sub="${x.id}"><span class="grow">${esc(subText(x))}</span>
         ${`<label class="sr-only" for="sl-${x.id}">${esc(tt('Язык', 'Language'))}</label><select id="sl-${x.id}" data-sub-lang="${x.id}">${x.mode === 'online' ? Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === x.language ? 'selected' : ''}>${esc(langName(k))}</option>`).join('') : langOpts(x.language)}</select>`}
@@ -121,19 +130,23 @@ export async function search(ctx, country, city) {
           <li>${esc(tt('В конце участники по желанию делятся впечатлениями.', 'At the end, participants share their impressions if they wish.'))}</li>
         </ol></div></details>
     <nav class="seg mode-seg" role="radiogroup" aria-label="${esc(tt('Формат встреч', 'Meeting format'))}">${tab('', 'Все', 'All')}${tab('live', 'Живые встречи', 'Live')}${tab('online', 'Онлайн', 'Online')}</nav>
-    <form class="filters card-ui flat" id="flt" style="padding:14px">
+    ${none ? '' : `<form class="filters card-ui flat" id="flt" style="padding:14px">
       ${geo ? `<label class="field">${esc(tt('Страна', 'Country'))}<select name="country"><option value="">${esc(tt('Все страны', 'All countries'))}</option>${places.map((p) => `<option ${p.country === country ? 'selected' : ''} value="${esc(p.country)}">${esc(p.country)} (${p.count})</option>`).join('')}</select></label>
       <label class="field">${esc(tt('Город', 'City'))}<select name="city" ${cur ? '' : 'disabled'}><option value="">${esc(cur ? tt('Все города', 'All cities') : tt('Сначала выберите страну', 'Choose a country first'))}</option>${cur ? cur.cities.map((c) => `<option ${c.city === city ? 'selected' : ''} value="${esc(c.city)}">${esc(c.city)} (${c.count})</option>`).join('') : ''}</select></label>` : ''}
       <label class="field">${esc(tt('Язык', 'Language'))}<select name="lang">${langOpts(language)}</select></label>
       ${mode === 'online' ? `<label class="field">${esc(tt('С даты', 'From'))}<input type="date" name="from" value="${esc(fromDay)}" min="${new Date().toISOString().slice(0, 10)}"></label>` : ''}
       ${filtered ? `<a class="btn sm light" href="${u('/meetings' + (mode ? '?mode=' + mode : ''))}">${esc(tt('Сбросить фильтр', 'Clear filter'))}</a>` : ''}
-    </form>
+    </form>`}
     ${filtered && geo && country ? `<p class="small muted" style="margin:0">${esc(tt('Показаны встречи:', 'Showing meetings in:'))} <b>${esc([city, country].filter(Boolean).join(', '))}</b></p>` : ''}
     ${dates.length ? `<div class="list">${dates.map(eventRow).join('')}</div>`
-      : `<div class="empty stack" style="justify-items:center"><span>${esc(none ? tt('Пока нет запланированных встреч', 'No meetings planned yet') : mode === 'online' ? tt('Подходящих онлайн-встреч пока нет', 'No matching online meetings yet') : city ? tt('В этом городе пока нет встреч', 'No meetings in this city yet') : country ? tt('В этой стране пока нет встреч', 'No meetings in this country yet') : tt('Подходящих встреч пока нет', 'No matching meetings yet'))}</span>
+      : none ? `<div class="empty stack" style="justify-items:center"><b>${esc(tt('Пока здесь нет предстоящих встреч', 'There are no upcoming meetings here yet'))}</b>
+          <span class="small">${esc(tt('Мы сообщим, когда появится встреча в вашем городе.', 'We will let you know when a meeting appears in your city.'))}</span>
+          ${cityAlert(true)}${hostInvite('', '')}</div>`
+      : `<div class="empty stack" style="justify-items:center"><span>${esc(none ? tt('Пока нет запланированных встреч', 'No meetings planned yet') : mode === 'online' ? tt('Подходящих онлайн-встреч пока нет', 'No matching online meetings yet') : city ? tt('В этом городе пока нет предстоящих встреч', 'No upcoming meetings in this city yet') : country ? tt('В этой стране пока нет встреч', 'No meetings in this country yet') : tt('Подходящих встреч пока нет', 'No matching meetings yet'))}</span>
           ${emptyActions()}
           ${filtered && geo && country ? `<a class="btn light" href="${u('/meetings' + qs({}))}">${esc(tt('Посмотреть встречи в других городах', 'See meetings in other cities'))}</a>` : ''}
           ${hostInvite(geo ? country : '', geo ? city : '')}</div>`}
+    ${none || mode === 'online' ? '' : cityAlert(false)}
     ${subsBlock()}
     ${dates.length && subOffer && !hasSame ? `<button class="linkbtn" type="button" data-sub-add style="justify-self:start">${esc(tt('Сообщать о новых встречах с этими фильтрами', 'Notify me about new meetings with these filters'))}</button>` : ''}
     ${session.user && session.user.roles.some((r) => r === 'facilitator' || r === 'admin') ? `<a class="btn" href="${u('/facilitator/m/new' + (mode === 'online' ? '?mode=online' : ''))}" style="justify-self:start">${esc(tt('Создать свою встречу', 'Create your meeting'))}</a>` : ''}
@@ -149,6 +162,26 @@ export async function search(ctx, country, city) {
     try { await api('/api/meeting-subs', { method: 'POST', body: subOffer }); try { sessionStorage.setItem(SUB_KEY, '1'); } catch { /* */ } toast(tt('Сообщим, когда появится встреча', 'We will let you know when a meeting appears')); ctx.rerender(); }
     catch (x) { b.disabled = false; toast(errorText(x)); }
   }));
+  const ca = ctx.main.querySelector('#calert');
+  if (ca) {
+    const form = ca.querySelector('#cpick'); const res = ca.querySelector('#cp-res'); const inp = ca.querySelector('#cp-city');
+    ca.querySelector('[data-cpick]').addEventListener('click', () => { ca.querySelector('#cpick-open').hidden = true; form.hidden = false; inp.focus(); });
+    const subscribe = async (place, btn) => {
+      btn.disabled = true;
+      try { await api('/api/meeting-subs', { method: 'POST', body: { mode: 'live', country: place.country || '', city: place.city } }); try { sessionStorage.setItem(SUB_KEY, '1'); } catch { /* */ }
+        toast(tt(`Сообщим о новых встречах: ${place.city}`, `We will let you know about new meetings: ${place.city}`)); ctx.rerender(); }
+      catch (x) { btn.disabled = false; toast(errorText(x)); }
+    };
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); const q = inp.value.trim(); if (!q) { inp.focus(); return; }
+      res.innerHTML = `<p class="small muted" style="margin:0">${esc(tt('Ищем…', 'Searching…'))}</p>`;
+      let list = []; try { list = (await api('/api/places/search?q=' + encodeURIComponent(q))).places; } catch { /* предложим как введено */ }
+      if (!list.length) list = [{ city: q.charAt(0).toUpperCase() + q.slice(1), country: '' }];
+      res.innerHTML = `${list.length > 1 ? `<p class="small muted" style="margin:0">${esc(tt('Выберите свой город:', 'Choose your city:'))}</p>` : ''}${list.map((p, i) => `<div class="row city-hit"><span class="grow"><b>${esc(p.city)}</b>${p.country ? `<span class="small muted">, ${esc(p.country)}</span>` : ''}</span>
+        <button class="btn yellow sm" type="button" data-csub="${i}">${esc(tt('Сообщить о новых встречах', 'Notify me about new meetings'))}</button></div>`).join('')}`;
+      res.querySelectorAll('[data-csub]').forEach((b) => b.addEventListener('click', () => subscribe(list[Number(b.dataset.csub)], b)));
+    });
+  }
   ctx.main.querySelectorAll('[data-sub-off]').forEach((b) => b.addEventListener('click', async () => {
     try { await api(`/api/meeting-subs/${b.dataset.subOff}`, { method: 'DELETE' }); toast(tt('Подписка отключена', 'Alert turned off')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
   }));

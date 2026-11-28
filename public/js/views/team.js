@@ -1,6 +1,6 @@
 // «Общение»: общий чат и закрытые чаты команды. Список чатов (слева / сверху), непрочитанные, замок у закрытых,
 // ответы и упоминания, изображения и «Медиа», модерация (скрыть / восстановить) и режим уведомлений для чата.
-import { esc, tt, u, api, errorText, toast, fmtDate } from '../util.js';
+import { shareLink, esc, tt, u, api, errorText, toast, fmtDate } from '../util.js';
 import { session, hasRole, needLogin, noRole, loading, failed, ROLE_LABEL, ic } from '../ui.js';
 import { MODE_LABEL } from './notify.js';
 
@@ -79,7 +79,7 @@ export async function chat(ctx, room) {
         ${m.userId !== session.user.id ? `<button class="linkbtn" type="button" data-mention="${m.userId}">${esc(tt('Упомянуть', 'Mention'))}</button>` : ''}
         ${m.userId === session.user.id ? `<button class="linkbtn" type="button" data-del="${m.id}">${esc(tt('Удалить', 'Delete'))}</button>` : isAdmin ? `<button class="linkbtn" type="button" data-hide="${m.id}">${esc(tt('Скрыть (модерация)', 'Hide (moderation)'))}</button>` : ''}</div>`}
     </article>`;
-  const zoomUrl = `${location.origin}${u('/chat')}`;
+  const zoomUrl = shareLink('/chat'); // ссылка для других людей — на нейтральный адрес
   // куда можно переслать из общего чата: закрытые чаты, доступные этому человеку (сервер проверяет права ещё раз)
   const fwdTargets = (d.rooms || []).map((r) => r.room).filter((r) => r !== 'general');
   const draw = async () => {

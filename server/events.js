@@ -12,6 +12,13 @@ const ROOM = { general: 'общем чате', curators: 'чате курато�
 function chatMessage(messageId) {
   const m = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(messageId);
   if (!m || m.deleted_at) return;
+  const owner = community.dmOwner(m.room);
+  if (owner) { // личная переписка с администрацией — одна обновляемая запись на переписку (не по записи на каждое сообщение)
+    if (m.user_id === owner) {
+      for (const uid of bell.usersWithRole('admin', !!m.is_demo)) if (uid !== owner) bell.add({ userId: uid }, { kind: 'direct_admin', title: `Новое сообщение администрации: ${nm(owner)}`, body: '', url: `/admin/messages/${owner}`, group: `dm:${owner}`, isDemo: !!m.is_demo, push: false });
+    } else bell.add({ userId: owner }, { kind: 'direct', title: 'Новое сообщение от администрации', body: '', url: '/me/messages', group: `dm:${owner}`, isDemo: !!m.is_demo, push: false });
+    return;
+  }
   const to = new Map();
   if (m.reply_to) { const o = db.prepare('SELECT user_id FROM chat_messages WHERE id = ?').get(m.reply_to); if (o && o.user_id !== m.user_id) to.set(o.user_id, 'reply'); }
   let ment = []; try { ment = JSON.parse(m.mentions || '[]'); } catch { /* */ }

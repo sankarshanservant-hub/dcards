@@ -3,7 +3,6 @@ import { esc, tt, u, api, toast, errorText, fmtDate, ruPlural } from '../util.js
 import { openViewer } from '../viewer.js';
 import { SLOGAN, TAGLINE } from '../share.js';
 import { ABOUT_CARDS, ABOUT_FLOW, ABOUT_CLOSING } from '../content.js';
-import { scanButton, wireScan } from '../qr-scan.js';
 import { loadTerms, fullHtml } from '../author-terms.js';
 import { session, ic, tileHtml, loading, failed, diceButtonHtml, wireDice } from '../ui.js';
 
@@ -72,13 +71,12 @@ const paras = (T) => (lang === 'en' ? T.en : T.ru).map((p) => `<p>${p.map((l) =>
 // ---------- «Поиграем?» из открытой карты: игры для себя или для компании (20.11.2026) ----------
 export function games(ctx) {
   ctx.main.innerHTML = `<div class="wrap page narrow stack">
-    <div class="page-head head-with-tool"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1>${scanButton(ic.qr)}</div>
+    <div class="page-head"><h1>${esc(tt('Поиграем?', 'Shall we play?'))}</h1></div>
     <div class="list">
       <a class="item" href="${u('/group/solo')}"><span class="ic">${ic.user}</span><span class="grow"><b>${esc(tt('Играть одному', 'Play solo'))}</b></span></a>
       <a class="item" href="${u('/group')}"><span class="ic">${ic.people}</span><span class="grow"><b>${esc(tt('Играть компанией на встрече', 'Play together at a meeting'))}</b><span class="game-sub2">${esc(tt('2–20 участников · каждый со своего телефона', '2–20 players · everyone on their own phone'))}</span></span></a>
-      <a class="item" href="${u('/group/online')}"><span class="ic">${ic.globe}</span><span class="grow"><b>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</b><span class="game-sub2">${esc(tt('На расстоянии · друзья подключаются по ссылке', 'At a distance · friends join by link'))}</span></span></a>
+      <a class="item" href="${u('/group/online')}"><span class="ic">${ic.globe}</span><span class="grow"><b>${esc(tt('Играть компанией онлайн', 'Play with friends online'))}</b><span class="game-sub2">${esc(tt('На расстоянии · до 20 участников · друзья подключаются по ссылке', 'At a distance · up to 20 players · friends join by link'))}</span></span></a>
     </div></div>`;
-  wireScan(ctx.main, ctx.navigate);
 }
 
 // ---------- библиотека ----------

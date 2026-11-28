@@ -37,16 +37,35 @@ function vapid() {
 let sender = (sub, payload, opts) => webpush.sendNotification(sub, payload, opts);
 function setSender(fn) { sender = fn; }
 
+// Категории уведомлений (аудит 26.11.2026). «Получать все уведомления» на странице — выбор всех применимых категорий.
+// Настройки решают, что приходит на устройство (push); история в приложении (колокольчик) записывается всегда.
+const CATS = ['replies', 'mentions', 'direct', 'exchanges', 'meetings', 'applications', 'works', 'collection', 'curation', 'admin'];
+/** Какие категории есть у человека — по его ролям (у администратора — все). */
+function categoriesFor(roles = []) {
+  const has = (r) => roles.includes(r) || roles.includes('admin');
+  return CATS.filter((c) => (c === 'works' ? has('artist') : c === 'collection' ? has('facilitator') : c === 'curation' ? has('curator') : c === 'admin' ? roles.includes('admin') : true));
+}
+/** Вид события колокольчика → категория push. */
+const KIND_CAT = { exchange_round: 'exchanges', exchange_answered: 'exchanges', eagle_answered: 'exchanges', story_proposed: 'exchanges', story_agreed: 'exchanges', group: 'exchanges',
+  registration: 'meetings', registrations: 'meetings', meeting_new: 'meetings', application: 'applications',
+  work_published: 'works', work_returned: 'works', work_rejected: 'works', collection_removed: 'collection', collection_updated: 'collection',
+  curator_queue: 'curation', curator_discuss: 'curation', curator_outcome: 'curation', admin_application: 'admin', admin_recommendation: 'admin', meeting_admin: 'admin',
+  direct: 'direct', direct_admin: 'direct' };
 const prefsOf = (userId) => {
   const p = db.prepare('SELECT * FROM notify_prefs WHERE user_id = ?').get(userId);
-  return { enabled: p ? !!p.enabled : true, replies: p ? !!p.replies : true, mentions: p ? !!p.mentions : true, works: p ? p.works !== 0 : true };
+  const out = { enabled: p ? !!p.enabled : true };
+  for (const c of CATS) out[c] = p ? p[c] !== 0 : true;
+  return out;
 };
-function setPrefs(userId, { enabled, replies, mentions, works }) {
+function setPrefs(userId, patch = {}) {
   const cur = prefsOf(userId);
-  const v = { enabled: enabled ?? cur.enabled, replies: replies ?? cur.replies, mentions: mentions ?? cur.mentions, works: works ?? cur.works };
-  db.prepare(`INSERT INTO notify_prefs (user_id, enabled, replies, mentions, works) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, replies = excluded.replies, mentions = excluded.mentions, works = excluded.works`)
-    .run(userId, v.enabled ? 1 : 0, v.replies ? 1 : 0, v.mentions ? 1 : 0, v.works ? 1 : 0);
+  const v = { ...cur };
+  for (const k of ['enabled', ...CATS]) if (typeof patch[k] === 'boolean') v[k] = patch[k];
+  // выбрана хотя бы одна категория — общий признак включён (старые записи с enabled = 0 не глушат выбранное)
+  if (CATS.some((c) => typeof patch[c] === 'boolean' && patch[c])) v.enabled = true;
+  const cols = ['enabled', ...CATS];
+  db.prepare(`INSERT INTO notify_prefs (user_id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})
+    ON CONFLICT(user_id) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(', ')}`).run(userId, ...cols.map((c) => (v[c] ? 1 : 0)));
   return prefsOf(userId);
 }
 const roomMode = (userId, room) => (db.prepare('SELECT mode FROM chat_notify WHERE user_id = ? AND room = ?').get(userId, room) || {}).mode || 'mentions';
@@ -83,8 +102,9 @@ function unsubscribe(user, endpoint) {
   return { ok: true };
 }
 function status(user) {
+  const roles = db.prepare('SELECT role FROM user_roles WHERE user_id = ?').all(user.id).map((r) => r.role);
   const subs = db.prepare('SELECT endpoint, created_at, last_ok_at, last_error FROM push_subscriptions WHERE user_id = ?').all(user.id);
-  return { publicKey: vapid().publicKey, devices: subs.length, subscriptions: subs.map((s) => ({ endpoint: s.endpoint, lastOkAt: s.last_ok_at, lastError: s.last_error ? (/^(HTTP \d{3}|send_failed)$/.test(s.last_error) ? s.last_error : 'send_failed') : null })), prefs: prefsOf(user.id) };
+  return { publicKey: vapid().publicKey, devices: subs.length, subscriptions: subs.map((s) => ({ endpoint: s.endpoint, lastOkAt: s.last_ok_at, lastError: s.last_error ? (/^(HTTP \d{3}|send_failed)$/.test(s.last_error) ? s.last_error : 'send_failed') : null })), categories: categoriesFor(roles), prefs: prefsOf(user.id) };
 }
 
 async function deliver(userId, payload) {
@@ -121,6 +141,13 @@ function recipients(messageId) {
     if (!prev) out.set(uid, why);
     else if ((prev === 'reply' && why === 'mention') || (prev === 'mention' && why === 'reply')) out.set(uid, 'reply_mention');
   };
+  const owner = community.dmOwner(m.room);
+  if (owner) { // личная переписка: участнику — от администрации, администраторам — от участника
+    const to = m.user_id === owner ? db.prepare("SELECT DISTINCT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'admin' AND u.is_demo = ?").all(m.is_demo ? 1 : 0).map((x) => x.id) : [owner];
+    for (const uid of to) if (uid !== m.user_id) out.set(uid, 'direct');
+    for (const [uid] of [...out]) { const u = db.prepare('SELECT is_demo FROM users WHERE id = ?').get(uid); const p = prefsOf(uid); if (!u || u.is_demo || !p.enabled || p.direct === false) out.delete(uid); }
+    return out;
+  }
   if (m.reply_to) { const o = db.prepare('SELECT user_id FROM chat_messages WHERE id = ?').get(m.reply_to); if (o) add(o.user_id, 'reply'); }
   let ment = []; try { ment = JSON.parse(m.mentions || '[]'); } catch { /* */ }
   for (const id of ment) add(Number(id), 'mention');
@@ -146,6 +173,13 @@ function onMessage(messageId) {
   for (const [uid, why] of recipients(messageId)) {
     const fresh = db.prepare('INSERT OR IGNORE INTO push_log (user_id, message_id, reason) VALUES (?, ?, ?)').run(uid, messageId, why).changes;
     if (!fresh) continue;
+    if (why === 'direct') { // текст сообщения на экран блокировки не выводим — только приглашение открыть
+      const owner = community.dmOwner(m.room); const toOwner = uid === owner;
+      const en = (db.prepare('SELECT lang FROM users WHERE id = ?').get(uid) || {}).lang === 'en';
+      const title = toOwner ? (en ? 'Message from the Dialogue Cards team' : 'Сообщение от администрации') : `${author} · ${en ? 'message to the team' : 'сообщение администрации'}`;
+      jobs.push(deliver(uid, { title, body: en ? 'Open to read' : 'Откройте, чтобы прочитать', url: toOwner ? '/me/messages' : `/admin/messages/${owner}`, tag: `dc-dm${owner}` }).then((n) => ({ uid, why, sent: n })));
+      continue;
+    }
     const lead = why === 'all' ? '' : why === 'mention' ? 'Упомянул(а) вас: ' : 'Ответ: ';
     const body = lead + (community.excerpt(m.text, 120) || 'Изображение');
     jobs.push(deliver(uid, { title: `${author} · ${ROOM_TITLE[m.room] || 'Чат'}`, body, url: `/team/${m.room}?m=${m.id}`, tag: `dc-m${m.id}` }).then((n) => ({ uid, why, sent: n })));
@@ -177,8 +211,9 @@ require('./bell').onPush((uid, payload, kind) => {
   const u = db.prepare('SELECT is_demo FROM users WHERE id = ?').get(uid); if (!u || u.is_demo) return;
   const p = prefsOf(uid); if (!p.enabled) return;
   if (/^work_/.test(kind)) return; // о решениях по работам — onWorkDecision (своя настройка «Решения по моим работам»)
+  const cat = KIND_CAT[kind]; if (cat && p[cat] === false) return; // категория выключена — только запись в колокольчике
   // ссылки колокольчика — от корня приложения («/x/…»); полный адрес подставляет deliver (по адресу подписки)
   deliver(uid, payload).catch(() => {});
 });
 
-module.exports = { vapid, pushEndpointOk, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };
+module.exports = { CATS, KIND_CAT, categoriesFor, vapid, pushEndpointOk, subscribe, unsubscribe, status, prefsOf, setPrefs, roomMode, setRoomMode, recipients, onMessage, onWorkDecision, test, setSender, MODES };

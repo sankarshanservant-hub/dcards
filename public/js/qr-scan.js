@@ -89,4 +89,6 @@ export function openScanner(navigate) {
 
 /** Кнопка-значок сканера: только пиктограмма, имя — для экранного диктора, без всплывающей подсказки. */
 export const scanButton = (qrIcon) => `<button class="icon-btn qr-scan-btn" type="button" data-qrscan aria-label="${esc(tt('Сканировать QR-код игры', 'Scan a game QR code'))}">${qrIcon}</button>`;
+/** «Присоединиться к игре» в режимах компании (26.11.2026): сканер QR и ввод кода комнаты. */
+export const joinButton = (qrIcon) => `<button class="btn light sm join-game" type="button" data-qrscan>${qrIcon} ${esc(tt('Присоединиться к игре', 'Join a game'))}</button>`;
 export function wireScan(root, navigate) { root.querySelectorAll('[data-qrscan]').forEach((b) => b.addEventListener('click', () => openScanner(navigate))); }

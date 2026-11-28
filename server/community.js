@@ -34,12 +34,16 @@ function recentComments(showDemo) {
 const ROOMS = { general: [], curators: ['curator'], facilitators: ['facilitator'] };
 const CATEGORIES = ['meetings', 'illustrations', 'inspiration'];
 const canRoom = (room, has) => !!ROOMS[room] && (!ROOMS[room].length || has(...ROOMS[room]));
+// Личная переписка с администрацией (28.11.2026): комната dm-<id участника>. Видят только сам участник и администраторы.
+const dmOwner = (room) => { const m = /^dm-(\d+)$/.exec(String(room || '')); return m ? Number(m[1]) : null; };
+const isRoom = (room) => !!ROOMS[room] || !!dmOwner(room);
 const attOut = (room) => (a) => ({ id: a.id, category: a.category, width: a.width, height: a.height,
   thumb: `/api/chats/${room}/media/thumb/${a.file}`, full: `/api/chats/${room}/media/full/${a.file}` });
 const rolesOf = (userId) => db.prepare('SELECT role FROM user_roles WHERE user_id = ?').all(userId).map((r) => r.role);
 /** Доступ участника к комнате по его ролям (администратор — во все). */
 function userCanRoom(room, userId) {
   const roles = rolesOf(userId);
+  const owner = dmOwner(room); if (owner) return owner === Number(userId) || roles.includes('admin');
   return canRoom(room, (...need) => roles.includes('admin') || need.some((r) => roles.includes(r)));
 }
 const excerpt = (t, n = 140) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
@@ -75,6 +79,7 @@ function chat(room, showDemo, viewer = null) {
 /** Кого можно упомянуть: участники с доступом к комнате, писавшие в ней (и состав закрытой комнаты). */
 function people(room, showDemo) {
   const ids = new Set(db.prepare(`SELECT DISTINCT user_id FROM chat_messages WHERE room = ? AND ${showDemo ? '1=1' : 'is_demo = 0'} ORDER BY id DESC LIMIT 300`).all(room).map((r) => r.user_id));
+  if (dmOwner(room)) return []; // в личной переписке упоминаний нет
   const mem = members(room); if (mem) mem.forEach((x) => ids.add(x.id));
   return [...ids].filter((id) => userCanRoom(room, id)).map((id) => ({ id, name: userName(id) })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
@@ -185,7 +190,7 @@ function markRead(userId, room, lastId) {
   return { ok: true };
 }
 function members(room) {
-  if (!ROOMS[room].length) return null; // общий чат: все участники
+  if (!ROOMS[room] || !ROOMS[room].length) return null; // общий чат: все участники
   return db.prepare(`SELECT DISTINCT u.id, COALESCE(NULLIF(u.public_name,''), u.name) AS name, r.role FROM users u JOIN user_roles r ON r.user_id = u.id
     WHERE r.role IN (?, 'admin') ORDER BY r.role, name`).all(ROOMS[room][0]);
 }
@@ -352,7 +357,37 @@ function decideCuratorApplication(adminId, userId, approve, note = '') {
   return { ok: true };
 }
 
+// ---------- личная переписка с администрацией ----------
+const lastRead = (userId, room) => (db.prepare('SELECT last_id FROM chat_reads WHERE user_id = ? AND room = ?').get(userId, room) || {}).last_id || 0;
+/** Непрочитанные для участника: сообщения администрации после последнего прочитанного. */
+function dmUnread(userId) {
+  const room = 'dm-' + userId;
+  return db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE room = ? AND id > ? AND user_id != ? AND deleted_at IS NULL').get(room, lastRead(userId, room), userId).n;
+}
+/** Сообщения участнику: от администрации — подписью «Администрация», без личных имён администраторов. */
+function dmForOwner(ownerId, showDemo) {
+  return chat('dm-' + ownerId, showDemo, { id: ownerId, isAdmin: false }).map((m) => (m.userId === ownerId ? m : { ...m, author: '', fromAdmin: true }));
+}
+/**
+ * Переписки для администратора: участник, его роли, последнее сообщение, непрочитанные (сообщения участника после
+ * последнего прочитанного этим администратором). Сначала — с непрочитанными, затем по свежести.
+ */
+function dmThreads(adminId, showDemo) {
+  const rows = db.prepare(`SELECT room, MAX(id) AS last_id FROM chat_messages WHERE room LIKE 'dm-%' AND deleted_at IS NULL AND ${showDemo ? '1=1' : 'is_demo = 0'} GROUP BY room`).all();
+  return rows.map((r) => {
+    const owner = dmOwner(r.room); if (!owner) return null;
+    const u = db.prepare('SELECT id, name, public_name, email, is_demo FROM users WHERE id = ?').get(owner); if (!u) return null;
+    const last = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(r.last_id);
+    const att = db.prepare('SELECT COUNT(*) AS n FROM chat_attachments WHERE message_id = ?').get(r.last_id).n;
+    const unread = db.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE room = ? AND id > ? AND user_id = ? AND deleted_at IS NULL').get(r.room, lastRead(adminId, r.room), owner).n;
+    return { userId: owner, name: u.public_name || u.name, roles: rolesOf(owner), isDemo: !!u.is_demo, lastAt: last.created_at,
+      lastText: excerpt(last.text, 90) || (att ? '[изображение]' : ''), lastFromUser: last.user_id === owner, unread };
+  }).filter(Boolean).sort((a, b) => (b.unread > 0) - (a.unread > 0) || String(b.lastAt).localeCompare(String(a.lastAt)));
+}
+const dmUnreadAdmin = (adminId, showDemo) => dmThreads(adminId, showDemo).reduce((n, t) => n + (t.unread ? 1 : 0), 0);
+
 module.exports = {
+  dmOwner, isRoom, dmUnread, dmForOwner, dmThreads, dmUnreadAdmin,
   forward,
   curatorApplication, submitCuratorApplication, curatorApplications, decideCuratorApplication,
   comments, addComment, deleteComment, recentComments, ROOMS, CATEGORIES, canRoom, userCanRoom, chat, people, post, deleteMessage, restoreMessage, modLog, markRead, excerpt, media, attachmentFile, rooms, members,
