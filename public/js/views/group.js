@@ -385,7 +385,7 @@ export async function solo(ctx) { // «История из трёх карт» (
     st.codes[k] = cards[i].code; save();
     const box = ctx.main.querySelector('#s3card'); if (box) box.innerHTML = img(cards[i]);
   };
-  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => `${i + 1}. ${t2.trim() || '—'}`).join('\n')}\n\n${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${shareLink('/group/solo/story')}`;
+  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => `${i + 1}. ${t2.trim() || '—'}`).join('\n')}\n\n${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${shareLink('/group/solo/story')}`; // ссылка для других — на нейтральный dialogue.cards (CLAUDE.md п.5), не на адрес входа
   ctx.main.innerHTML = `<div class="live"><div class="live-in"><p class="eyebrow">${esc(tt('Играть одному', 'Play solo'))}</p><h1 style="margin:0">${esc(tt('История из трёх карт', 'A story from three cards'))}</h1><div class="live-in" id="solo" style="max-width:none"></div></div></div>`;
   ctx.main.querySelector('#solo').addEventListener('click', async (e) => {
     const go = e.target.closest('[data-go]'); if (go && !go.disabled) { st.step = Number(go.dataset.go); st.reached = Math.max(st.reached || 0, Math.min(3, st.step)); save(); draw(); window.scrollTo({ top: 0 }); return; }
