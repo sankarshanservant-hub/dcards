@@ -117,6 +117,7 @@ export async function search(ctx, country, city) {
         <button class="linkbtn danger" type="button" data-sub-off="${x.id}">${esc(tt('Отключить', 'Turn off'))}</button></li>`).join('')}</ul>
       <p class="small muted" style="margin:0">${esc(session.user ? tt('Сообщим в колокольчике и push-уведомлением, если оно включено.', 'We will notify you in the bell and by push, if enabled.') : tt('Сообщим в колокольчике в этом браузере. Войдите, чтобы получать и на других устройствах.', 'We will notify you in the bell in this browser. Sign in to get alerts on other devices too.'))}</p></details>` : '');
   const none = !dates.length && !filtered && !mode && !places.length;
+  const liveSubs = subs.filter((x) => x.mode === 'live');
   ctx.main.innerHTML = `<div class="wrap page stack">
     <div class="page-head"><p class="eyebrow" style="margin:0">Dialogue Flow</p><h1>${esc(tt('Найти встречу', 'Find a meeting'))}</h1>
       ${none ? '' : `<p class="sub">${esc(mode === 'online' ? tt('Ближайшие встречи — сверху. Время — по вашему часовому поясу.', 'Nearest meetings first. Times are in your time zone.') : tt('Ближайшие встречи — сверху. Время живых встреч — по месту проведения.', 'Nearest meetings first. Live meeting times are local to the venue.'))}</p>`}</div>
@@ -140,7 +141,8 @@ export async function search(ctx, country, city) {
     ${filtered && geo && country ? `<p class="small muted" style="margin:0">${esc(tt('Показаны встречи:', 'Showing meetings in:'))} <b>${esc([city, country].filter(Boolean).join(', '))}</b></p>` : ''}
     ${dates.length ? `<div class="list">${dates.map(eventRow).join('')}</div>`
       : none ? `<div class="empty stack" style="justify-items:center"><b>${esc(tt('Пока здесь нет предстоящих встреч', 'There are no upcoming meetings here yet'))}</b>
-          <span class="small">${esc(tt('Мы сообщим, когда появится встреча в вашем городе.', 'We will let you know when a meeting appears in your city.'))}</span>
+          ${liveSubs.length ? `<span class="small" role="status">${esc(tt(`Сообщим, когда появится встреча: ${liveSubs.map((x) => x.city).join(', ')}.`, `We will let you know when a meeting appears in: ${liveSubs.map((x) => x.city).join(', ')}.`))}</span>`
+            : `<span class="small">${esc(tt('Выберите город, чтобы узнать о новых встречах.', 'Choose a city to hear about new meetings.'))}</span>`}
           ${cityAlert(true)}${hostInvite('', '')}</div>`
       : `<div class="empty stack" style="justify-items:center"><span>${esc(none ? tt('Пока нет запланированных встреч', 'No meetings planned yet') : mode === 'online' ? tt('Подходящих онлайн-встреч пока нет', 'No matching online meetings yet') : city ? tt('В этом городе пока нет предстоящих встреч', 'No upcoming meetings in this city yet') : country ? tt('В этой стране пока нет встреч', 'No meetings in this country yet') : tt('Подходящих встреч пока нет', 'No matching meetings yet'))}</span>
           ${emptyActions()}
