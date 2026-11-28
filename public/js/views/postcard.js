@@ -46,6 +46,11 @@ export async function postcard(ctx, code) {
   const W = img.naturalWidth; const H = img.naturalHeight;
   const st = { ...DEFAULT_DESIGN, ...(saved ? cleanDesign(saved.design) : {}) };
   const ui = { tab: 'layout', overflow: false, box: null, sel: false, touched: !!saved, savedId: saved ? saved.id : null, savedMsg: '', hint: '', blob: null, blobFor: '' };
+  // незаконченная открытка (аудит 28.11.2026, п. 25): смена языка, просмотр карты и возврат не сбрасывают надпись, макет и вкладку.
+  // Черновик — в этой вкладке браузера, отдельно для каждой карты (и для каждой открытки из «Моих открыток»).
+  const DKEY = 'dc_pc_draft'; const dkey = `${card.code}|${pid || ''}`;
+  try { const d = JSON.parse(sessionStorage.getItem(DKEY) || 'null'); if (d && d.key === dkey && d.st) { Object.assign(st, cleanDesign(d.st)); ui.tab = d.tab === 'text' ? 'text' : 'layout'; ui.touched = !!d.touched || ui.touched; } } catch { /* без черновика */ }
+  const keepDraft = () => { try { sessionStorage.setItem(DKEY, JSON.stringify({ key: dkey, st: cleanDesign(st), tab: ui.tab, touched: ui.touched })); } catch { /* */ } };
 
   function layoutDefaults() {
     const g = geo(st, W, H);
@@ -87,8 +92,8 @@ export async function postcard(ctx, code) {
     const sel = focusId === 'pct' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
     const html = `<div class="wrap page narrow stack pc-page editing${ui.typing ? ' typing' : ''}">
       <h1 class="pc-title">${esc(tt('Создание открытки', 'Create a postcard'))}</h1>
-      <div class="pc-stage"><div class="pc-wrap"><canvas id="pc" role="img" aria-label="${esc(tt('Предпросмотр открытки', 'Postcard preview'))}"></canvas><div class="pc-sel" hidden><span class="pc-handle" aria-hidden="true">${HANDLE}</span></div></div></div>
-      <div class="pc-tabs two" role="tablist">${[['layout', 'Макет', 'Layout'], ['text', 'Текст', 'Text']].map(([k, ru, en]) => `<button type="button" role="tab" class="${k === ui.tab ? 'on' : ''}" aria-selected="${k === ui.tab}" data-tab="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
+      <div class="pc-sticky"><div class="pc-stage"><div class="pc-wrap"><canvas id="pc" role="img" aria-label="${esc(tt('Предпросмотр открытки', 'Postcard preview'))}"></canvas><div class="pc-sel" hidden><span class="pc-handle" aria-hidden="true">${HANDLE}</span></div></div></div>
+      <div class="pc-tabs two" role="tablist">${[['layout', 'Макет', 'Layout'], ['text', 'Текст', 'Text']].map(([k, ru, en]) => `<button type="button" role="tab" class="${k === ui.tab ? 'on' : ''}" aria-selected="${k === ui.tab}" data-tab="${k}">${esc(tt(ru, en))}</button>`).join('')}</div></div>
       <div class="pc-panel" role="tabpanel">${panel()}</div>
       <div class="pc-send">
         ${sendButton(`data-send ${ui.overflow ? 'disabled' : ''}`, tt('Отправить открытку', 'Send the postcard'))}
@@ -101,11 +106,14 @@ export async function postcard(ctx, code) {
     if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     const cv = ctx.main.querySelector('#pc'); paint(cv);
     wire(cv);
+    // вкладку сменили, прокрутив вниз: панель уже под закреплённым предпросмотром — показываем её начало, а не середину
+    if (ui.toPanel) { ui.toPanel = false; const sk = ctx.main.querySelector('.pc-sticky'); const pn = ctx.main.querySelector('.pc-panel');
+      if (sk && pn && getComputedStyle(sk).position === 'sticky') { const gap = pn.getBoundingClientRect().top - sk.getBoundingClientRect().bottom; if (gap < 0) window.scrollBy({ top: gap - 8, behavior: 'instant' }); } }
     if (focusId === 'pct') { const t = ctx.main.querySelector('#pct'); if (t) { t.focus(); if (sel) t.setSelectionRange(sel[0], sel[1]); } }
   }
   /** Рисует открытку и рамку выделения поверх (рамка — DOM, в картинку не попадает). */
   function paint(cv) {
-    const r = drawPostcard(cv, st, img); ui.box = r.box; ui.overflow = r.overflow;
+    const r = drawPostcard(cv, st, img); ui.box = r.box; ui.overflow = r.overflow; keepDraft();
     cv.style.touchAction = hasText() ? 'none' : 'auto';
     const s = ctx.main.querySelector('.pc-sel'); if (!s) return;
     if (!ui.box || !ui.sel) { s.hidden = true; return; }
@@ -126,7 +134,7 @@ export async function postcard(ctx, code) {
   function wire(cv) {
     const $ = (q) => ctx.main.querySelector(q);
     const all = (q, fn) => ctx.main.querySelectorAll(q).forEach((b) => { b.onclick = () => { fn(b); ui.savedMsg = ''; render(); }; });
-    all('[data-tab]', (b) => { ui.tab = b.dataset.tab; if (ui.tab === 'text' && hasText()) ui.sel = true; });
+    all('[data-tab]', (b) => { ui.tab = b.dataset.tab; if (ui.tab === 'text' && hasText()) ui.sel = true; ui.toPanel = true; });
     all('[data-layout]', (b) => { st.layout = b.dataset.layout; if (!ui.touched) layoutDefaults(); if (st.bg === 'grad' && st.layout !== 'full') st.bg = 'none'; });
     all('[data-paper]', (b) => { st.paper = b.dataset.paper; if (!ui.touched) layoutDefaults(); });
     all('[data-font]', (b) => { st.font = b.dataset.font; });

@@ -1879,3 +1879,14 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .pc-got .pc-stage canvas { width: min(360px, 86vw); height: auto; }
 .pc-got-acts { display: grid; gap: 8px; justify-items: center; }
 .pc-got-acts .btn { min-width: min(300px, 100%); text-decoration: none; }
+/* аудит 28.11 B */
+/* редактор открытки: вкладки «Макет / Текст» закреплены вместе с предпросмотром — прокручиваемые настройки уходят под них, а не наоборот */
+.pc-page.editing .pc-stage { position: static; padding-bottom: 0; }
+.pc-page.editing .pc-sticky { position: sticky; top: calc(var(--head-h) + 4px); z-index: 5; background: var(--bg); padding-bottom: 8px; display: grid; gap: 8px; }
+@media (max-width: 899px) and (max-height: 720px) { .pc-page.editing .pc-stage canvas { height: min(34vh, 300px); } }
+.pc-page.editing.typing .pc-stage canvas { height: min(24vh, 210px); }
+/* «История из трёх карт»: устный режим — только три карты */
+.s3-mode { margin: 0; }
+.s3-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.s3-trio .live-card-btn { padding: 0; border: 0; background: none; }
+.s3-trio-card { width: 100%; height: auto; border-radius: 12px; display: block; }
