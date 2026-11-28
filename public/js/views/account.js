@@ -18,12 +18,15 @@ export function demoRoles(ctx) {
   }));
 }
 
+// После входа экран входа заменяется в истории исходным действием (аудит 28.11, п. 13): «Назад» не возвращает к форме кода.
 const goAfterLogin = (ctx) => {
   const next = ctx.query.get('next');
-  ctx.navigate(next && next.startsWith('/') ? next : (window.dcHomeFor ? window.dcHomeFor() : '/start'));
+  ctx.navigate(next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login') ? next : (window.dcHomeFor ? window.dcHomeFor() : '/start'), { replace: true });
 };
 
 export function login(ctx) {
+  // Уже вошли (кнопка «Назад», повторное открытие адреса входа) — сразу к исходному действию, без формы кода.
+  if (session.user) { goAfterLogin(ctx); return; }
   let step = 1; let email = ''; let info = null;
   const siteOn = !!session.config.siteLogin;
   // Вход общим аккаунтом сайта: если человек войдёт в другой вкладке, эта страница подхватит вход сама.

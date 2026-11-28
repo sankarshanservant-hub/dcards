@@ -470,6 +470,23 @@ export function homeFor() {
   return '/start';
 }
 window.dcHomeFor = homeFor;
+function loadingMain() { if (!main.innerHTML.trim()) { main.innerHTML = `<div class="wrap page" data-loading><p class="muted">${esc(tt('Загрузка…', 'Loading…'))}</p></div>`; main.dataset.loadingSince = String(Date.now()); } }
 window.dcRenderChrome = renderChrome;
 
-(async () => { await refreshSession(); render(); if (session.user) setTimeout(syncPush, 1500); })();
+// Первый показ (аудит 28.11, п. 12): страница из ссылки не ждёт медленной проверки входа (вход аккаунтом портала,
+// плохая сеть) — через 2,5 с показываем её гостю, а когда сессия придёт и окажется другой, перерисовываем.
+(async () => {
+  loadingMain();
+  const done = refreshSession().then(() => true);
+  const fast = await Promise.race([done, new Promise((r) => setTimeout(() => r(false), 2500))]);
+  const shownAs = session.user ? session.user.id : null;
+  render();
+  if (!fast) done.then(() => { if ((session.user ? session.user.id : null) !== shownAs) render(); else renderChrome(); });
+  done.then(() => { if (session.user) setTimeout(syncPush, 1500); });
+})();
+// Вкладка вернулась из фона, а страница так и не загрузилась (запрос застрял, вкладка была заморожена) — пробуем снова.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const t = (main.innerText || '').trim();
+  if (!t || (main.querySelector('[data-loading]') && Date.now() - (Number(main.dataset.loadingSince) || 0) > 4000)) render();
+});

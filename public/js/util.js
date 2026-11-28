@@ -22,8 +22,13 @@ export class ApiError extends Error {
 
 export async function api(path, { method = 'GET', body, form } = {}) {
   let res;
+  // запрос, который не ответил за 20 с (застрявшая мобильная сеть, замороженная вкладка), — ошибка связи с «Повторить»,
+  // а не бесконечная «Загрузка…»; загрузка файлов идёт через upload() и под этот предел не попадает
+  const ctl = typeof AbortController === 'function' && !form ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), 20000) : null;
   try {
     res = await fetch(BASE + path, {
+      signal: ctl ? ctl.signal : undefined,
       method,
       // X-DC-Visitor — случайный идентификатор этого браузера: обмены, колокольчик и записи гостя (без личных данных)
       headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'X-DC-Visitor': visitorId(), 'X-DC-Lang': document.documentElement.lang === 'en' ? 'en' : 'ru' },
@@ -32,7 +37,7 @@ export async function api(path, { method = 'GET', body, form } = {}) {
     });
   } catch {
     throw new ApiError(0, 'network');
-  }
+  } finally { if (timer) clearTimeout(timer); }
   let data = null;
   try { data = await res.json(); } catch { /* пустой ответ */ }
   if (!res.ok) throw new ApiError(res.status, (data && data.error) || 'server_error', data);

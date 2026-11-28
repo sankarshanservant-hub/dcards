@@ -63,7 +63,7 @@ export const WORK_STATUS = {
   needs_changes: () => [tt('Возвращена на доработку', 'Returned for changes'), 'red'],
   rejected: () => [tt('Отклонена', 'Declined'), 'red'],
   published: () => [tt('Опубликована', 'Published'), 'mint'],
-  withdrawn: () => [tt('Отозвана', 'Withdrawn'), ''],
+  withdrawn: () => [tt('Снята автором с рассмотрения', 'Withdrawn by the author'), ''],
 };
 export const statusPill = (map, s) => { const [label, cls] = (map[s] || (() => [s, '']))(); return `<span class="pill ${cls} status-tag">${esc(label)}</span>`; };
 export const demoPill = (on) => (on ? `<span class="pill demo">${esc(tt('демо', 'demo'))}</span>` : '');
@@ -83,7 +83,7 @@ export function tileHtml(c, i, { extraClass = '', badge = '', label = '' } = {})
     </button>`;
 }
 
-export function loading(main) { main.innerHTML = `<div class="wrap page"><p class="muted">${esc(tt('Загрузка…', 'Loading…'))}</p></div>`; }
+export function loading(main) { main.innerHTML = `<div class="wrap page" data-loading><p class="muted">${esc(tt('Загрузка…', 'Loading…'))}</p></div>`; main.dataset.loadingSince = String(Date.now()); }
 export function needLogin(main, why) {
   main.innerHTML = `<div class="wrap page narrow"><div class="card-ui stack">
     <h2>${esc(tt('Нужно войти', 'Please sign in'))}</h2><p class="muted">${esc(why || '')}</p>
