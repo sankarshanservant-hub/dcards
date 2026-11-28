@@ -310,18 +310,19 @@ async function storyImage(cs, texts) {
   try { await Promise.all([document.fonts.load('800 50px Rubik'), document.fonts.load('400 36px Onest')]); } catch { /* */ }
   const m = document.createElement('canvas').getContext('2d'); m.font = '400 36px Onest, sans-serif';
   const wrap = (s) => { const out = []; for (const para of String(s || '').split('\n')) { let cur = ''; for (const w of para.split(/\s+/).filter(Boolean)) { const t2 = cur ? `${cur} ${w}` : w; if (m.measureText(t2).width > W - pad * 2 - 60 && cur) { out.push(cur); cur = w; } else cur = t2; } out.push(cur); } return out; };
-  const blocks = texts.map((t2) => wrap(t2.trim() || '—'));
-  const H = pad + 70 + ch + 50 + blocks.reduce((s, b) => s + 60 + b.length * 48 + 20, 0) + 140;
+  // пустые фрагменты (историю сочиняли вслух) не рисуем: ни тире, ни номера
+  const blocks = texts.map((t2, i) => ({ n: i + 1, lines: String(t2 || '').trim() ? wrap(t2.trim()) : null })).filter((b) => b.lines);
+  const H = pad + 70 + ch + (blocks.length ? 50 : 0) + blocks.reduce((s, b) => s + 60 + b.lines.length * 48 + 20, 0) + 140;
   const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
   x.fillStyle = '#060c1e'; x.fillRect(0, 0, W, H);
   x.fillStyle = '#f1e6c8'; x.font = '800 50px Rubik, sans-serif'; x.textAlign = 'center'; x.fillText(tt('История из трёх карт', 'A story from three cards'), W / 2, pad + 46);
   let y = pad + 70;
   imgs.forEach((im, i) => { const cx = pad + i * (cw + gap); x.save(); x.beginPath(); (x.roundRect ? x.roundRect(cx, y, cw, ch, 18) : x.rect(cx, y, cw, ch)); x.clip(); if (im) x.drawImage(im, cx, y, cw, ch); x.restore(); });
   y += ch + 50; x.textAlign = 'left';
-  blocks.forEach((b, i) => {
-    x.fillStyle = '#f6c23c'; x.font = '600 30px Onest, sans-serif'; x.fillText(String(i + 1), pad, y + 34);
-    x.fillStyle = '#f1e6c8'; x.font = '400 36px Onest, sans-serif'; let ty = y + 34; for (const l of b) { x.fillText(l, pad + 60, ty); ty += 48; }
-    y += 60 + b.length * 48 + 20 - 26;
+  blocks.forEach((b) => {
+    x.fillStyle = '#f6c23c'; x.font = '600 30px Onest, sans-serif'; x.fillText(String(b.n), pad, y + 34);
+    x.fillStyle = '#f1e6c8'; x.font = '400 36px Onest, sans-serif'; let ty = y + 34; for (const l of b.lines) { x.fillText(l, pad + 60, ty); ty += 48; }
+    y += 60 + b.lines.length * 48 + 20 - 26;
   });
   x.textAlign = 'center'; x.fillStyle = 'rgba(241,230,200,.75)'; x.font = '400 30px Onest, sans-serif'; x.fillText(tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation'), W / 2, H - 70);
   return c;
@@ -350,6 +351,7 @@ export async function solo(ctx) { // «История из трёх карт» (
     else if (!st.step) {
       html = `<p class="lead">${esc(tt('Ты откроешь три разные карты, одну за другой, и сочинишь по ним историю.', 'You will open three different cards, one after another, and make up a story from them.'))}</p>
         <ol class="solo-steps">${SOLO_STEPS().map((t2) => `<li>${esc(t2)}</li>`).join('')}</ol>
+        <p class="s3-mode">${esc(tt('Можно сочинять вслух или записывать', 'You can tell it aloud or write it down'))}</p>
         <button class="btn yellow big" type="button" data-go="1">${esc(tt('Открыть первую карту', 'Open the first card'))}</button>`;
     } else if (st.step <= 3) {
       const k = st.step - 1; const c = byCode.get(st.codes[k]);
@@ -358,11 +360,16 @@ export async function solo(ctx) { // «История из трёх карт» (
           <div class="imag-card" id="s3card">${img(c)}</div>
           <button class="icon-btn" type="button" data-flip="1" aria-label="${esc(tt('Другая карта: следующая', 'Another card: next'))}">${ic.chevronRight}</button></div>
         <p class="lead">${esc(SOLO_STEPS()[k])}</p>
+        <p class="s3-mode small muted">${esc(tt('Можно сочинять вслух или записывать', 'You can tell it aloud or write it down'))}</p>
         <label class="sr-only" for="s3t">${esc(tt(`Фрагмент истории ${st.step}`, `Story part ${st.step}`))}</label>
         <textarea id="s3t" class="s3-text" rows="2" maxlength="1200" placeholder="${esc(tt('Запиши свой фрагмент истории', 'Write your part of the story'))}">${esc(st.texts[k])}</textarea>
         <button class="btn yellow big" type="button" data-go="${st.step + 1}">${esc(st.step === 1 ? tt('Открыть вторую карту', 'Open the second card') : st.step === 2 ? tt('Открыть третью карту', 'Open the third card') : tt('Посмотреть историю', 'See the story'))}</button>`;
     } else {
-      html = `<div class="s3-final">${st.codes.map((code, i) => `<div class="s3-part">${img(byCode.get(code), 'live-card s3-thumb')}<div><b>${i + 1}</b><p>${esc(st.texts[i] || '—')}</p><button class="link-btn small" type="button" data-go="${i + 1}">${esc(tt('Изменить', 'Edit'))}</button></div></div>`).join('')}</div>
+      // ничего не записано (сочиняли вслух) — только три карты; записано частично — фрагменты у своих карт, без тире у пустых
+      const has = (i) => !!String(st.texts[i] || '').trim(); const any = [0, 1, 2].some(has);
+      html = `${any ? `<div class="s3-final">${st.codes.map((code, i) => `<div class="s3-part">${img(byCode.get(code), 'live-card s3-thumb')}<div>${has(i) ? `<b>${i + 1}</b><p>${esc(st.texts[i])}</p>` : ''}<button class="link-btn small" type="button" data-go="${i + 1}">${esc(has(i) ? tt('Изменить', 'Edit') : tt('Записать', 'Write'))}</button></div></div>`).join('')}</div>`
+        : `<div class="s3-trio">${st.codes.map((code) => img(byCode.get(code), 'live-card s3-trio-card')).join('')}</div>
+          <button class="link-btn small" type="button" data-go="1" style="justify-self:start">${esc(tt('Записать историю', 'Write the story down'))}</button>`}
         <button class="btn yellow big send-btn" type="button" data-share>${esc(tt('Поделиться', 'Share'))}</button>
         <p class="vb-note s3-hint" role="status"></p>
         <button class="btn light" type="button" data-again>${esc(tt('Сыграть ещё', 'Play again'))}</button>
@@ -385,7 +392,7 @@ export async function solo(ctx) { // «История из трёх карт» (
     st.codes[k] = cards[i].code; save();
     const box = ctx.main.querySelector('#s3card'); if (box) box.innerHTML = img(cards[i]);
   };
-  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => `${i + 1}. ${t2.trim() || '—'}`).join('\n')}\n\n${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${shareLink('/group/solo/story')}`; // ссылка для других — на нейтральный dialogue.cards (CLAUDE.md п.5), не на адрес входа
+  const shareText = () => `${tt('История из трёх карт', 'A story from three cards')}\n\n${st.texts.map((t2, i) => (t2.trim() ? `${i + 1}. ${t2.trim()}` : '')).filter(Boolean).join('\n')}${st.texts.some((t2) => t2.trim()) ? '\n\n' : ''}${tt('Dialogue Cards — повод для интересного разговора', 'Dialogue Cards — a reason for an interesting conversation')}\n${shareLink('/group/solo/story')}`; // ссылка для других — на нейтральный dialogue.cards (CLAUDE.md п.5), не на адрес входа
   ctx.main.innerHTML = `<div class="live"><div class="live-in"><p class="eyebrow">${esc(tt('Играть одному', 'Play solo'))}</p><h1 style="margin:0">${esc(tt('История из трёх карт', 'A story from three cards'))}</h1><div class="live-in" id="solo" style="max-width:none"></div></div></div>`;
   ctx.main.querySelector('#solo').addEventListener('click', async (e) => {
     const go = e.target.closest('[data-go]'); if (go && !go.disabled) { st.step = Number(go.dataset.go); st.reached = Math.max(st.reached || 0, Math.min(3, st.step)); save(); draw(); window.scrollTo({ top: 0 }); return; }

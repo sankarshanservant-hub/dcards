@@ -38,7 +38,18 @@ const keep = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } c
 const restore = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch { return null; } };
 
 // ---------- «Что их связывает?» ----------
-const MORE = () => [tt('Найди связь между этими картами.', 'Find a connection between these cards.'), tt('А что ещё их связывает?', 'What else connects them?'), tt('Попробуй найти связь, которая не видна сразу.', 'Try to find a connection that is not obvious at first.'), tt('Что объединяет их по настроению?', 'What do they share in mood?'), tt('Какая история могла бы связать эти две карты?', 'What story could connect these two cards?')];
+// Первая фраза — исходная; «А что ещё?» по кругу предлагает разные углы зрения на ту же пару (аудит 28.11.2026, п. 21).
+const MORE = () => [tt('Найди связь между этими картами.', 'Find a connection between these cards.'),
+  tt('Что общего в настроении?', 'What do they share in mood?'),
+  tt('Какая деталь могла бы перейти из одной сцены в другую?', 'Which detail could move from one scene into the other?'),
+  tt('Что могло случиться между первой и второй картой?', 'What could have happened between the first card and the second?'),
+  tt('Если это два героя, о чём бы они поговорили?', 'If these were two characters, what would they talk about?'),
+  tt('Какое одно слово подходит обеим картам?', 'Which single word fits both cards?'),
+  tt('Чем они отличаются — и что из этого следует?', 'How are they different — and what follows from that?'),
+  tt('Какая история могла бы связать эти две карты?', 'What story could connect these two cards?'),
+  tt('Попробуй найти связь, которая не видна сразу.', 'Try to find a connection that is not obvious at first.')];
+// номер подсказки: 0 — исходная, дальше по кругу без возврата к исходной
+const moreText = (n) => { const m = MORE(); return n === 0 ? m[0] : m[1 + ((n - 1) % (m.length - 1))]; };
 export async function connect(ctx) {
   loading(ctx.main);
   let cards; try { cards = await loadCards(ctx); } catch (e) { return failed(ctx.main, e, ctx.rerender); }
@@ -55,7 +66,7 @@ export async function connect(ctx) {
         <figure class="${changed === 'a' ? 'changed' : ''}">${cardImg(A)}<figcaption><button class="btn sm light" type="button" data-swap="a" aria-label="${esc(tt('Заменить левую карту', 'Replace the left card'))}">${esc(tt('Заменить эту', 'Replace this one'))}</button></figcaption></figure>
         <figure class="${changed === 'b' ? 'changed' : ''}">${cardImg(B)}<figcaption><button class="btn sm light" type="button" data-swap="b" aria-label="${esc(tt('Заменить правую карту', 'Replace the right card'))}">${esc(tt('Заменить эту', 'Replace this one'))}</button></figcaption></figure>
       </div>
-      <p class="lead" aria-live="polite" style="margin:0">${esc(MORE()[st.n % MORE().length])}</p>
+      <p class="lead" aria-live="polite" style="margin:0">${esc(moreText(st.n))}</p>
       <p class="vb-note" style="margin:0">${esc(tt('Понравилась одна карта — оставь её и замени вторую.', 'Like one card? Keep it and replace the other.'))}</p>
       <div class="row"><button class="btn yellow" type="button" data-more>${esc(tt('А что ещё?', 'What else?'))}</button></div>`);
   };
@@ -242,7 +253,7 @@ export async function imagine(ctx) {
   const ready = () => words(0).length > 0 && words(1).length > 0;
   // ветка: исходное слово — крупно, ассоциации — ниже, тонкие линии ветвления; тап по слову — поле добавления под ним
   // поле добавления — на всю ширину под ветками (в узкой колонке не видно вводимого текста); без длинного placeholder
-  const addForm = (n) => `<form class="assoc-add wide" data-addto="${n.id}"><label class="assoc-add-l" for="as-${n.id}">${esc(tt(`Ассоциация к слову «${n.word}»`, `Association for “${n.word}”`))}</label><div class="row"><input id="as-${n.id}" maxlength="40" autocomplete="off"><button class="btn sm" type="submit" aria-label="${esc(tt('Добавить', 'Add'))}">+</button></div></form>`;
+  const addForm = (n) => `<form class="assoc-add wide" data-addto="${n.id}"><label class="assoc-add-l" for="as-${n.id}">${esc(tt(`Ассоциация к слову «${n.word}»`, `Association for “${n.word}”`))}</label><div class="row"><input id="as-${n.id}" maxlength="40" autocomplete="off" value="${esc(st.addText && st.addText.id === n.id ? st.addText.text : '')}"><button class="btn sm" type="submit" aria-label="${esc(tt('Добавить', 'Add'))}">+</button></div></form>`;
   const sub = (id) => { const kids = st.nodes.filter((n) => n.parent === id); return kids.length ? `<ul>${kids.map((n) => `<li><button type="button" class="assoc-w ${st.adding === n.id ? 'on' : ''}" data-node="${n.id}">${esc(n.word)}</button>${sub(n.id)}</li>`).join('')}</ul>` : ''; };
   const branchHtml = (i) => { const r = rootOf(i); if (!r) return ''; return `<div class="branch"><button type="button" class="assoc-root ${st.adding === r.id ? 'on' : ''}" data-node="${r.id}">${esc(r.word)}</button>${sub(r.id)}</div>`; };
   const pairCol = (i) => { const r = rootOf(i); return `<div class="branch pick"><span class="assoc-root static">${esc(r ? r.word : '')}</span><div class="pick-words">${words(i).map((n) => `<button type="button" class="chip ${st.pair[i] === n.id ? 'on' : ''}" data-pick="${i}:${n.id}" aria-pressed="${st.pair[i] === n.id}">${esc(n.word)}</button>`).join('')}</div></div>`; };
@@ -314,6 +325,7 @@ export async function imagine(ctx) {
   ctx.main.addEventListener('input', (e) => {
     const r = e.target.closest('#roots input');
     if (r) { const i = r.name === 'r0' ? 0 : 1; st.roots[i] = r.value; const root = rootOf(i); if (root && r.value.trim()) { root.word = r.value.trim(); const b = ctx.main.querySelector(`[data-node="${root.id}"]`); if (b) b.textContent = root.word; } save(); return; }
+    const ad = e.target.closest('[data-addto] input'); if (ad) { st.addText = { id: ad.closest('[data-addto]').dataset.addto, text: ad.value }; save(); return; } // недописанная ассоциация
     if (e.target.id === 'imn') { st.note = e.target.value; const b = ctx.main.querySelector('[data-saveimg]'); if (b) b.disabled = !st.note.trim(); const s = ctx.main.querySelector('.imag-saved'); if (s && st.saved !== st.note.trim()) s.textContent = ''; save(); }
   });
   ctx.main.addEventListener('submit', (e) => {
@@ -328,6 +340,7 @@ export async function imagine(ctx) {
     const inp = add.querySelector('input'); const list = inp.value.split(/[,;]/).map((w) => w.trim()).filter(Boolean); if (!list.length) return;
     const parent = st.nodes.find((n) => n.id === add.dataset.addto); if (!parent) return;
     for (const w of list) if (st.nodes.length < 80) st.nodes.push({ id: nid(), word: w, parent: parent.id, branch: parent.branch });
+    st.addText = null;
     draw(`#as-${parent.id}`); // можно сразу добавить ещё к тому же слову
   });
   ctx.main.addEventListener('toggle', (e) => { const d = e.target.closest && e.target.closest('[data-ex]'); if (d && e.target === d) { st.exOpen = { ...(st.exOpen || {}), [d.dataset.ex]: d.open }; save(); } }, true);
