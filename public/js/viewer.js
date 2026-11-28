@@ -747,7 +747,7 @@ export function openViewer(opts) {
       e.preventDefault();
       if (!sheet.hidden) toggleSheet(false);
       else if (mode.view === 'questions') setView('card');
-      else if (mode.full) setFull(false);
+      else if (mode.full && !opts.simple) setFull(false); // простой просмотр (обмен): Escape закрывает, как крестик
       else closeViewer();
       return;
     }

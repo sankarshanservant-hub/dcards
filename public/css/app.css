@@ -1734,3 +1734,50 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .cc-k { font-weight: 600; min-width: 9em; }
 .fac-removed { display: block; text-decoration: none; }
 .rm-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+
+/* 26.11 обмены, открытки, сторис */
+/* карта на весь экран (простой просмотр из обмена): по центру доступного экрана — сверху и снизу одинаковые поля с учётом панелей телефона */
+.viewer.viewer--simple { --bottom: calc(50px + env(safe-area-inset-bottom, 0px)); }
+/* меньше пустоты под «Назад» / «На главную» на экранах обмена, сторис и открытки */
+.x-page, .st-page, .pc-page { padding-top: 6px; }
+.x-page { gap: 12px; }
+.x-page .x-h { line-height: 1.15; text-wrap: balance; }
+.x-intro { text-wrap: balance; color: var(--text-2); font-size: 1rem; margin: -4px 0 2px; }
+.x-intro span { display: inline-block; }
+.x-prep .form { gap: 8px; }
+.x-prep .x-note { margin: 0; }
+.x-prep .send-btn { margin-top: 6px; }
+.seg.x-who { padding: 3px; }
+.seg.x-who [role="radio"] { min-height: 36px; padding: 6px 8px; font-size: .9rem; white-space: nowrap; }
+@media (max-width: 360px) { .seg.x-who [role="radio"] { font-size: .84rem; padding-inline: 4px; } }
+/* крупные кнопки: без одиноких слов на второй строке («раз», «Stories») */
+.x-page .btn.big, .st-page .btn.big { padding-inline: 18px; }
+.x-page .btn.big span, .x-page .btn.big, .st-page .btn.big { text-wrap: balance; }
+@media (max-width: 360px) { .x-page .btn.big, .st-page .btn.big { font-size: .98rem; padding-inline: 14px; gap: 8px; } }
+.x-quiet { display: flex; justify-content: center; align-items: center; gap: 18px; flex-wrap: wrap; }
+.x-quiet .link-btn { display: inline-flex; align-items: center; font-size: .92rem; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; min-height: 40px; padding: 0 4px; }
+.x-page .pair.one { grid-template-columns: 1fr; }
+.x-page .vb-note.x-center span { display: inline; }
+.x-notify { border-style: solid; border-color: var(--border); justify-items: center; text-align: center; }
+.x-notify .vb-note { margin: 0; }
+.x-notify-on { margin: 0; }
+.x-result .x-question { text-wrap: balance; }
+.x-next { flex-direction: column; align-items: center; gap: 8px; }
+.x-next .btn { min-width: min(300px, 100%); }
+.x-reply-note { margin: -4px 0 4px; }
+.x-nav .x-nav-main { border-color: var(--border-strong); }
+.x-nav-about { font-weight: 500 !important; color: var(--text-2) !important; }
+.st-page { gap: 12px; }
+.st-title { text-wrap: balance; }
+.st-lead { text-wrap: balance; }
+/* редактор открытки: примеры шрифтов не растягивают страницу ни в одном начертании */
+.pc-fonts { grid-template-columns: minmax(0, 1fr); }
+.pc-font { min-width: 0; width: 100%; overflow: hidden; }
+.pc-font-sample { min-width: 0; flex: 1 1 0; text-align: right; font-size: 20px; }
+.pc-panel, .pc-group, .pc-send { min-width: 0; }
+/* пока пишут текст на телефоне: предпросмотр ниже, поле над клавиатурой */
+.pc-page.editing.typing .pc-stage canvas { height: min(24vh, 210px); }
+.pc-sel.on-plate { outline-offset: 0; }
+.pc-got .pc-stage canvas { width: min(360px, 86vw); height: auto; }
+.pc-got-acts { display: grid; gap: 8px; justify-items: center; }
+.pc-got-acts .btn { min-width: min(300px, 100%); text-decoration: none; }

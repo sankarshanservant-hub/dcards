@@ -23,6 +23,7 @@ const events = require('./events');
 const exchanges = require('./exchanges');
 const xgroups = require('./xgroups');
 const personal = require('./personal');
+const pcshare = require('./pcshare');
 const safe = (fn) => { try { fn(); } catch (e) { console.error('event:', e.message); } }; // событие не должно ломать основное действие
 const demo = require('./demo');
 const choices = require('./choices');
@@ -964,6 +965,16 @@ r.get('/og/eagle.jpg', wrap(async (req, res) => {
   res.set('Cache-Control', 'public, max-age=86400').type('jpeg').sendFile(file);
 }));
 
+// Отправленная открытка (26.11.2026): ссылка на карту с посланием; превью — «Вам открытка!», без текста послания
+r.post('/api/postcards/shared', (req, res) => {
+  const b = req.body || {}; const c = pubCard(b.code);
+  if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
+  out(res, pcshare.create(c, req.user, req.visitor, { design: b.design, clientKey: b.clientKey, token: b.token }), 201);
+});
+r.get('/api/postcards/shared/:t', (req, res) => {
+  const p = pcshare.get(String(req.params.t)); if (!p) return bad(res, 'not_found', 404);
+  res.set('Cache-Control', 'no-store').json({ card: p.card ? cards.publicCard(p.card, { withDetails: true }) : null, design: p.design });
+});
 r.post('/api/exchanges', (req, res) => {
   const b = req.body || {}; const c = pubCard(b.code);
   if (!c || (c.is_demo && !req.showDemo)) return bad(res, 'not_found', 404);
@@ -1046,6 +1057,12 @@ function ogFor(req) {
   if (req.path === '/' || req.path === '') return { title: 'Dialogue Cards', home: true, image: `${baseUrl(req)}${req.site.base}/og/eagle.jpg`, url: `${site.shareUrl()}/` };
   // «Глаз-алмаз»: в превью вопрос скрыт, картинка — рубашка карты
   if (/^\/e\/[A-Za-z0-9_-]{22,40}\/?$/.test(req.path)) return { title: 'Проверим нашу наблюдательность?', desc: 'Рассмотри карту, запомни детали и ответь на вопрос. Потом сравним наши ответы.', image: `${baseUrl(req)}${req.site.base}/og/eagle.jpg`, url: `${baseUrl(req)}${req.site.base}${req.path}` };
+  // отправленная открытка (26.11.2026): «Вам открытка!», описание и название сайта — без повторов бренда; послание в превью не попадает
+  const pm = req.path.match(/^\/pc\/([A-Za-z0-9_-]{22,40})\/?$/);
+  if (pm) {
+    const p = pcshare.get(pm[1]); if (!p || !p.card || p.card.is_demo) return null;
+    return { title: 'Вам открытка!', desc: 'Откройте, чтобы увидеть карту и прочитать послание.', plainTitle: true, image: `${baseUrl(req)}${req.site.base}/og/${p.card.code}.jpg`, url: `${baseUrl(req)}${req.site.base}${req.path}` };
+  }
   const m = req.path.match(/^\/(x\/([A-Za-z0-9_-]{16,40})|play\/(DC-\d{4,6}))\/?$/);
   let code = m && m[3];
   let title = 'Что ты здесь видишь?';
@@ -1080,7 +1097,8 @@ r.get('*', (req, res) => {
     const tags = `<meta property="og:type" content="website">${og.home ? '' : '<meta property="og:site_name" content="Dialogue Cards">'}<meta property="og:title" content="${escAttr(og.title)}"><meta property="og:description" content="${escAttr(og.desc || OG_DESC)}"><meta property="og:image" content="${escAttr(og.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${escAttr(og.url)}"><meta name="twitter:card" content="summary_large_image">`;
     // приглашение и личные ссылки — не для поисковиков
     if (!og.home) res.set('X-Robots-Tag', 'noindex'); // главную индексировать можно
-    return res.set('Cache-Control', 'no-cache').type('html').send(html.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => (og.home ? '<title>Dialogue Cards</title>' : `<title>${escAttr(og.title)} · Dialogue Cards</title>`))); // функции: «$» в тексте вопроса — обычный символ
+    const page = og.plainTitle ? html.replace(/<meta name="description" content="[^"]*">/, () => `<meta name="description" content="${escAttr(og.desc)}">`) : html;
+    return res.set('Cache-Control', 'no-cache').type('html').send(page.replace('</head>', () => `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, () => (og.home ? '<title>Dialogue Cards</title>' : og.plainTitle ? `<title>${escAttr(og.title)}</title>` : `<title>${escAttr(og.title)} · Dialogue Cards</title>`))); // функции: «$» в тексте вопроса — обычный символ
   }
   res.set('Cache-Control', 'no-cache').type('html').send(html);
 });

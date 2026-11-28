@@ -175,4 +175,4 @@ function collectionCodes(userId, id) {
 }
 const cardsOf = (codes) => codes.map(cardByCode).filter(Boolean).map((k) => publicCard(k));
 
-module.exports = { images, saveImage, deleteImage, postcards, savePostcard, deletePostcard, state, setNote, createCollection, renameCollection, deleteCollection, toggle, merge, collectionCodes, cardsOf, MAX };
+module.exports = { cleanDesign, images, saveImage, deleteImage, postcards, savePostcard, deletePostcard, state, setNote, createCollection, renameCollection, deleteCollection, toggle, merge, collectionCodes, cardsOf, MAX };

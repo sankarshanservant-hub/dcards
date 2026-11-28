@@ -13,8 +13,30 @@ export const friendText = () => tt('Посмотри на эту карту. М�
 const INVITE_SIGN = () => tt('Dialogue Cards — повод для интересного разговора.', 'Dialogue Cards — a reason for an interesting conversation.');
 /** Полное приглашение: фраза, ссылка с новой строки, через пустую строку — подпись. */
 export const inviteMessage = (url) => `${friendText()}\n${url}\n\n${INVITE_SIGN()}`;
-export const storyText = () => tt('Хочешь поделиться нашими ответами в сторис? Открой эту ссылку и посмотри, как это будет выглядеть.',
-  'Would you like to share our answers in stories? Open this link and see how it will look.');
+// Подпись к ссылке на согласие (26.11.2026, окончательная): текст, ссылка следующей строкой — без дополнительных фраз.
+export const storyText = () => tt('Давай поделимся нашими ответами в сторис. Открой ссылку, чтобы подтвердить согласие.',
+  'Let’s share our answers in stories. Open the link to confirm you agree.');
+export const storyMessage = (url) => `${storyText()}\n${url}`;
+/**
+ * Ссылка на согласие сторис: подпись и ссылка одним текстом — иначе часть мессенджеров отбрасывает текст при отдельной
+ * ссылке (так подпись и пропадала). Без системного меню — тот же выбор, «Скопировать» копирует подпись со ссылкой.
+ */
+export const sendStoryAsk = (url) => sendWithText(storyText(), url);
+// Отправленная открытка (26.11.2026): сообщение и ссылка, по которой открываются карта и послание
+export const postcardText = () => tt('Для тебя — открытка и повод для интересного разговора.', 'For you — a postcard and a reason for an interesting conversation.');
+export const sendPostcardLink = (url) => sendWithText(postcardText(), url);
+/** Текст и ссылка следующей строкой — одним сообщением (системное меню или выбор Telegram / WhatsApp / копировать). */
+async function sendWithText(text, url) {
+  const full = `${text}\n${url}`;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (navigator.share && touch) { try { await navigator.share({ text: full }); return 'sys'; } catch { return null; } }
+  const kind = await chooser(); if (!kind) return null;
+  if (kind === 'tg') window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  else if (kind === 'wa') window.open(`https://wa.me/?text=${encodeURIComponent(full)}`, '_blank', 'noopener');
+  else if (kind === 'sys' && navigator.share) { try { await navigator.share({ text: full }); } catch { return null; } }
+  else { try { await navigator.clipboard.writeText(full); toast(tt('Ссылка скопирована', 'Link copied')); } catch { prompt(tt('Скопируйте ссылку:', 'Copy the link:'), full); } }
+  return kind;
+}
 
 const PLANE = '<svg viewBox="0 0 24 24" aria-hidden="true" class="ic-plane"><path d="M21.5 3.5 2.8 10.6c-.9.4-.9 1.6 0 1.9l4.7 1.6 1.8 5.6c.3.8 1.3 1 1.9.4l2.7-2.6 4.8 3.5c.7.5 1.7.1 1.9-.7l2.9-15.4c.2-.9-.7-1.7-1.6-1.3z"/><path d="M7.6 14.1 18.8 6.4l-8.5 9.4"/></svg>';
 /** Крупная кнопка отправки. attr — data-атрибут для обработчика. */
