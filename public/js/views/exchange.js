@@ -302,7 +302,8 @@ function notifyHtml(on = null) {
   if (on === null) return '<div class="x-notify" data-notify-box aria-live="polite"></div>'; // состояние проверяется сразу после показа
   if (on) return `<p class="vb-note x-center x-notify-on" data-notify-box>${esc(tt('Сообщим, когда друг ответит', 'We’ll let you know when your friend answers'))}</p>`;
   let inner;
-  if (!session.user) inner = `<p class="vb-note">${esc(tt('Чтобы получить уведомление об ответе на телефон, войдите.', 'To get a phone notification about the answer, sign in.'))}</p><a class="btn sm light" href="${u('/login?next=' + encodeURIComponent(location.pathname))}">${esc(tt('Войти', 'Sign in'))}</a>`;
+  // гостю — одно приглашение войти (аудит 28.11, п. 14); после входа — обратно к этому обмену
+  if (!session.user) inner = `<p class="vb-note">${esc(tt('Ответ друга появится здесь.', 'Your friend’s answer will appear here.'))} ${esc(tt('Войдите, чтобы видеть обмен на других устройствах и получать уведомления на телефон, если включите их.', 'Sign in to see the exchange on other devices and get phone notifications if you turn them on.'))}</p><a class="btn sm light" href="${u('/login?next=' + encodeURIComponent(location.pathname + location.search))}">${esc(tt('Войти', 'Sign in'))}</a>`;
   else if (sup === 'ios-home') inner = `<p class="vb-note">${esc(tt('На iPhone уведомления работают, если добавить D-Cards на экран «Домой» (Поделиться → На экран «Домой») и открыть оттуда.', 'On iPhone, notifications work if you add D-Cards to the Home Screen (Share → Add to Home Screen) and open it from there.'))}</p>`;
   else if (sup === 'unsupported') return '';
   else if (sup === 'denied') inner = `<p class="vb-note">${esc(tt('Разрешите уведомления в настройках браузера или устройства.', 'Allow notifications in your browser or device settings.'))}</p>`;

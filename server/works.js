@@ -14,11 +14,13 @@ const mediaUrl = (kind, file) => `${require('./site').base()}/media/works/${kind
 
 const PLACEHOLDER_CRITERIA = 5;
 const effStatus = (w) => (w.recommended_at && ['submitted', 'discussion'].includes(w.status) ? 'recommended' : w.status);
-/** Временные критерии: формулировки будут перенесены из PDF владельца (самим список не придумываем). */
+/** Пока администрация не внесла утверждённые критерии — номера с пометкой «не утверждена» (самим формулировки не придумываем). */
 function ensureCriteria() {
+  // прежние временные строки (до 28.11.2026) упоминали PDF — меняем только их текст, утверждённые не трогаем
+  db.prepare("UPDATE criteria SET text = 'Критерий ' || number || ' — формулировка ещё не утверждена' WHERE is_placeholder = 1 AND text LIKE '%PDF%'").run();
   if (db.prepare('SELECT COUNT(*) AS n FROM criteria').get().n) return;
   const ins = db.prepare('INSERT INTO criteria (number, text, is_placeholder) VALUES (?, ?, 1)');
-  for (let i = 1; i <= PLACEHOLDER_CRITERIA; i++) ins.run(i, `Критерий ${i} — формулировка будет перенесена из PDF владельца проекта`);
+  for (let i = 1; i <= PLACEHOLDER_CRITERIA; i++) ins.run(i, `Критерий ${i} — формулировка ещё не утверждена`);
 }
 ensureCriteria();
 

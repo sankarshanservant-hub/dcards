@@ -115,7 +115,7 @@ export async function section(ctx, name, arg) {
   try { await SECTIONS[name](ctx, arg); } catch (e) { if (ctx.alive()) failed(ctx.main, e, ctx.rerender); }
 }
 
-const ACTION_LABEL = { recommend: () => tt('Рекомендована кураторами', 'Recommended by curators'), approve: () => tt('Опубликована', 'Published'), return: () => tt('Возвращена на доработку', 'Returned for changes'), reject: () => tt('Отклонена', 'Declined') };
+const ACTION_LABEL = { withdraw: () => tt('Снята автором с рассмотрения', 'Withdrawn by the author'), recommend: () => tt('Рекомендована кураторами', 'Recommended by curators'), approve: () => tt('Опубликована', 'Published'), return: () => tt('Возвращена на доработку', 'Returned for changes'), reject: () => tt('Отклонена', 'Declined') };
 const SECTIONS = {
   settings: settingsSection,
   // Личные переписки участников с администрацией: список и переписка с одним человеком (/admin/messages/<id>)

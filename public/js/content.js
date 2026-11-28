@@ -115,10 +115,10 @@ export const MEMO = { ru: ["Сегодня вы участвуете в Dialogue
 export const ABOUT_CARDS = {
   en: [['Dialogue Cards capture different sides of life in pictures.', 'There’s no one right meaning for a card. Each person brings a new meaning to it.'],
     ['A metaphor can express a subtle feeling or a thought that’s hard to put into words. A picture can help you see a situation in a new way or find an answer that might not have come to you otherwise.'],
-    ['The picture gives you both neutral ground. You can talk about what’s happening in the picture or share something personal when you feel like it.']],
+    ['The picture becomes a shared starting point for the conversation. You can talk about what’s happening on the card and share something personal when you feel like it.']],
   ru: [['Dialogue Cards запечатлевают разные стороны жизни в изображениях.', 'У карты нет единственного правильного значения. Каждый человек привносит в неё новый смысл.'],
     ['Метафора может выразить тонкое чувство или мысль, которую трудно облечь в слова. Изображение может помочь по-новому взглянуть на ситуацию или найти ответ, который иначе мог бы не прийти в голову.'],
-    ['Изображение даёт вам обоим нейтральную территорию. Вы можете говорить о том, что происходит на картинке, или делиться чем-то личным, когда вам этого хочется.']],
+    ['У разговора появляется общая точка — изображение. Можно говорить о том, что происходит на карте, и делиться личным, когда захочется.']],
 };
 export const ABOUT_FLOW = {
   en: [['We all hunger for heart-to-heart conversations.', 'Each of us has a unique life story we want to share, and that story can inspire someone else.', 'But in everyday life, we find fewer and fewer chances to have a deep conversation.'],

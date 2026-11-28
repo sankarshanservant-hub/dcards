@@ -7,7 +7,7 @@ import { session, needLogin, loading, failed, WORK_STATUS, statusPill, demoPill,
 import { loadTerms, resetTermsCache, stepHtml, miniHtml, openFull, accept, fullHtml } from '../author-terms.js';
 import { inviteHtml } from './workshops.js';
 
-const critHtml = (c) => `<li><b>${c.number}.</b>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('временная формулировка', 'placeholder wording'))}</span>` : ''}</li>`;
+const critHtml = (c) => `<li><b>${c.number}.</b>${esc(c.text)}${c.placeholder ? ` <span class="pill demo">${esc(tt('формулировка не утверждена', 'wording not approved'))}</span>` : ''}</li>`;
 const reasonsHtml = (d) => (d && d.criteria.length ? `<ul class="reasons">${d.criteria.map(critHtml).join('')}</ul>` : '')
   + (d && d.comment ? `<p class="small" style="margin:6px 0 0">${esc(tt('Комментарий куратора:', 'Curator’s comment:'))} ${esc(d.comment)}</p>` : '');
 
@@ -326,6 +326,7 @@ export const ACTION_LABEL = {
   submitted: ['Отправлено', 'Submitted'], resubmitted: ['Отправлена новая версия', 'New version sent'], approve: ['Опубликовано', 'Published'], recommend: ['Рекомендовано к публикации', 'Recommended for publication'],
   return: ['Возвращено на доработку', 'Returned for changes'], reject: ['Отклонено', 'Declined'], assign: ['Передано куратору', 'Assigned to curator'],
   discuss: ['Вынесено на обсуждение', 'Moved to discussion'], vote: ['Голос куратора', 'Curator vote'],
+  withdraw: ['Снята автором с рассмотрения', 'Withdrawn by the author'],
 };
 export function historyRow(h) {
   const [ru, en] = ACTION_LABEL[h.action] || [h.action, h.action];
