@@ -3,9 +3,9 @@
 // Текст — свободный элемент: тап выделяет, перетаскивание пальцем, масштаб двумя пальцами или за круглую ручку; тап мимо снимает
 // выделение. Рамка и ручка — отдельный слой, в картинку не попадают. Предпросмотр, «Мои открытки» и экспорт рисует одна функция.
 // Открытка не меняет число «Выбрали для разговора». Без регистрации.
-import { esc, tt, u, api, morph, listen } from '../util.js';
+import { esc, tt, u, api, morph, listen, shareLink } from '../util.js';
 import { loading, failed } from '../ui.js';
-import { sendButton, saveImage, sendImage, postcardCaption } from '../share.js';
+import { sendButton, saveImage, sendPostcardLink } from '../share.js';
 import * as personal from '../personal.js';
 import { FONTS, weightOf, DEFAULT_DESIGN, cleanDesign, loadFonts, loadImage, geo, drawPostcard, postcardFileName } from '../postcard-render.js';
 
@@ -16,6 +16,19 @@ const LAYOUTS = [{ key: 'full', ru: 'На всю карту', en: 'Full card' },
 const isDark = (hex) => { const n = parseInt(String(hex).slice(1), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) < 140; };
 // ручка размера: только две головки стрелок по диагонали (вправо-вверх и влево-вниз), без стержней
 const HANDLE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 3.5h3v3M6.5 12.5h-3v-3"/></svg>';
+const newTok = () => { const a = new Uint8Array(18); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+/**
+ * Отправить открытку (26.11.2026): ссылка /pc/<…> — по ней открываются карта и послание; в превью — «Вам открытка!».
+ * Меню отправки открывается сразу по нажатию (ссылка готова заранее), открытка сохраняется на сервере параллельно.
+ * → { sent: способ или null, saved: true/false }
+ */
+async function sendShared(code, design) {
+  const token = newTok();
+  const saving = api('/api/postcards/shared', { method: 'POST', body: { code, design, token, clientKey: newTok() } }).then(() => true).catch(() => false);
+  const sent = await sendPostcardLink(shareLink('/pc/' + token));
+  return { sent, saved: await saving };
+}
+const sendHint = (r) => (!r.saved ? tt('Ссылка на открытку не сохранилась — проверьте соединение и отправьте ещё раз.', 'The postcard link was not saved — check the connection and send again.') : r.sent ? '' : tt('Отправка отменена. Можно попробовать ещё раз.', 'Sending was cancelled. You can try again.'));
 
 export async function postcard(ctx, code) {
   if (!code) { ctx.navigate('/library?play=postcard', { replace: true }); return; }
@@ -72,7 +85,7 @@ export async function postcard(ctx, code) {
   function render() {
     const focusId = document.activeElement && document.activeElement.id;
     const sel = focusId === 'pct' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
-    const html = `<div class="wrap page narrow stack pc-page editing">
+    const html = `<div class="wrap page narrow stack pc-page editing${ui.typing ? ' typing' : ''}">
       <h1 class="pc-title">${esc(tt('Создание открытки', 'Create a postcard'))}</h1>
       <div class="pc-stage"><div class="pc-wrap"><canvas id="pc" role="img" aria-label="${esc(tt('Предпросмотр открытки', 'Postcard preview'))}"></canvas><div class="pc-sel" hidden><span class="pc-handle" aria-hidden="true">${HANDLE}</span></div></div></div>
       <div class="pc-tabs two" role="tablist">${[['layout', 'Макет', 'Layout'], ['text', 'Текст', 'Text']].map(([k, ru, en]) => `<button type="button" role="tab" class="${k === ui.tab ? 'on' : ''}" aria-selected="${k === ui.tab}" data-tab="${k}">${esc(tt(ru, en))}</button>`).join('')}</div>
@@ -96,9 +109,10 @@ export async function postcard(ctx, code) {
     cv.style.touchAction = hasText() ? 'none' : 'auto';
     const s = ctx.main.querySelector('.pc-sel'); if (!s) return;
     if (!ui.box || !ui.sel) { s.hidden = true; return; }
-    const kx = cv.clientWidth / ui.box.CW; const ky = cv.clientHeight / ui.box.CH; const m = 6;
-    s.hidden = false;
-    Object.assign(s.style, { left: `${ui.box.x * kx - m}px`, top: `${ui.box.y * ky - m}px`, width: `${ui.box.w * kx + m * 2}px`, height: `${ui.box.h * ky + m * 2}px` });
+    // с подложкой рамка проходит ровно по её внешнему краю (включая внутренние отступы), без подложки — с небольшим зазором
+    const kx = cv.clientWidth / ui.box.CW; const ky = cv.clientHeight / ui.box.CH; const m = ui.box.plate ? 0 : 6;
+    s.hidden = false; s.classList.toggle('on-plate', !!ui.box.plate);
+    Object.assign(s.style, { left: `${ui.box.x * kx - m}px`, top: `${ui.box.y * ky - m}px`, width: `${ui.box.w * kx + m * 2}px`, height: `${ui.box.h * ky + m * 2}px`, borderRadius: ui.box.plate ? `${ui.box.r * kx}px` : '' });
     prepare();
   }
   // готовая картинка заранее: на iPhone системное меню открывается только сразу после нажатия, без долгого ожидания
@@ -125,7 +139,15 @@ export async function postcard(ctx, code) {
     const ccu = $('[data-color-custom]'); if (ccu) { ccu.oninput = () => { st.color = ccu.value; ui.touched = true; redrawOnly(); }; ccu.onchange = () => render(); }
     const sz = $('[data-size]'); if (sz) sz.oninput = () => { st.k = Number(sz.value); ui.sel = true; redrawOnly(); };
     const nt = $('[data-notext]'); if (nt) nt.onclick = () => { st.text = ''; ui.sel = false; render(); };
-    const ta = $('#pct'); if (ta) listen(ta, 'input', () => { const had = hasText(); st.text = ta.value; ui.sel = hasText(); ui.savedMsg = ''; if (had !== hasText()) render(); else redrawOnly(); });
+    // экранная клавиатура (26.11.2026): пока пишут, предпросмотр сверху становится ниже, а поле держится над клавиатурой
+    const ta0 = $('#pct');
+    const keepVisible = () => { const t = $('#pct'); if (!t || document.activeElement !== t) return; const vv = window.visualViewport; const bottom = vv ? vv.height + vv.offsetTop : innerHeight; const r = t.getBoundingClientRect(); if (r.bottom > bottom - 12) window.scrollBy({ top: r.bottom - bottom + 24, behavior: 'instant' }); };
+    if (ta0) {
+      listen(ta0, 'focus', () => { if (!matchMedia('(pointer: coarse)').matches) return; ui.typing = true; const pg = $('.pc-page'); if (pg) pg.classList.add('typing'); setTimeout(keepVisible, 320); });
+      listen(ta0, 'blur', () => { setTimeout(() => { if (document.activeElement && document.activeElement.id === 'pct') return; ui.typing = false; const pg = $('.pc-page'); if (pg) pg.classList.remove('typing'); }, 150); });
+      if (window.visualViewport && !ui.vvBound) { ui.vvBound = true; const onVV = () => { if (!ctx.alive()) { visualViewport.removeEventListener('resize', onVV); return; } keepVisible(); }; visualViewport.addEventListener('resize', onVV); }
+    }
+    const ta = $('#pct'); if (ta) listen(ta, 'input', () => { const had = hasText(); st.text = ta.value; ui.sel = hasText(); ui.savedMsg = ''; if (had !== hasText()) render(); else redrawOnly(); requestAnimationFrame(keepVisible); });
     // текст на открытке: тап выделяет; перетаскивание одним пальцем, масштаб — двумя пальцами или за ручку; тап мимо снимает выделение
     const pts = new Map(); let drag = null; let pinch = null; let resize = null;
     const pt = (e) => { const r = cv.getBoundingClientRect(); const g = geo(st, W, H); return [(e.clientX - r.left) * (g.CW / r.width), (e.clientY - r.top) * (g.CH / r.height)]; };
@@ -155,11 +177,7 @@ export async function postcard(ctx, code) {
     function syncSize() { const s = $('[data-size]'); if (s) s.value = st.k; const was = !!$('.field-error'); if (was !== ui.overflow) render(); }
     const setHint = (t) => { ui.hint = t; const box = $('.pc-status'); if (box) { let p = box.querySelector('.vb-note'); if (!p) { p = document.createElement('p'); p.className = 'vb-note'; p.style.margin = '4px 0 0'; box.appendChild(p); } p.textContent = t; } };
     $('[data-save]').onclick = async () => { const b = await getBlob(); await saveImage(b, postcardFileName(card.code), setHint); };
-    $('[data-send]').onclick = async () => {
-      const b = await getBlob();
-      const r = await sendImage(b, postcardFileName(card.code), postcardCaption());
-      if (r === null) { setHint(tt('Этот браузер не умеет отправлять картинки напрямую. Сохрани изображение и отправь его в мессенджере.', 'This browser cannot send images directly. Save the image and send it in your messenger.')); await saveImage(b, postcardFileName(card.code), setHint); }
-    };
+    $('[data-send]').onclick = async () => { const r = await sendShared(card.code, design()); setHint(sendHint(r)); };
     const keep = async (asNew) => {
       const id = asNew || !ui.savedId ? personal.newPostcardId() : ui.savedId;
       try { await personal.savePostcard({ id, code: card.code, design: design() }); ui.savedId = id; ui.savedMsg = tt('Открытка сохранена', 'Postcard saved'); ui.hint = ''; }
@@ -205,8 +223,34 @@ export async function myPostcards(ctx) {
     cv.toBlob((b) => blobs.set(p.id, b), 'image/png'); // готово заранее — меню отправки откроется сразу после нажатия
     const hint = (t) => { el.querySelector('.pc-hint').textContent = t; };
     const blob = () => new Promise((res) => (blobs.get(p.id) ? res(blobs.get(p.id)) : cv.toBlob(res, 'image/png')));
-    el.querySelector('[data-psend]').onclick = async () => { const b = await blob(); const r = await sendImage(b, postcardFileName(p.code), postcardCaption()); if (r === null) { hint(tt('Этот браузер не умеет отправлять картинки напрямую. Сохрани изображение и отправь его в мессенджере.', 'This browser cannot send images directly. Save the image and send it in your messenger.')); await saveImage(b, postcardFileName(p.code), hint); } };
+    el.querySelector('[data-psend]').onclick = async () => { const r = await sendShared(p.code, d); hint(sendHint(r)); };
     el.querySelector('[data-psave]').onclick = async () => saveImage(await blob(), postcardFileName(p.code), hint);
     el.querySelector('[data-pdel]').onclick = async () => { if (!confirm(tt('Удалить открытку?', 'Delete the postcard?'))) return; await personal.deletePostcard(p.id).catch(() => {}); el.remove(); };
   }
+}
+
+// ---------- полученная открытка (/pc/<ссылка>, 26.11.2026): карта с посланием, затем — своя открытка или галерея ----------
+export async function received(ctx, token) {
+  loading(ctx.main);
+  let d;
+  const gone = (t) => `<div class="wrap page narrow stack"><p class="empty">${esc(t)}</p><a class="btn yellow" href="${u('/library')}" style="justify-self:start">${esc(tt('Открыть галерею карт', 'Open the card gallery'))}</a></div>`;
+  try { d = await api(`/api/postcards/shared/${encodeURIComponent(token)}`); }
+  catch (e) {
+    if (e.status === 404) { ctx.main.innerHTML = gone(tt('Такой открытки нет. Возможно, ссылка скопирована не полностью.', 'There is no such postcard. The link may be incomplete.')); return; }
+    return failed(ctx.main, e, ctx.rerender);
+  }
+  if (!ctx.alive()) return;
+  if (!d.card) { ctx.main.innerHTML = gone(tt('Эта карта больше недоступна в коллекции, поэтому открытку открыть нельзя.', 'This card is no longer available in the collection, so the postcard cannot be opened.')); return; }
+  const [img] = await Promise.all([loadImage(d.card.full || d.card.thumb), loadFonts()]);
+  if (!ctx.alive()) return;
+  const st = { ...DEFAULT_DESIGN, ...cleanDesign(d.design) };
+  ctx.main.innerHTML = `<div class="wrap page narrow stack pc-got">
+    <h1 class="x-h x-center">${esc(tt('Тебе открытка', 'A postcard for you'))}</h1>
+    <div class="pc-stage"><div class="pc-wrap"><canvas id="pcr" role="img" aria-label="${esc(st.text ? tt('Открытка: ', 'Postcard: ') + st.text : tt('Открытка', 'Postcard'))}"></canvas></div></div>
+    ${d.card.author ? `<p class="small muted x-center" style="margin:0">${esc(tt('Автор карты', 'Card author'))}: ${esc(d.card.author)}</p>` : ''}
+    <div class="pc-got-acts"><a class="btn yellow" href="${u('/postcard/' + d.card.code)}">${esc(tt('Создать свою открытку', 'Create your own postcard'))}</a>
+      <a class="btn light" href="${u('/library')}">${esc(tt('Посмотреть другие карты', 'See other cards'))}</a></div>
+    <p class="small muted x-center" style="margin:0"><a href="${u('/start')}">${esc(tt('О проекте', 'About the project'))}</a></p>
+  </div>`;
+  if (img) drawPostcard(ctx.main.querySelector('#pcr'), st, img);
 }

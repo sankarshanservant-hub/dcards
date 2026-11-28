@@ -77,6 +77,7 @@ export function drawPostcard(c, st, img) {
   x.restore();
   if (!String(st.text || '').trim()) return { box: null, overflow: false, g };
   const L = layoutText(x, st, g);
+  let plate = null; // подложка: рамка выделения совпадает с её внешними границами (26.11.2026)
   if (st.bg === 'grad' && st.layout === 'full') {
     const a = st.tone === 'dark' ? 'rgba(6,12,30,' : 'rgba(255,255,255,';
     const top = L.cy < g.CH / 2; const g2 = x.createLinearGradient(0, top ? 0 : g.CH, 0, top ? Math.min(g.CH, L.cy + L.bh) : Math.max(0, L.cy - L.bh));
@@ -86,12 +87,14 @@ export function drawPostcard(c, st, img) {
     const p = L.size * 0.45; const rx = L.cx - L.bw / 2 - p; const ry = L.cy - L.bh / 2 - p * 0.7; const rw = L.bw + p * 2; const rh = L.bh + p * 1.4;
     x.fillStyle = st.tone === 'dark' ? 'rgba(6,12,30,.62)' : 'rgba(255,255,255,.82)';
     x.beginPath(); (x.roundRect ? x.roundRect(rx, ry, rw, rh, p) : x.rect(rx, ry, rw, rh)); x.fill();
+    plate = { x: rx, y: ry, w: rw, h: rh, r: p };
   }
   x.font = `${weightOf(L.f, st.weight)} ${L.size}px ${L.f.family}, sans-serif`;
   x.fillStyle = st.color; x.textBaseline = 'middle'; x.textAlign = st.align;
   const ax = st.align === 'left' ? L.cx - L.bw / 2 : st.align === 'right' ? L.cx + L.bw / 2 : L.cx;
   L.lines.forEach((l, i) => x.fillText(l, ax, L.cy - L.bh / 2 + L.lh * (i + 0.5)));
-  return { box: { x: L.cx - L.bw / 2, y: L.cy - L.bh / 2, w: L.bw, h: L.bh, CW: g.CW, CH: g.CH }, overflow: L.overflow, g };
+  const box = plate ? { ...plate, plate: true } : { x: L.cx - L.bw / 2, y: L.cy - L.bh / 2, w: L.bw, h: L.bh };
+  return { box: { ...box, CW: g.CW, CH: g.CH }, overflow: L.overflow, g };
 }
 
 /** Готовое изображение PNG (тот же рисунок, без рамки выделения). */

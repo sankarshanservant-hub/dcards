@@ -195,6 +195,9 @@ function story(token, user, visitor, { action, hash, frag }) {
   const { x, role } = resolve(token, user, visitor);
   if (!x) return { error: 'not_found' };
   if (!['a', 'b'].includes(role) || !x.b_answered_at) return { error: 'forbidden' };
+  // 26.11.2026: друг уже предложил действующий макет — встречное «предложить» не создаёт второй запрос, а означает согласие
+  { const oth = role === 'a' ? 'b' : 'a'; const cur = storyHash(x);
+    if (action === 'propose' && x.story_proposed_by === oth && x.story_hash === cur && x[`story_${oth}`] === `agreed:${cur}`) { action = 'agree'; hash = cur; frag = null; } }
   // предложение может выбрать фрагменты длинных ответов — это новый макет со своим отпечатком
   if (action === 'propose' && frag && typeof frag === 'object') {
     const f = { a: validFrag(x.a_text, frag.a), b: validFrag(x.b_text, frag.b) };

@@ -38,6 +38,7 @@ const routes = [
   [/^\/postcard\/?$/, (ctx) => pc.postcard(ctx, null)],
   [/^\/postcard\/(DC-\d{4,6})\/?$/, pc.postcard],
   [/^\/me\/postcards\/?$/, pc.myPostcards],
+  [/^\/pc\/([A-Za-z0-9_-]{22,40})\/?$/, pc.received], // полученная открытка (26.11.2026)
   [/^\/me\/images\/?$/, solo.myImages],
   [/^\/play\/(DC-\d{4,6})\/?$/, xch.playPage],
   [/^\/bell\/?$/, xch.bellPage],
@@ -295,11 +296,11 @@ function renderChrome() {
   const ls = document.getElementById('lang');
   ls.textContent = lang === 'ru' ? 'EN' : 'RU';
   ls.setAttribute('aria-label', lang === 'ru' ? 'Switch to English' : 'Переключить на русский');
-  // гость, впервые пришедший по ссылке в обмен (21.11.2026): в подвале — «Мои обмены», «О проекте», «Найти встречу»
+  // гость, впервые пришедший по ссылке в обмен: «Мои обмены» и «О проекте» — внизу самой страницы обмена (26.11.2026),
+  // в подвале их не повторяем, а «Найти встречу» в окнах обмена не показываем
   const guestX = !session.user && /^\/x\//.test(p) && storage.get('dc_via_invite') === '1';
   document.getElementById('foot').innerHTML = `<span>© Dialogue Cards · Dialogue Flow</span>
-    ${guestX ? `<nav class="foot-x" aria-label="${esc(tt('Дальше', 'More'))}"><a href="${u('/me/exchanges')}">${esc(tt('Мои обмены', 'My exchanges'))}</a><a href="${u('/start')}">${esc(tt('О проекте', 'About'))}</a><a href="${u('/meetings')}">${esc(tt('Найти встречу', 'Find a meeting'))}</a></nav>`
-      : `<a href="${u('/start')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>`}
+    ${guestX ? '' : `<a href="${u('/start')}">${esc(tt('Участвовать в проекте', 'Take part in the project'))}</a>`}
     ${session.config.demoMode ? `<span>${esc(tt('Прототип в демо-режиме', 'Prototype in demo mode'))}</span>` : ''}`;
   const pill = document.getElementById('demo-pill');
   const demoOn = session.config.demoMode && (session.showDemo || (session.user && session.user.isDemo));
