@@ -8,6 +8,22 @@ import { langName, LANG_NAMES, priceText, whereText } from './meetings.js';
 
 // «Asia/Bangkok» → «Bangkok»: подпись часового пояса в списке похожих городов.
 const tzCity = (tz) => String(tz).split('/').pop().replace(/_/g, ' ');
+// Читаемое название пояса (аудит 28.11, п.36): «по Москве (GMT+3)» вместо одного идентификатора зоны.
+const TZ_RU = { 'Europe/Moscow': 'по Москве', 'Europe/Kaliningrad': 'по Калининграду', 'Europe/Samara': 'по Самаре', 'Asia/Yekaterinburg': 'по Екатеринбургу', 'Asia/Omsk': 'по Омску', 'Asia/Novosibirsk': 'по Новосибирску',
+  'Asia/Krasnoyarsk': 'по Красноярску', 'Asia/Irkutsk': 'по Иркутску', 'Asia/Vladivostok': 'по Владивостоку', 'Europe/Kyiv': 'по Киеву', 'Europe/Kiev': 'по Киеву', 'Europe/Minsk': 'по Минску', 'Asia/Almaty': 'по Алматы',
+  'Asia/Tbilisi': 'по Тбилиси', 'Asia/Yerevan': 'по Еревану', 'Europe/Istanbul': 'по Стамбулу', 'Asia/Dubai': 'по Дубаю', 'Asia/Kolkata': 'по Индии', 'Asia/Bangkok': 'по Бангкоку', 'Asia/Makassar': 'по Бали',
+  'Europe/Berlin': 'по Берлину', 'Europe/Paris': 'по Парижу', 'Europe/London': 'по Лондону', 'America/New_York': 'по Нью-Йорку', 'America/Los_Angeles': 'по Лос-Анджелесу', UTC: 'по UTC' };
+const COMMON_TZ = ['Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Asia/Yekaterinburg', 'Asia/Novosibirsk', 'Asia/Vladivostok', 'Europe/Kyiv', 'Europe/Minsk', 'Asia/Almaty', 'Asia/Tbilisi', 'Asia/Dubai', 'Asia/Kolkata', 'Asia/Bangkok', 'Asia/Makassar', 'Europe/Berlin', 'Europe/London', 'America/New_York', 'UTC'];
+const tzOffset = (tz, at = new Date()) => { try { return (new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(at).find((x) => x.type === 'timeZoneName') || {}).value || ''; } catch { return ''; } };
+export const tzLabel = (tz, at) => { const o = tzOffset(tz, at); return tt(TZ_RU[tz] || `по поясу ${tzCity(tz)}`, `${tzCity(tz)} time`) + (o && tz !== 'UTC' ? ` (${o})` : ''); };
+/** Местное «ГГГГ-ММ-ДДTЧЧ:ММ» в поясе tz → момент времени (Date). */
+const zonedToDate = (local, tz) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local || ''); if (!m) return null;
+  let t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  for (let i = 0; i < 2; i++) { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute); t += Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) - asUtc; }
+  return new Date(t);
+};
 const CURRENCIES = ['RUB', 'USD', 'EUR', 'THB', 'INR', 'UAH', 'BYN', 'KZT', 'GEL', 'AMD', 'TRY', 'AED', 'VND', 'IDR', 'CNY', 'GBP', 'JPY', 'KRW', 'SGD', 'MYR', 'PLN', 'CZK', 'RSD'];
 // Валюта страны по умолчанию (подсказка для платной встречи).
 const CC_CURRENCY = { RU: 'RUB', US: 'USD', TH: 'THB', IN: 'INR', UA: 'UAH', BY: 'BYN', KZ: 'KZT', GE: 'GEL', AM: 'AMD', TR: 'TRY', AE: 'AED', VN: 'VND', ID: 'IDR', CN: 'CNY', GB: 'GBP', JP: 'JPY', KR: 'KRW', SG: 'SGD', MY: 'MYR', PL: 'PLN', CZ: 'CZK', RS: 'RSD', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', LV: 'EUR', LT: 'EUR', EE: 'EUR' };
@@ -181,6 +197,26 @@ export async function meetingEditor(ctx, id) {
       <label class="field">${esc(tt('Продолжительность', 'Duration'))} <span class="hint">${esc(tt('участник увидит время окончания', 'participants will see the end time'))}</span><select name="durationMin">${[['', tt('Не указывать', 'Not set')], ...[60, 90, 120, 150, 180, 240].map((n) => [n, durationText(n)])].map(([val, lab]) => `<option value="${val}" ${String(v.durationMin ?? '') === String(val) ? 'selected' : ''}>${esc(lab)}</option>`).join('')}</select></label></fieldset>`;
   const form = `<form class="card-ui form" id="mf" novalidate>
     ${m ? `<h2 style="margin:0">${esc(tt('Настройки встречи', 'Meeting settings'))}</h2><p class="small muted" style="margin:0">${esc(tt('Общие для всех дат. Записи и места считаются отдельно на каждой дате.', 'Shared by all dates. Sign-ups and seats are counted per date.'))}</p>` : ''}
+    <fieldset class="fs"><legend>${esc(tt('Как проходит', 'How it takes place'))}</legend>
+      <div class="radio-list mode-pick">
+        <label class="radio"><input type="radio" name="mode" value="live" ${online0 ? '' : 'checked'}><span>${esc(tt('Живая встреча', 'Live meeting'))}</span></label>
+        <label class="radio"><input type="radio" name="mode" value="online" ${online0 ? 'checked' : ''}><span>${esc(tt('Онлайн-встреча', 'Online meeting'))}</span></label>
+      </div></fieldset>
+    <fieldset class="fs" id="online-where" ${online0 ? '' : 'hidden'}><legend>${esc(tt('Подключение', 'Joining'))}</legend>
+      <label class="field">${esc(tt('Часовой пояс встречи', 'Meeting time zone'))} *<select name="timezone"><optgroup label="${esc(tt('Частые', 'Common'))}">${COMMON_TZ.filter((z) => tzList.includes(z) || z === 'UTC').map((z) => `<option value="${esc(z)}" ${z === tz0 ? 'selected' : ''}>${esc(tzCity(z))} · ${esc(tzOffset(z) || 'GMT')}</option>`).join('')}</optgroup><optgroup label="${esc(tt('Все пояса', 'All time zones'))}">${tzList.filter((z) => !COMMON_TZ.includes(z)).map((z) => `<option value="${esc(z)}" ${z === tz0 ? 'selected' : ''}>${esc(z)}</option>`).join('')}</optgroup></select></label>
+      <span class="small muted">${esc(tt('Время встречи вводится в этом поясе. Участники увидят его и в своём поясе.', 'Enter the time in this zone. Participants will also see it in their own time zone.'))}</span></fieldset>
+      <label class="field">${esc(tt('Платформа', 'Platform'))} *<select name="platformPick">${PLATFORMS.map((x) => `<option ${x === v.platform ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__other" ${v.platform && !platKnown ? 'selected' : ''}>${esc(tt('Другая', 'Other'))}</option></select></label>
+      <label class="field" id="plat-other" ${v.platform && !platKnown ? '' : 'hidden'}>${esc(tt('Название платформы', 'Platform name'))}<input type="text" name="platformOther" maxlength="80" value="${esc(platKnown ? '' : v.platform)}"></label>
+      <label class="field">${esc(tt('Данные подключения', 'Joining details'))} <span class="hint">${esc(tt('ссылка, идентификатор, пароль — их увидят только записавшиеся', 'link, ID, password — only registered participants see them'))}</span><textarea name="joinInfo" maxlength="500" rows="3">${esc(v.joinInfo || '')}</textarea></label>
+    <fieldset class="fs" id="live-where" ${online0 ? 'hidden' : ''}><legend>${esc(tt('Где', 'Where'))}</legend>
+      <div class="cols-2"><label class="field">${esc(tt('Город встречи', 'Meeting city'))} *<input type="text" name="city" required maxlength="80" autocomplete="off" value="${esc(v.city)}"></label>
+        <label class="field">${esc(tt('Страна', 'Country'))} <span class="hint">${esc(tt('подставится по городу', 'filled in from the city'))}</span><input type="text" name="country" maxlength="80" autocomplete="off" value="${esc(v.country)}"></label></div>
+      <div class="place-status" id="place" aria-live="polite"></div>
+      <div class="cols-2"><label class="field">${esc(tt('Площадка', 'Venue'))}<input type="text" name="venue" maxlength="300" value="${esc(v.venue)}" placeholder="${esc(tt('например, кафе «Ромашка»', 'e.g. Café Daisy'))}"></label>
+        <label class="field">${esc(tt('Адрес', 'Address'))}<input type="text" name="address" maxlength="300" value="${esc(v.address || '')}" placeholder="${esc(tt('например, ул. Ленина, 5', 'e.g. 5 Main St'))}"></label></div>
+      <input type="hidden" name="lat" value="${v.lat ?? ''}"><input type="hidden" name="lng" value="${v.lng ?? ''}">
+      <div class="stack" style="gap:6px" id="pt"></div>
+      <div id="geo" class="stack" style="gap:6px"></div></fieldset>
     ${whenBlock}
     <fieldset class="fs"><legend>${esc(tt('Формат', 'Format'))}</legend>
       <div class="radio-list">
@@ -191,26 +227,6 @@ export async function meetingEditor(ctx, id) {
     <input id="mf-title" type="text" name="title" required maxlength="140" value="${esc(v.title)}" aria-describedby="mf-title-hint" style="margin-top:-6px">
     <span class="small muted" id="mf-title-hint" style="margin-top:-6px">${esc(tt('Укажите название вашего события. Если Dialogue Flow — часть программы, расскажите об этом в описании', 'Enter the name of your event. If Dialogue Flow is part of the programme, say so in the description'))}</span>
     <label class="field">${esc(tt('Описание', 'Description'))} <span class="hint">${esc(tt('необязательно', 'optional'))}</span><textarea name="description" maxlength="3000">${esc(v.description)}</textarea></label>
-    <fieldset class="fs"><legend>${esc(tt('Как проходит', 'How it takes place'))}</legend>
-      <div class="radio-list mode-pick">
-        <label class="radio"><input type="radio" name="mode" value="live" ${online0 ? '' : 'checked'}><span>${esc(tt('Живая встреча', 'Live meeting'))}</span></label>
-        <label class="radio"><input type="radio" name="mode" value="online" ${online0 ? 'checked' : ''}><span>${esc(tt('Онлайн-встреча', 'Online meeting'))}</span></label>
-      </div></fieldset>
-    <fieldset class="fs" id="online-where" ${online0 ? '' : 'hidden'}><legend>${esc(tt('Подключение', 'Joining'))}</legend>
-      <label class="field">${esc(tt('Платформа', 'Platform'))} *<select name="platformPick">${PLATFORMS.map((x) => `<option ${x === v.platform ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__other" ${v.platform && !platKnown ? 'selected' : ''}>${esc(tt('Другая', 'Other'))}</option></select></label>
-      <label class="field" id="plat-other" ${v.platform && !platKnown ? '' : 'hidden'}>${esc(tt('Название платформы', 'Platform name'))}<input type="text" name="platformOther" maxlength="80" value="${esc(platKnown ? '' : v.platform)}"></label>
-      <label class="field">${esc(tt('Данные подключения', 'Joining details'))} <span class="hint">${esc(tt('ссылка, идентификатор, пароль — их увидят только записавшиеся', 'link, ID, password — only registered participants see them'))}</span><textarea name="joinInfo" maxlength="500" rows="3">${esc(v.joinInfo || '')}</textarea></label>
-      <label class="field">${esc(tt('Часовой пояс встречи', 'Meeting time zone'))} *<select name="timezone">${tzList.map((z) => `<option ${z === tz0 ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select></label>
-      <span class="small muted">${esc(tt('Время встречи вводится в этом поясе. Участники увидят его и в своём поясе.', 'Enter the time in this zone. Participants will also see it in their own time zone.'))}</span></fieldset>
-    <fieldset class="fs" id="live-where" ${online0 ? 'hidden' : ''}><legend>${esc(tt('Где', 'Where'))}</legend>
-      <div class="cols-2"><label class="field">${esc(tt('Город встречи', 'Meeting city'))} *<input type="text" name="city" required maxlength="80" autocomplete="off" value="${esc(v.city)}"></label>
-        <label class="field">${esc(tt('Страна', 'Country'))} <span class="hint">${esc(tt('подставится по городу', 'filled in from the city'))}</span><input type="text" name="country" maxlength="80" autocomplete="off" value="${esc(v.country)}"></label></div>
-      <div class="place-status" id="place" aria-live="polite"></div>
-      <div class="cols-2"><label class="field">${esc(tt('Площадка', 'Venue'))}<input type="text" name="venue" maxlength="300" value="${esc(v.venue)}" placeholder="${esc(tt('например, кафе «Ромашка»', 'e.g. Café Daisy'))}"></label>
-        <label class="field">${esc(tt('Адрес', 'Address'))}<input type="text" name="address" maxlength="300" value="${esc(v.address || '')}" placeholder="${esc(tt('например, ул. Ленина, 5', 'e.g. 5 Main St'))}"></label></div>
-      <input type="hidden" name="lat" value="${v.lat ?? ''}"><input type="hidden" name="lng" value="${v.lng ?? ''}">
-      <div class="stack" style="gap:6px" id="pt"></div>
-      <div id="geo" class="stack" style="gap:6px"></div></fieldset>
     <label class="field">${esc(tt('Язык встречи', 'Meeting language'))}<select name="language">${Object.keys(LANG_NAMES).map((k) => `<option value="${k}" ${k === v.language ? 'selected' : ''}>${esc(langName(k))}</option>`).join('')}</select></label>
     <label class="field">${esc(tt('Оплата', 'Payment'))}<select name="priceType"><option value="free" ${v.priceType === 'free' ? 'selected' : ''}>${esc(tt('Бесплатно', 'Free'))}</option><option value="paid" ${v.priceType === 'paid' ? 'selected' : ''}>${esc(tt('Платно', 'Paid'))}</option></select></label>
     <div id="paid-fields" ${v.priceType === 'paid' ? '' : 'hidden'} class="stack" style="gap:10px">
@@ -269,7 +285,7 @@ export async function meetingEditor(ctx, id) {
       placeBox.innerHTML = `<span class="warn">${esc(tt('Не удалось определить город. Уточните название и страну или укажите ближайший крупный город.', 'Could not identify the city. Check the name and country, or enter the nearest large city.'))}</span>${options.length ? `<div class="chips">${options.map(optBtn).join('')}</div>` : ''}`;
     } else if (state === 'loading') placeBox.innerHTML = `<span class="muted small">${esc(tt('Определяем город…', 'Looking up the city…'))}</span>`;
     else placeBox.innerHTML = '';
-    if (dateHint) dateHint.textContent = isOnline() ? tt(`Время — по поясу ${mf.timezone.value}`, `Time in the ${mf.timezone.value} zone`) : place ? enterTimeHint(place.city) : tt('Сначала укажите город — время вводится местное', 'Enter the city first — the time is local to it');
+    if (dateHint) dateHint.textContent = isOnline() ? tt(`Время — ${tzLabel(mf.timezone.value)}`, `Time: ${tzLabel(mf.timezone.value)}`) : place ? enterTimeHint(place.city) : tt('Сначала укажите город выше — время вводится местное', 'Enter the city above first — the time is local to it');
     preview();
   };
   const syncMode = () => {
@@ -332,13 +348,47 @@ export async function meetingEditor(ctx, id) {
     box.innerHTML = `<span class="muted small">${esc(tt('Участники увидят:', 'Participants will see:'))}</span><br><b>${esc(localLabel(local, 0, dur))} · ${esc(city)}</b>`
       + (n > 1 ? `<br><span class="small muted">${esc(tt(`Еженедельно, всего встреч: ${n}; последняя — ${localLabel(local, n - 1, dur)}`, `Weekly, ${n} meetings; the last — ${localLabel(local, n - 1, dur)}`))}</span>` : '');
   };
-  const preview = () => { if (mf.firstDate) previewFor(ctx.main.querySelector('#tzprev'), mf.firstDate.value, isOnline() ? tt(`онлайн · ${mf.timezone.value}`, `online · ${mf.timezone.value}`) : place && place.city, repeatCount(mf)); };
+  const preview = () => {
+    if (!mf.firstDate) return;
+    const box = ctx.main.querySelector('#tzprev');
+    previewFor(box, mf.firstDate.value, isOnline() ? tt('онлайн', 'online') : place && place.city, repeatCount(mf));
+    // онлайн: время прописью в поясе встречи и пример, как его увидит участник из другого пояса (п.36)
+    const at = isOnline() && zonedToDate(mf.firstDate.value, mf.timezone.value);
+    if (at && box) {
+      const tz = mf.timezone.value; const mine = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const other = mine && mine !== tz ? mine : tz === 'Asia/Bangkok' ? 'Europe/Moscow' : 'Asia/Bangkok';
+      const day = (z) => fmtTz(at.toISOString(), z, { day: 'numeric', month: 'long' }); const hm2 = (z) => fmtTz(at.toISOString(), z, { hour: '2-digit', minute: '2-digit' });
+      box.insertAdjacentHTML('beforeend', `<p class="tz-check" style="margin:6px 0 0"><b>${esc(`${day(tz)}, ${hm2(tz)} ${tzLabel(tz, at)}`)}</b><br><span class="small muted">${esc(tt(`Участник из другого пояса (${tzCity(other)}, ${tzOffset(other, at) || 'GMT'}) увидит: ${day(other)}, ${hm2(other)} — время показывается в его поясе.`, `A participant on ${tzLabel(other, at)} will see: ${day(other)}, ${hm2(other)} — times are shown in their own zone.`))}</span></p>`);
+    }
+  };
   const paidBox = ctx.main.querySelector('#paid-fields');
   const syncPaid = () => { paidBox.hidden = mf.priceType.value !== 'paid'; };
   mf.priceType.addEventListener('change', () => { syncPaid(); if (!paidBox.hidden && !mf.currency.value && place && CC_CURRENCY[place.cc]) mf.currency.value = CC_CURRENCY[place.cc]; });
   mf.city.addEventListener('input', lookup); mf.country.addEventListener('input', lookup);
   if (mf.firstDate) wireRepeat(mf, preview);
   mf.durationMin.addEventListener('change', preview);
+  // Черновик формы (аудит 28.11, п.34): смена языка перерисовывает страницу — введённое восстанавливается из sessionStorage.
+  const DKEY = `dc_mf:${id || (fromId ? 'from' + fromId : 'new')}`;
+  const fields = () => [...mf.elements].filter((x) => x.name || x.matches('[data-date-input],[data-time-input]'));
+  const keyOf = (x) => x.name || (x.matches('[data-date-input]') ? '_date' : '_time');
+  const saveDraft = () => {
+    const o = {}; for (const x of fields()) { const k = keyOf(x); if (x.type === 'radio') { if (x.checked) o[k] = x.value; } else if (x.type === 'checkbox') o[k] = x.checked; else o[k] = x.value; }
+    try { sessionStorage.setItem(DKEY, JSON.stringify({ at: Date.now(), o })); } catch { /* */ }
+  };
+  let restored = false;
+  try {
+    const d0 = JSON.parse(sessionStorage.getItem(DKEY) || 'null');
+    if (d0 && Date.now() - d0.at < 6 * 3600e3) {
+      for (const x of fields()) { const k = keyOf(x); if (!(k in d0.o)) continue; if (x.type === 'radio') x.checked = x.value === d0.o[k]; else if (x.type === 'checkbox') x.checked = !!d0.o[k]; else x.value = d0.o[k]; }
+      restored = true;
+    }
+  } catch { /* */ }
+  mf.addEventListener('input', saveDraft); mf.addEventListener('change', saveDraft);
+  if (restored) {
+    ctx.main.querySelector('#plat-other').hidden = mf.platformPick.value !== '__other'; syncPaid();
+    if (mf.repeatOn) mf.repeatOn.dispatchEvent(new Event('change'));
+    lastQuery = ''; place = null;
+  }
   drawPlace(place ? 'ok' : 'empty');
   if (!place && mf.city.value.trim() && !isOnline()) lookup();
   syncMode();
@@ -355,8 +405,8 @@ export async function meetingEditor(ctx, id) {
       ? { ...fd, mode: 'online', platform: platform(), joinInfo: mf.joinInfo.value, timezone: mf.timezone.value, city: '', country: '', venue: '', address: '', priceAmount: mf.priceAmount.value, currency: mf.currency.value, sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: repeatCount(mf) }
       : { ...fd, mode: 'live', priceAmount: mf.priceAmount.value, currency: mf.currency.value, city: place.city, country: place.country, placeId: place.placeId || '', sameAs: src ? src.id : undefined, askContact: mf.askContact.checked, capacity: Number(fd.capacity), repeatWeekly: repeatCount(mf) };
     try {
-      if (m) { await api(`/api/fac/meetings/${id}`, { method: 'PUT', body }); toast(tt('Сохранено', 'Saved')); ctx.rerender(); }
-      else { const r = await api('/api/fac/meetings', { method: 'POST', body }); toast(tt('Встреча опубликована', 'Meeting published')); ctx.navigate('/facilitator/m/' + r.id); }
+      if (m) { await api(`/api/fac/meetings/${id}`, { method: 'PUT', body }); try { sessionStorage.removeItem(DKEY); } catch { /* */ } toast(tt('Сохранено', 'Saved')); ctx.rerender(); }
+      else { const r = await api('/api/fac/meetings', { method: 'POST', body }); try { sessionStorage.removeItem(DKEY); } catch { /* */ } toast(tt('Встреча опубликована', 'Meeting published')); ctx.navigate('/facilitator/m/' + r.id); }
     } catch (x) {
       if (x.code === 'city_unresolved') { place = null; drawPlace((x.data && x.data.options || []).length ? 'ambiguous' : 'not_found', (x.data && x.data.options) || []); }
       ctx.main.querySelector('#err').textContent = errorText(x);
@@ -414,7 +464,7 @@ export async function meetingEditor(ctx, id) {
       catch (x) { btn.disabled = false; err.textContent = errorText(x); }
     });
   }
-  if (!m && mf.firstDate) wireDatePicker(mf, preview);
+  if (!m && mf.firstDate) { wireDatePicker(mf, preview); if (restored) mf.querySelector('[data-date-input]').dispatchEvent(new Event('change')); }
   wirePoint();
   // ---------- место на карте: поиск адреса с подтверждением или точка вручную ----------
   function wirePoint() {

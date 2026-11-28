@@ -777,17 +777,22 @@ admin.use((req, res, next) => {
   else if ((mm = p.match(/^\/cards\/(DC-\d+)(?:\/|$)/)) && p !== '/cards/bulk-author') ok = isDemoRow('cards', 'code', mm[1]);
   return ok ? next() : bad(res, 'demo_readonly', 403);
 });
+// Цифры «Подключения и данные» (аудит 28.11, п.38): те же множества и тот же учёт демо-данных, что в списках —
+// галерея (опубликованные карты), очередь куратора (без рекомендованных), «Работы» (ждут публикации), список встреч.
 admin.get('/overview', (req, res) => {
-  const count = (sql, ...a) => db.prepare(sql).get(...a).n;
-  const byStatus = (table, col = 'status') => Object.fromEntries(db.prepare(`SELECT ${col} AS s, COUNT(*) AS n FROM ${table} GROUP BY ${col}`).all().map((x) => [x.s, x.n]));
+  const sc = demoScope(req); const dw = (col = 'is_demo') => (sc === false ? `${col} = 0` : sc === 'only' ? `${col} = 1` : '1=1');
+  const count = (sql) => db.prepare(sql).get().n;
+  const byStatus = (table) => Object.fromEntries(db.prepare(`SELECT status AS s, COUNT(*) AS n FROM ${table} WHERE ${dw()} GROUP BY status`).all().map((x) => [x.s, x.n]));
   res.json({
     cards: byStatus('cards'), works: byStatus('works'), meetings: byStatus('meetings'),
-    users: count('SELECT COUNT(*) AS n FROM users WHERE is_demo = 0'),
-    pendingApplications: count(`SELECT COUNT(*) AS n FROM fac_applications WHERE status = 'submitted'`) + count(`SELECT COUNT(*) AS n FROM curator_applications WHERE status = 'submitted'`),
-    printRequests: count(`SELECT COUNT(*) AS n FROM print_requests WHERE status = 'new' AND is_demo = 0`),
-    registrations: count(`SELECT COUNT(*) AS n FROM registrations WHERE status = 'active'`),
-    comments: count('SELECT COUNT(*) AS n FROM comments WHERE deleted_at IS NULL'),
-    mailConnected: mail.connected(), demoMode: config.demoMode,
+    worksCurators: count(`SELECT COUNT(*) AS n FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NULL AND ${dw()}`),
+    worksToPublish: count(`SELECT COUNT(*) AS n FROM works WHERE status IN ('submitted','discussion') AND recommended_at IS NOT NULL AND ${dw()}`),
+    users: count(`SELECT COUNT(*) AS n FROM users WHERE ${dw()}`),
+    pendingApplications: count(`SELECT COUNT(*) AS n FROM fac_applications WHERE status = 'submitted' AND ${dw()}`) + count(`SELECT COUNT(*) AS n FROM curator_applications WHERE status = 'submitted' AND ${dw()}`),
+    printRequests: count(`SELECT COUNT(*) AS n FROM print_requests WHERE status = 'new' AND ${dw()}`),
+    registrations: count(`SELECT COUNT(*) AS n FROM registrations r JOIN meeting_dates d ON d.id = r.date_id JOIN meetings m ON m.id = d.meeting_id WHERE r.status = 'active' AND ${dw('m.is_demo')}`),
+    comments: count(`SELECT COUNT(*) AS n FROM comments WHERE deleted_at IS NULL AND ${dw()}`),
+    demoScope: sc, mailConnected: mail.connected(), demoMode: config.demoMode,
   });
 });
 admin.get('/workshops', (req, res) => res.json(workshops.list(req.showDemo || !!req.user.is_demo)));

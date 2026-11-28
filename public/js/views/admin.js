@@ -59,9 +59,9 @@ export async function overview(ctx) {
   const items = [
     [a.works, '/admin/works', 'Работы к публикации', 'Works to publish', 'Кураторы рекомендовали — ждут вашего решения', 'Recommended by curators — awaiting your decision'],
     [a.messages, '/admin/messages', 'Новые сообщения', 'New messages', 'Переписки с непрочитанными сообщениями участников', 'Conversations with unread messages from members'],
-    [a.facApps, '/admin/applications', 'Заявки фасилитаторов', 'Facilitator applications', 'Курс и проверка пройдены', 'Course and quiz completed'],
-    [a.facManual, '/admin/applications', 'Заявки на ручной проверке ответов', 'Applications for manual review', 'Ответы проверки — на ваше решение', 'Quiz answers — for your decision'],
-    [a.curApps, '/admin/applications', 'Заявки кураторов', 'Curator applications', '', ''],
+    [a.facApps, '/admin/applications?type=fac', 'Заявки фасилитаторов', 'Facilitator applications', 'Курс и проверка пройдены', 'Course and quiz completed'],
+    [a.facManual, '/admin/applications?type=fac-manual', 'Заявки на ручной проверке ответов', 'Applications for manual review', 'Ответы проверки — на ваше решение', 'Quiz answers — for your decision'],
+    [a.curApps, '/admin/applications?type=cur', 'Заявки кураторов', 'Curator applications', '', ''],
     [a.workshops, '/admin/workshops', 'Заявки на онлайн-занятия', 'Online workshop requests', 'Новые, ещё не просмотренные', 'New, not yet reviewed'],
     [a.decks, '/admin/decks', 'Заявки на печатные колоды', 'Printed deck requests', 'Новые предварительные заявки', 'New preliminary requests'],
   ].filter((x) => x[0] > 0);
@@ -74,31 +74,41 @@ async function settingsSection(ctx) {
   let o;
   try { o = await api('/api/admin/overview'); } catch (e) { throw e; }
   if (!ctx.alive()) return;
-  const k = (n, ru, en) => `<div class="kpi"><b>${n ?? 0}</b><span>${esc(tt(ru, en))}</span></div>`;
+  const k = (n, ru, en, href) => (href ? `<a class="kpi" href="${u(href)}"><b>${n ?? 0}</b><span>${esc(tt(ru, en))}</span></a>` : `<div class="kpi"><b>${n ?? 0}</b><span>${esc(tt(ru, en))}</span></div>`);
   const sec = shell(ctx, 'settings', tt('Подключения и данные', 'Connections & data'), `
-    <div class="kpis">${k(o.cards.published, 'карт опубликовано', 'cards published')}${k(o.cards.removed, 'карт снято', 'cards removed')}
-      ${k((o.works.submitted || 0) + (o.works.discussion || 0), 'работ в очереди', 'works in queue')}${k(o.works.needs_changes, 'на доработке', 'returned for changes')}
-      ${k(o.meetings.published, 'встреч опубликовано', 'meetings published')}${k(o.meetings.removed, 'встреч снято', 'meetings taken down')}
-      ${k(o.registrations, 'активных записей', 'active sign-ups')}${k(o.pendingApplications, 'заявок фасилитаторов', 'facilitator applications')}
-      ${k(o.users, 'пользователей (без демо)', 'users (no demo)')}${k(o.comments, 'сообщений в обсуждениях', 'discussion messages')}</div>
+    <p class="small muted" style="margin:0 0 8px">${esc(o.demoScope === false ? tt('Без демо-данных — так же, как в списках разделов.', 'Without demo data — the same as the section lists.') : o.demoScope === 'only' ? tt('Только демо-данные (демо-роль).', 'Demo data only (demo role).') : tt('Включая демо-данные — так же, как в списках разделов.', 'Including demo data — the same as the section lists.'))}</p>
+    <div class="kpis">${k(o.cards.published, 'карт в галерее', 'cards in the gallery', '/library')}${k(o.cards.removed, 'карт снято с публикации', 'cards taken down', '/admin/cards')}
+      ${k(o.worksCurators, 'работ у кураторов', 'works with curators', '/curator')}${k(o.worksToPublish, 'работ ждут публикации', 'works awaiting publication', '/admin/works')}${k(o.works.needs_changes, 'возвращено на доработку', 'returned for changes')}
+      ${k(o.meetings.published, 'встреч опубликовано', 'meetings published', '/admin/meetings')}${k(o.meetings.removed, 'встреч снято администратором', 'meetings taken down by an admin', '/admin/meetings')}
+      ${k(o.registrations, 'активных записей на встречи', 'active meeting sign-ups')}${k(o.pendingApplications, 'заявок на роли ждут решения', 'role applications awaiting a decision', '/admin/applications')}
+      ${k(o.users, 'пользователей', 'users', '/admin/users')}${k(o.comments, 'сообщений в обсуждениях карт', 'card discussion messages', '/admin/comments')}</div>
     <div class="cols-2" style="margin-top:16px">
       <div class="card-ui flat stack"><h3>${esc(tt('Подключения', 'Connections'))}</h3>
         <p style="margin:0">${esc(tt('Почта:', 'Email:'))} <b class="${o.mailConnected ? 'ok' : 'warn'}">${esc(o.mailConnected ? tt('подключена (SMTP)', 'connected (SMTP)') : tt('не подключена — письма показываются на экране (демо)', 'not connected — letters are shown on screen (demo)'))}</b></p>
         <p style="margin:0">${esc(tt('Перевод сообщений:', 'Message translation:'))} <b class="warn">${esc(tt('не подключён — ссылка на внешний переводчик', 'not connected — link to an external translator'))}</b></p>
-        <p style="margin:0">${esc(tt('Оплата:', 'Payments:'))} <b>${esc(tt('не принимается на сайте (по заданию)', 'not taken on the site (by design)'))}</b></p></div>
+        <p style="margin:0">${esc(tt('Оплата:', 'Payments:'))} <b>${esc(tt('не принимается на сайте', 'not taken on the site'))}</b></p></div>
       ${o.demoMode ? `<div class="card-ui flat stack"><h3>${esc(tt('Демо-данные', 'Demo data'))}</h3>
         <p class="small muted" style="margin:0">${esc(tt('Демо-работы, встречи, подборка, сообщения и заявка. Помечены «демо», видны только в демо-режиме и не смешиваются с реальной статистикой.', 'Demo works, meetings, a selection, messages and an application. Labelled “demo”, visible only in demo mode and kept apart from real statistics.'))}</p>
         <div class="row"><button class="btn dark sm" type="button" id="seed">${esc(tt('Заполнить демо-данными', 'Fill with demo data'))}</button><button class="btn sm danger" type="button" id="clear">${esc(tt('Удалить демо-данные', 'Delete demo data'))}</button></div></div>` : ''}
     </div>`);
   // обмены: этапы со знаменателями (без имён и текстов); ориентиры — гипотезы для проверки
   api('/api/admin/exchange-stats?days=30').then((x) => {
-    const p = x.personal; const pct = (a, b) => (b ? ` · ${Math.round((a / b) * 100)}%` : '');
-    const row = (t0, v, d) => `<tr><td>${esc(t0)}</td><td><b>${v}</b>${d != null ? pct(v, d) : ''}</td></tr>`;
+    // Знаменатель — рядом с каждым процентом (аудит 28.11, п.41). События — x_events обмена: sent (поделились или
+    // скопировали ссылку), opened (открыл не автор), answered (друг ответил); считаются обмены, созданные за период.
+    const p = x.personal;
+    const pct = (a, b) => (b ? ` (${Math.round((a / b) * 100)}%)` : '');
+    const of = (v, d, ru, en) => (d ? tt(`${v} из ${d} ${ru}`, `${v} of ${d} ${en}`) + pct(v, d) : tt(`${v} из 0 ${ru} — процент не считается`, `${v} of 0 ${en} — no percentage`));
+    const row = (t0, v) => `<tr><td>${esc(t0)}</td><td><b>${esc(String(v))}</b></td></tr>`;
     sec.insertAdjacentHTML('beforeend', `<div class="card-ui flat stack" style="margin-top:16px"><h3 style="margin:0">${esc(tt('Обмены за 30 дней', 'Exchanges, last 30 days'))}</h3>
-      <table class="small"><tbody>${row(tt('Создано приглашений', 'Invitations created'), p.all.created)}${row(tt('Отправлено или скопировано', 'Sent or copied'), p.all.sent, p.all.created)}
-      ${row(tt('Открыто человеком', 'Opened by a person'), p.all.opened, p.all.sent)}${row(tt('Получили ответ', 'Answered'), p.all.answered, p.all.opened)}
-      ${row(tt('Ответивших (уникальных)', 'Responders (unique)'), x.responders)}${row(tt('…из них отправили свою карту', '…of them sent their own card'), x.onwardAny, x.responders)}
-      ${row(tt('— ответной картой в том же разговоре', '— a reply card in the same conversation'), x.onwardReply, x.responders)}${row(tt('— новым людям (отдельный обмен)', '— to new people (separate exchange)'), x.onwardNew, x.responders)}</tbody></table>
+      <table class="small"><tbody>${row(tt('Создано приглашений', 'Invitations created'), p.all.created)}
+      ${row(tt('Поделились или скопировали ссылку', 'Shared or copied the link'), of(p.all.sent, p.all.created, 'созданных', 'created'))}
+      ${row(tt('Открыли', 'Opened'), of(p.all.opened, p.all.sent, 'отправленных приглашений', 'sent invitations'))}
+      ${row(tt('Ответили', 'Answered'), of(p.all.answered, p.all.opened, 'открытых', 'opened'))}
+      ${row(tt('Ответивших (уникальных людей)', 'Responders (unique people)'), x.responders)}
+      ${row(tt('…из них отправили свою карту', '…of them sent their own card'), of(x.onwardAny, x.responders, 'ответивших', 'responders'))}
+      ${row(tt('— ответной картой в том же разговоре', '— a reply card in the same conversation'), of(x.onwardReply, x.responders, 'ответивших', 'responders'))}
+      ${row(tt('— новым людям (отдельный обмен)', '— to new people (separate exchange)'), of(x.onwardNew, x.responders, 'ответивших', 'responders'))}</tbody></table>
+      <p class="small muted" style="margin:0">${esc(tt('Считаются приглашения, созданные за 30 дней. «Открыли» — открыл человек по ссылке (не автор приглашения).', 'Counts invitations created in the last 30 days. “Opened” means a person other than the sender opened the link.'))}</p>
       <p class="small muted" style="margin:0">${esc(tt('Ориентиры «ответили больше половины», «каждый третий отправил свою» — гипотезы. Гость на разных устройствах считается разными людьми; новый обмен не доказывает нового человека. Групповые ссылки будут считаться отдельно.', 'Targets “over half answered”, “one in three sent their own” are hypotheses. A guest on different devices counts as different people; a new exchange does not prove a new person. Group links will be counted separately.'))}</p></div>`);
   }).catch(() => {});
   const sd = sec.querySelector('#seed');
@@ -232,19 +242,24 @@ const SECTIONS = {
   async users(ctx) {
     const { users } = await api('/api/admin/users');
     if (!ctx.alive()) return;
-    const sec = shell(ctx, 'users', tt('Люди и роли', 'People & roles'), `<p class="small muted">${esc(tt('Роль выдаётся и снимается сразу; права проверяются сервером при каждом действии. У одного человека может быть несколько ролей (техническое предложение).', 'Roles are granted and removed immediately; the server checks permissions on every action. One person may hold several roles (technical proposal).'))}</p>
+    const sec = shell(ctx, 'users', tt('Люди и роли', 'People & roles'), `<p class="small muted">${esc(tt('Нажатие на роль выдаёт или снимает её после подтверждения. Изменение действует сразу: доступ к кабинету появится или пропадёт при следующем открытии страницы этим человеком. У одного человека может быть несколько ролей.', 'Tapping a role grants or removes it after confirmation. The change applies immediately: the person gains or loses the space the next time they open a page. One person may hold several roles.'))}</p>
       <div class="list">${users.map((x) => `<div class="item" style="align-items:flex-start"><span class="body"><b>${esc(x.publicName)}${x.publicName !== x.name ? ` <span class="small muted">(${esc(x.name)})</span>` : ''} ${demoPill(x.isDemo)}</b>
         <span class="small">${esc(x.email || tt('без email', 'no email'))} · ${esc(rolesText(x.roles))}</span>
         <div class="chips" style="margin-top:6px">${['artist', 'curator', 'facilitator', 'admin'].map((r) => `<button class="chip ${x.roles.includes(r) ? 'on' : ''}" type="button" data-u="${x.id}" data-r="${r}" data-g="${x.roles.includes(r) ? 0 : 1}">${esc(ROLE_LABEL[r]())}</button>`).join('')}</div>
         ${x.cardCount && !x.isDemo ? `<form class="row" data-transfer="${x.id}" style="margin-top:6px"><span class="small">${esc(tt(`Автор карт: ${x.cardCount}. Передать карты аккаунту:`, `Author of ${x.cardCount} cards. Transfer them to:`))}</span>
-          <select name="to" style="max-width:240px"><option value="">—</option>${users.filter((y) => y.id !== x.id && !y.isDemo).map((y) => `<option value="${y.id}">${esc(y.publicName)}${y.email ? ' · ' + esc(y.email) : ''}</option>`).join('')}</select><button class="btn sm" type="submit">OK</button></form>` : ''}
-        ${!x.email ? `<form class="row" data-email="${x.id}" style="margin-top:6px"><input type="email" name="email" placeholder="${esc(tt('Указать email для входа', 'Set an email for sign-in'))}" style="max-width:280px"><button class="btn sm" type="submit">OK</button></form>` : ''}</span></div>`).join('')}</div>`);
+          <select name="to" style="max-width:240px" aria-label="${esc(tt('Кому передать карты', 'Who receives the cards'))}"><option value="">${esc(tt('Выберите автора', 'Choose an author'))}</option>${users.filter((y) => y.id !== x.id && !y.isDemo).map((y) => `<option value="${y.id}">${esc(y.publicName)}${y.email ? ' · ' + esc(y.email) : ''}</option>`).join('')}</select><button class="btn sm" type="submit">${esc(tt('Передать карты выбранному автору', 'Transfer the cards to the selected author'))}</button></form>` : ''}
+        ${!x.email ? `<form class="row" data-email="${x.id}" style="margin-top:6px"><input type="email" name="email" placeholder="${esc(tt('Указать email для входа', 'Set an email for sign-in'))}" style="max-width:280px"><button class="btn sm" type="submit">${esc(tt('Сохранить email', 'Save email'))}</button></form>` : ''}</span></div>`).join('')}</div>`);
     sec.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-r]'); if (!b) return;
+      const who = (users.find((y) => String(y.id) === b.dataset.u) || {}).publicName || '';
+      const rl = ROLE_LABEL[b.dataset.r]();
+      if (!confirm(b.dataset.g === '1' ? tt(`Выдать роль «${rl}» — ${who}? Доступ появится сразу.`, `Grant the “${rl}” role to ${who}? Access starts immediately.`) : tt(`Снять роль «${rl}» — ${who}? Доступ пропадёт сразу.`, `Remove the “${rl}” role from ${who}? Access ends immediately.`))) return;
       try { await api(`/api/admin/users/${b.dataset.u}/roles`, { method: 'POST', body: { role: b.dataset.r, grant: b.dataset.g === '1' } }); toast(tt('Роли обновлены', 'Roles updated')); ctx.rerender(); } catch (x) { toast(errorText(x)); }
     });
     sec.querySelectorAll('[data-transfer]').forEach((f) => f.addEventListener('submit', async (e) => {
-      e.preventDefault(); if (!f.to.value) return;
+      e.preventDefault(); if (!f.to.value) { toast(tt('Выберите автора, которому передать карты', 'Choose the author to receive the cards')); return; }
+      const from = users.find((y) => String(y.id) === f.dataset.transfer) || {}; const to = users.find((y) => String(y.id) === f.to.value) || {};
+      if (!confirm(tt(`Передать карты автора «${from.publicName}» (${from.cardCount}) аккаунту «${to.publicName}»${to.email ? ` (${to.email})` : ''}?`, `Transfer ${from.cardCount} card(s) by “${from.publicName}” to the account “${to.publicName}”${to.email ? ` (${to.email})` : ''}?`))) return;
       try { const r = await api(`/api/admin/users/${f.dataset.transfer}/transfer-cards`, { method: 'POST', body: { to: Number(f.to.value) } }); toast(tt(`Карт передано: ${r.moved}`, `Cards transferred: ${r.moved}`)); ctx.rerender(); } catch (x) { toast(errorText(x)); }
     }));
     sec.querySelectorAll('[data-email]').forEach((f) => f.addEventListener('submit', async (e) => {
@@ -253,24 +268,37 @@ const SECTIONS = {
   },
 
   async applications(ctx) {
-    const [{ applications }, { applications: curApps }] = await Promise.all([api('/api/admin/applications'), api('/api/admin/curator-applications')]);
+    let [{ applications }, { applications: curApps }] = await Promise.all([api('/api/admin/applications'), api('/api/admin/curator-applications')]);
     if (!ctx.alive()) return;
+    // фильтр по типу заявки (аудит 28.11, п.39): из «Требует внимания» приходят ?type=fac | fac-manual | cur
+    const type = ['fac', 'fac-manual', 'cur'].includes(ctx.query.get('type')) ? ctx.query.get('type') : '';
+    // счётчики совпадают с «Требует внимания»: ждут решения; «Все» — вся история заявок
+    const nF = applications.filter((x) => x.status === 'submitted' && !x.manualReview).length; const nM = applications.filter((x) => x.status === 'submitted' && x.manualReview).length;
+    const nC = curApps.filter((x) => x.status === 'submitted').length;
+    if (type === 'fac-manual') applications = applications.filter((x) => x.manualReview && x.status === 'submitted');
+    if (type === 'fac') applications = applications.filter((x) => !x.manualReview && x.status === 'submitted');
+    if (type === 'cur') curApps = curApps.filter((x) => x.status === 'submitted');
+    const showCur = !type || type === 'cur'; const showFac = !type || type !== 'cur';
+    const chip = (k, ru, en, n) => `<a class="chip ${type === k ? 'on' : ''}" ${type === k ? 'aria-current="true"' : ''} href="${u('/admin/applications' + (k ? '?type=' + k : ''))}">${esc(tt(ru, en))}${n != null ? ` · ${n}` : ''}</a>`;
+
+    const filters = `<nav class="chips" aria-label="${esc(tt('Тип заявок', 'Application type'))}" style="margin-bottom:12px">${chip('', 'Все', 'All')}${chip('fac', 'Фасилитаторы', 'Facilitators', nF)}${chip('fac-manual', 'Ручная проверка ответов', 'Manual review', nM)}${chip('cur', 'Кураторы', 'Curators', nC)}</nav>
+      <p class="small muted" style="margin:0 0 10px">${esc(tt('Фильтры показывают заявки, ждущие решения; «Все» — всю историю.', 'Filters show applications awaiting a decision; “All” shows the full history.'))}</p>`;
     const ST = { in_progress: tt('проходит курс', 'taking the course'), submitted: tt('ждёт решения', 'awaiting decision'), approved: tt('одобрена', 'approved'), rejected: tt('не одобрена', 'not approved') };
     const decide = (kind, a, grant) => `${a.status === 'submitted' ? `<div class="row" style="margin-top:8px"><input type="text" placeholder="${esc(tt('Комментарий (по желанию)', 'Note (optional)'))}" data-note="${kind}${a.userId}" style="max-width:280px">
           <button class="btn dark sm" type="button" data-ok="${kind}${a.userId}">${esc(grant)}</button><button class="btn sm danger" type="button" data-no="${kind}${a.userId}">${esc(tt('Отклонить', 'Decline'))}</button></div>` : ''}`;
-    const sec = shell(ctx, 'applications', tt('Заявки на роли', 'Role applications'), `
-      <h3>${esc(tt('Заявки на роль куратора', 'Curator applications'))}</h3>
+    const sec = shell(ctx, 'applications', tt('Заявки на роли', 'Role applications'), `${filters}
+      ${showCur ? `<h3>${esc(tt('Заявки на роль куратора', 'Curator applications'))}</h3>
       ${curApps.length ? `<div class="list">${curApps.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
         <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.contact)}${a.accountName !== a.name ? ' · ' + esc(tt('аккаунт', 'account')) + ': ' + esc(a.accountName) : ''}</span>
         <p class="small" style="margin:4px 0 0;white-space:pre-wrap">${esc(a.motivation)}</p>
         ${decide('c', a, tt('Одобрить и выдать роль куратора', 'Approve and grant the curator role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль куратора нет.', 'No curator applications.'))}</p>`}
-      <h3 style="margin-top:22px">${esc(tt('Заявки на роль фасилитатора', 'Facilitator applications'))}</h3>
+      ` : ''}${showFac ? `<h3 style="margin-top:${showCur ? 22 : 0}px">${esc(tt(type === 'fac-manual' ? 'Заявки фасилитаторов на ручной проверке ответов' : 'Заявки на роль фасилитатора', type === 'fac-manual' ? 'Facilitator applications for manual review' : 'Facilitator applications'))}</h3>
       ${applications.length ? `<div class="list">${applications.map((a) => `<div class="item" style="align-items:flex-start"><span class="body">
         <b>${esc(a.name)} ${demoPill(a.isDemo)}</b><span class="small">${esc(ST[a.status])} · ${esc(a.city || '—')} · ${esc(tt('глав', 'chapters'))}: ${a.courseDone}/8 · ${esc(tt('проверка', 'quiz'))}: ${a.quizPassed ? '✓' : '—'}${a.quizAttempts ? ` · ${esc(tt('попыток', 'attempts'))}: ${a.quizAttempts}` : ''}</span>
         ${a.manualReview ? `<span class="pill demo" style="justify-self:start;margin-top:4px">${esc(tt('ручная проверка ответов', 'manual review of answers'))}</span>
           <ol class="small" style="margin:6px 0 0;padding-left:1.3em">${(a.answers || []).map((x) => `<li>${esc(x.text)}<br><span class="${x.right ? '' : 'warn'}">${x.right ? '✓' : '✗'} ${esc(x.chosen || tt('нет ответа', 'no answer'))}</span></li>`).join('')}</ol>` : ''}
         ${a.about ? `<p class="small" style="margin:4px 0 0">${esc(a.about)}</p>` : ''}
-        ${decide('f', a, tt('Одобрить и выдать роль', 'Approve and grant role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль фасилитатора нет.', 'No facilitator applications.'))}</p>`}`);
+        ${decide('f', a, tt('Одобрить и выдать роль', 'Approve and grant role'))}</span></div>`).join('')}</div>` : `<p class="empty">${esc(tt('Заявок на роль фасилитатора нет.', 'No facilitator applications.'))}</p>`}` : ''}`);
     sec.addEventListener('click', async (e) => {
       const ok = e.target.closest('[data-ok]'); const no = e.target.closest('[data-no]'); const key = (ok || no)?.dataset.ok || (ok || no)?.dataset.no;
       if (!key) return;
