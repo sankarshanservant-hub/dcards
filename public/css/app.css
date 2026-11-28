@@ -1890,3 +1890,7 @@ textarea.autogrow { min-height: 0; resize: none; overflow: hidden; line-height: 
 .s3-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .s3-trio .live-card-btn { padding: 0; border: 0; background: none; }
 .s3-trio-card { width: 100%; height: auto; border-radius: 12px; display: block; }
+/* аудит 28.11 C */
+.g-turn { margin: 4px 0 0; font-size: 1.05rem; }
+.on-declined { margin: 4px 0 0; }
+.on-declined .link-btn { font-weight: 600; }

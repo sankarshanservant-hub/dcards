@@ -137,6 +137,7 @@ const ERRORS = {
   forward_not_allowed: ['Пересылать можно только из общего чата.', 'Only messages from the general chat can be forwarded.'],
   bad_room: ['Такого чата нет.', 'There is no such chat.'],
   group_not_all_picked: ['Ещё не все выбрали карту.', 'Not everyone has chosen a card yet.'],
+  group_next_round: ['Вы присоединитесь со следующего круга.', 'You will join from the next round.'],
   group_spot_busy: ['Сейчас показывает карту другой игрок — дождитесь, пока он закончит.', 'Another player is showing a card now — wait until they finish.'],
   live_not_active: ['Встреча по этому QR сейчас не идёт.', 'No meeting is running on this QR code right now.'],
   live_name_required: ['Напишите имя.', 'Enter your name.'],

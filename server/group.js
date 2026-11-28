@@ -295,6 +295,8 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
       if (!['own', 'guess', 'friend'].includes(r.format) || d.phase !== 'pick') return { error: 'live_bad_state' };
       const card = db.prepare("SELECT code FROM cards WHERE code = ? AND status = 'published'").get(String(body.code || ''));
       if (!card) return { error: 'not_found' };
+      // «Карта для друга»: адресаты раздаются в начале круга — вошедший позже играет со следующего круга (аудит 28.11)
+      if (r.format === 'friend' && !players(r).includes(me.id)) return { error: 'group_next_round' };
       const ex = db.prepare('SELECT * FROM group_picks WHERE room_id = ? AND step = ? AND member_id = ?').get(r.id, r.step, me.id);
       if (ex) db.prepare('UPDATE group_picks SET code = ? WHERE room_id = ? AND step = ? AND member_id = ?').run(card.code, r.id, r.step, me.id);
       else db.prepare('INSERT INTO group_picks (room_id, step, member_id, code) VALUES (?, ?, ?, ?)').run(r.id, r.step, me.id, card.code);
@@ -321,7 +323,7 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
         const picked = R.picks.all(r.id, r.step).filter((p) => p.code).map((p) => p.member_id);
         if (!picked.length) return { error: 'live_no_cards' };
         // открыть раньше, чем выбрали все, — только явно (body.force), когда кто-то не может выбрать
-        if (!body.force && R.members.all(r.id).some((m) => !picked.includes(m.id))) return { error: 'group_not_all_picked' };
+        if (!body.force && players(r).some((id) => !picked.includes(id))) return { error: 'group_not_all_picked' };
         if (r.format === 'friend' && picked.length < 2) return { error: 'live_too_few' };
         toShow(r); return { ok: true, id: r.id };
       }
@@ -348,6 +350,13 @@ function act(code, deviceId, action, body = {}, showDemo = false) {
     case 'end': { if (hostOnly()) return hostOnly(); setRoom(r, { status: 'ended' }); return { ok: true, id: r.id }; }
     default: return { error: 'live_bad_state' };
   }
+}
+/** Кто участвует в текущем круге: в «Карте для друга» — те, кому раздали адресата; в остальных — все в комнате. */
+function players(r) {
+  const ids = R.members.all(r.id).map((m) => m.id);
+  if (r.format !== 'friend') return ids;
+  const withTarget = new Set(R.picks.all(r.id, r.step).filter((p) => p.target_id).map((p) => p.member_id));
+  return ids.filter((id) => withTarget.has(id));
 }
 /** Ведущий открыл карты: показываем (own/friend) или начинаем угадывание (guess). */
 function toShow(r) {
@@ -378,10 +387,17 @@ function state(code, deviceId, showDemo) {
   const picks = R.picks.all(r.id, r.step);
   const mine = me ? picks.find((p) => p.member_id === me.id) : null;
   if (r.format === 'one') out.card = cardOut(d.card);
-  if (r.format === 'story') out.cards = (d.cards || []).map(cardOut).filter(Boolean);
+  if (r.format === 'story') {
+    out.cards = (d.cards || []).map(cardOut).filter(Boolean);
+    // чей ход (аудит 28.11): рассказчик меняется с каждой новой картой — по кругу в порядке входа в комнату (ведущий первый)
+    const n = Math.max(1, (d.cards || []).length);
+    if (members.length) { const t = members[(n - 1) % members.length]; out.narrator = { id: t.id, name: t.name }; out.nextNarrator = members[n % members.length].name; }
+  }
   if (['own', 'guess', 'friend'].includes(r.format)) {
     out.picked = picks.filter((p) => p.code).length;
     out.ready = picks.filter((p) => p.code).map((p) => p.member_id); // кто уже выбрал (без самих карт)
+    out.players = players(r); // кого ждём в этом круге (опоздавший в «Карте для друга» — со следующего)
+    if (me && !out.players.includes(me.id)) out.late = true;
     out.myCard = mine && mine.code ? cardOut(mine.code) : null;
     if (r.format === 'friend' && mine) out.target = name(mine.target_id);
     if (d.phase === 'pick') out.gallery = pool(showDemo || r.is_demo, r).map((k) => publicCard(k));
